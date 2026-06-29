@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K-E System</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body data-theme="greenish">
+
+    <div class="theme-container">
+        <label for="themeSelect">Theme: </label>
+        <select id="themeSelect">
+            <option value="dark">Dark Clean</option>
+            <option value="greenish" selected>Greenish</option>
+            <option value="blueish">Blueish Bright</option>
+        </select>
+    </div>
+
+    <div id="loginPage" class="page active">
+        <div class="login-box">
+            <h1>Welcome to K-E</h1>
+            <div class="input-group">
+                <label>User name</label>
+                <input type="text" id="usernameInput">
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="passwordInput">
+            </div>
+            <div class="button-group">
+                <button id="loginOkBtn">OK</button>
+                <button id="loginCancelBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="menuPage" class="page">
+        <div class="menu-grid">
+            <button class="menu-btn" id="btnMyOrders">My orders</button>
+            <button class="menu-btn" id="btnMonitor">Monitor</button>
+            <button class="menu-btn" id="btnCallCenter">Call center</button>
+            <button class="menu-btn" id="btnAssignation">Daily Assignation</button>
+            <button class="menu-btn" id="btnSystem">System</button>
+            <button class="menu-btn" id="btnCollectMoney">Collect money</button>
+        </div>
+        <div class="center-cancel">
+            <button id="menuCancelBtn">Cancel (Logout)</button>
+        </div>
+    </div>
+
+    <div id="systemPage" class="page">
+        
+        <div class="system-header">
+            <h2>System</h2>
+            <div class="system-actions">
+                <select id="columnDropdown">
+                    <option value="">+ add removed column</option>
+                </select>
+                <button id="csvUploadBtn">Upload a .csv</button>
+                <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
+            </div>
+        </div>
+
+        <div id="masterEditContainer" style="padding: 10px; font-weight: bold; font-size: 14px; min-height: 35px; display: flex; align-items: center; gap: 10px;">
+            <span id="masterSOKey"></span>
+            <span id="masterHeaderLabel"></span>
+            <input type="text" id="masterValueInput" style="display: none; padding: 4px; font-size: 14px; width: 300px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" />
+        </div>
+
+        <div class="table-container">
+            <table id="dataTable">
+                <thead>
+                    <tr id="headerRow"></tr>
+                    <tr id="filterRow"></tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+
+        <div class="button-group table-controls">
+            <button id="systemSubmitBtn">Submit</button>
+            <button id="systemCancelBtn">Cancel</button>
+            <button id="systemClearAllBtn" style="background-color: #d32f2f; color: white; border-color: #b71c1c;">Clear everything</button>
+            <button id="systemHubBtn">HUB</button>
+        </div>
+    </div>
+
+    <div id="monitorPage" class="page">
+        <div class="monitor-layout">
+            
+            <div class="monitor-sidebar">
+                <h3>Order Statuses</h3>
+                <ul id="statusMetricsList">
+                    </ul>
+                <hr style="border-color: var(--border-color); margin: 20px 0;">
+                <button id="monitorHubBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 10px; width: 100%; font-size: 14px;">Back to HUB</button>
+            </div>
+
+            <div class="monitor-main">
+                <div class="system-header">
+                    <h2 id="activeMonitorStatusHeader">Select a Status from the Left</h2>
+                    <button id="monitorSubmitBtn" style="display: none; background-color: #2e7d32; color: white; border: 1px solid #1b5e20; padding: 8px 20px; cursor: pointer;">Save Tracking Changes</button>
+                </div>
+
+                <div id="monitorTableArea" style="display: none; width: 100%;">
+                    <div class="table-container" style="height: 50vh;">
+                        <table id="monitorDataTable">
+                            <thead>
+                                <tr>
+                                    <th>SO</th>
+                                    <th>Status</th>
+                                    <th>Days</th>
+                                    <th>Rout</th>
+                                    <th>Assigned Tech</th>
+                                    <th>End Tech</th>
+                                    <th>End Coord</th>
+                                    <th>Collected</th>
+                                    <th>History</th>
+                                </tr>
+                            </thead>
+                            <tbody id="monitorTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <button id="closeMonitorTableBtn" style="padding: 8px 20px; cursor: pointer; background: #d32f2f; color: white; border: none;">Close Table</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div id="assignationPage" class="page">
+        <div class="system-header" style="width: 100%;">
+            <h2>Daily Assignation</h2>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="singleSoInput" placeholder="Enter single SO..." style="padding: 5px;">
+                <button id="btnFetchSingleSo">Fetch Single</button>
+            </div>
+        </div>
+
+        <div style="margin-bottom: 20px; width: 100%; display: flex; gap: 10px; align-items: flex-start;">
+            <textarea id="batchSoInput" placeholder="Paste list of SOs here (one per line or comma separated)..." rows="4" style="flex-grow: 1; padding: 10px;"></textarea>
+            <button id="btnFetchBatchSo" style="height: 100%;">New Assignation (Fetch)</button>
+        </div>
+
+        <datalist id="technicianList"></datalist>
+
+        <div class="table-container">
+            <table id="assignationTable">
+                <thead>
+                    <tr id="assignHeaderRow"></tr>
+                    <tr id="assignFilterRow"></tr>
+                </thead>
+                <tbody id="assignTableBody"></tbody>
+            </table>
+        </div>
+
+        <div class="button-group table-controls">
+            <button id="assignClearFiltersBtn" style="background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 5px 10px; cursor: pointer;">Clear Filters/Sort</button>
+            <button id="assignClearTechsBtn" style="background-color: #d32f2f; color: white; border-color: #b71c1c;">Clear Technicians</button>
+            <button id="assignSubmitBtn">Submit Assignations</button>
+            <button id="assignHubBtn">HUB</button>
+        </div>
+    </div>
+
+    <div id="techPage" class="page">
+        <div class="system-header">
+            <h2>My Orders</h2>
+            <button id="techHubBtn">Logout</button>
+        </div>
+        <div id="ticketContainer" style="width: 100%; max-width: 500px;">
+            </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

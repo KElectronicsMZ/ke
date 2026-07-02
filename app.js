@@ -100,7 +100,8 @@ document.getElementById('menuCancelBtn').addEventListener('click', () => {
 });
 
 document.getElementById('btnSystem').addEventListener('click', () => {
-    const allowedRoles = ['coordinator', 'supervisor', 'manager'];
+    // Exactly matches the lowercase database roles
+    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
     
     if (!currentUser || !allowedRoles.includes(currentUser.role)) {
         alert("Access Denied: Your account role does not have permission to view the System page.");
@@ -125,7 +126,8 @@ document.getElementById('systemCancelBtn').addEventListener('click', () => {
 
 // Open Monitor Page from HUB Menu
 document.getElementById('btnMonitor').addEventListener('click', () => {
-    const allowedRoles = ['Co-ordinator', 'Supervisor', 'Manager'];
+    // Changed to match the exact lowercase roles in your database
+    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
     
     if (!currentUser || !allowedRoles.includes(currentUser.role)) {
         alert("Access Denied: Your account role does not have permission to view the Monitor page.");
@@ -314,21 +316,30 @@ function populateTableRows(dataToDisplay) {
                 }
             });
 
-            // ACTIVE TRACKING HEADER COMPONENT LINK
             // ACTIVE TRACKING HEADER COMPONENT LINK (Upgraded to look below the table)
             input.addEventListener('focus', (e) => {
-                activeInputTarget = e.target; // Save this specific table cell input reference
+                activeInputTarget = e.target; 
                 
                 const masterSOKey = document.getElementById('masterSOKey');
                 const masterHeaderLabel = document.getElementById('masterHeaderLabel');
                 const masterValueInput = document.getElementById('masterValueInput');
+                const actionButtons = document.getElementById('masterActionButtons'); // NEW
 
                 if (masterSOKey && masterHeaderLabel && masterValueInput) {
                     masterSOKey.textContent = `SO: (${currentSO}) - `;
                     masterHeaderLabel.textContent = `${colKey === 'so' ? 'SO' : colKey}: `;
                     
                     masterValueInput.value = e.target.value;
-                    masterValueInput.style.display = 'inline-block'; // Show the text box
+                    masterValueInput.style.display = 'inline-block';
+                    
+                    // NEW: Show buttons and attach the current SO to the container's memory
+                    actionButtons.style.display = 'flex';
+                    actionButtons.dataset.activeSo = currentSO; 
+                    
+                    // NEW: Reset the tech dropdown to a clean state if they click a different cell
+                    document.getElementById('masterTechDropdown').style.display = 'none';
+                    document.getElementById('btnSubmitTechAssign').style.display = 'none';
+                    document.getElementById('masterTechDropdown').value = '';
                 }
             });
 
@@ -549,68 +560,7 @@ document.getElementById('masterValueInput').addEventListener('input', (e) => {
     }
 });
 
-// 2. Clear tracking details ONLY when clicking completely away from the table and the master container
-document.addEventListener('click', (e) => {
-    const tableBodyElement = document.getElementById('tableBody');
-    const masterEditContainer = document.getElementById('masterEditContainer');
-    
-    // Check if the user clicked outside BOTH the table data cells AND the master text input field
-    if (tableBodyElement && masterEditContainer && !tableBodyElement.contains(e.target) && !masterEditContainer.contains(e.target)) {
-        const masterSOKey = document.getElementById('masterSOKey');
-        const masterHeaderLabel = document.getElementById('masterHeaderLabel');
-        const masterValueInput = document.getElementById('masterValueInput');
-        
-        if (masterSOKey && masterHeaderLabel && masterValueInput) {
-            masterSOKey.textContent = '';
-            masterHeaderLabel.textContent = '';
-            masterValueInput.value = '';
-            masterValueInput.style.display = 'none'; // Hide the input box completely
-        }
-        activeInputTarget = null; // Clear active cell tracking reference smoothly
-    }
-});
 
-// --- CLEAR EVERYTHING LOGIC MODULE ---
-document.getElementById('systemClearAllBtn').addEventListener('click', async () => {
-    // Safety Double-Confirmation Prompts
-    const confirmFirst = confirm("⚠️ WARNING: You are about to completely wipe the system. This will permanently delete ALL orders from your Supabase database. Do you want to proceed?");
-    if (!confirmFirst) return;
-
-    const confirmSecond = confirm("Are you absolutely sure? This action CANNOT be undone.");
-    if (!confirmSecond) return;
-
-    // 1. Delete all rows from the live Supabase 'orders' table
-    // Passing .neq('so', '0') tells the database to delete everything where the SO is not '0' (which means every row).
-    const { error } = await supabaseClient
-        .from('orders')
-        .delete()
-        .neq('so', '0');
-
-    if (error) {
-        alert("Failed to clear database: " + error.message);
-        return;
-    }
-
-    // 2. Clear out our application memory grid configurations
-    databaseOrders = [];
-    editedOrders = {};
-
-    // 3. Redraw the clean, blank grid layout on the screen
-    renderTableStructure();
-
-    // 4. Wipe out any trailing strings left behind inside the lower tracking box
-    const masterSOKey = document.getElementById('masterSOKey');
-    const masterHeaderLabel = document.getElementById('masterHeaderLabel');
-    const masterValueInput = document.getElementById('masterValueInput');
-    if (masterSOKey && masterHeaderLabel && masterValueInput) {
-        masterSOKey.textContent = '';
-        masterHeaderLabel.textContent = '';
-        masterValueInput.value = '';
-        masterValueInput.style.display = 'none';
-    }
-
-    alert("Database and table successfully emptied!");
-});
 
 
 // --- 12. MONITOR ENGINE AND DATA INTERSECTION LOGIC ---
@@ -632,56 +582,99 @@ async function loadMonitorDataEngine() {
     calculateStatusMetrics();
 }
 
-function calculateStatusMetrics() {
+// Variable to hold currently filtered rows so we don't lose data
+let currentFilteredMonitorRows = [];
+
+document.getElementById('monitorFilterDateBtn').addEventListener('click', () => {
+    const startDateVal = document.getElementById('monitorStartDate').value;
+    const endDateVal = document.getElementById('monitorEndDate').value;
+
+    if (!startDateVal || !endDateVal) {
+        alert("Please select both a start and end date.");
+        return;
+    }
+
+    const start = new Date(startDateVal);
+    // Set end date to the very end of the day to ensure inclusive filtering
+    const end = new Date(endDateVal);
+    end.setHours(23, 59, 59, 999); 
+    
+    currentFilteredMonitorRows = monitorTrackingRows.filter(row => {
+        if (!row.assign_date) return false;
+        
+        // Parse the DD-MM-YYYY string from your database
+        const parts = row.assign_date.split('-');
+        if (parts.length !== 3) return false;
+        
+        const rowDate = new Date(parts[2], parts[1] - 1, parts[0]);
+        return rowDate >= start && rowDate <= end;
+    });
+
+    // Re-calculate the sidebar based ONLY on the filtered dates
+    calculateStatusMetrics(currentFilteredMonitorRows);
+    document.getElementById('monitorTableArea').style.display = 'none';
+});
+
+document.getElementById('monitorClearDateBtn').addEventListener('click', () => {
+    document.getElementById('monitorStartDate').value = '';
+    document.getElementById('monitorEndDate').value = '';
+    currentFilteredMonitorRows = [...monitorTrackingRows];
+    calculateStatusMetrics(currentFilteredMonitorRows);
+    document.getElementById('monitorTableArea').style.display = 'none';
+});
+
+// Modify your existing function to accept a parameter, defaulting to all tracking rows
+function calculateStatusMetrics(dataToProcess = monitorTrackingRows) {
     const metricsList = document.getElementById('statusMetricsList');
     metricsList.innerHTML = '';
 
-    // Initialize metrics collector array object
-    let counts = { "All Orders": databaseOrders.length };
+    let counts = { "All Tracking Logs": dataToProcess.length };
 
-    // Group matching names dynamically from database payload
-    databaseOrders.forEach(row => {
+    // Group matching names dynamically from the REPAIR LOG payload now
+    dataToProcess.forEach(row => {
         let statusName = row.status ? row.status.trim() : 'Unknown';
         if (statusName === '') statusName = 'Unknown';
         counts[statusName] = (counts[statusName] || 0) + 1;
     });
 
-    // Create selection entries under the sidebar panel
     for (const [statusName, totalCount] of Object.entries(counts)) {
         const li = document.createElement('li');
         li.innerHTML = `<span>${statusName}</span> <span style="background: var(--border-color); padding: 2px 8px; border-radius: 10px; font-size: 12px;">${totalCount}</span>`;
         
         li.addEventListener('click', () => {
-            renderSelectedStatusTable(statusName);
+            renderSelectedStatusTable(statusName, dataToProcess);
         });
         metricsList.appendChild(li);
     }
 }
 
-function renderSelectedStatusTable(targetStatus) {
+// Add a second parameter to know which data pool to use
+function renderSelectedStatusTable(targetStatus, dataPool = monitorTrackingRows) {
     document.getElementById('activeMonitorStatusHeader').textContent = `Status View: ${targetStatus}`;
     document.getElementById('monitorTableArea').style.display = 'block';
     document.getElementById('monitorSubmitBtn').style.display = 'inline-block';
 
-    // Filter list to target scope
-    const rowsToRender = targetStatus === "All Orders" 
-        ? databaseOrders 
-        : databaseOrders.filter(r => (r.status || 'Unknown').trim() === targetStatus || (targetStatus === 'Unknown' && !r.status));
+    // Filter based on repair_log status
+    const rowsToRender = targetStatus === "All Tracking Logs" 
+        ? dataPool 
+        : dataPool.filter(r => (r.status || 'Unknown').trim() === targetStatus || (targetStatus === 'Unknown' && !r.status));
 
     const tbody = document.getElementById('monitorTableBody');
     tbody.innerHTML = '';
 
-    rowsToRender.forEach(order => {
+    rowsToRender.forEach(trackingMatch => {
         const tr = document.createElement('tr');
-        const currentSO = order.so;
+        const currentSO = trackingMatch.so;
+        
+        // Find the main order data to display static columns (like days, rout, history)
+        const orderMatch = databaseOrders.find(o => String(o.so) === String(currentSO)) || {};
 
-        // Cross-reference data row from monitor tracking array by shared primary key 'so'
-        const trackingMatch = monitorTrackingRows.find(t => String(t.so) === String(currentSO)) || {};
-
-        // Define column structure array layout sequence mapping
+        // Notice we pull 'status' from the 'track' source now
         const columnsConfig = [
             { key: 'so', editable: false, source: 'main' },
-            { key: 'status', editable: false, source: 'main' },
+            { key: 'assign_date', editable: false, source: 'track' }, // NEW: Pulls from repair_log
+            { key: 'assign_time', editable: false, source: 'track' }, // NEW: Pulls from repair_log
+            { key: 'status', editable: true, source: 'track' }, 
             { key: 'days', editable: false, source: 'main' },
             { key: 'rout', editable: false, source: 'main' },
             { key: 'assigned_tech', editable: true, source: 'track' },
@@ -694,12 +687,10 @@ function renderSelectedStatusTable(targetStatus) {
         columnsConfig.forEach(cfg => {
             const td = document.createElement('td');
             
-            // Resolve base values dynamically matching their source origin pointers
             let baseValue = '';
             if (cfg.source === 'main') {
-                baseValue = order[cfg.key] || '';
+                baseValue = orderMatch[cfg.key] || '';
             } else {
-                // If it has been edited in this session, show the edited value, otherwise show database value
                 baseValue = (editedMonitorRows[currentSO] && editedMonitorRows[currentSO][cfg.key] !== undefined)
                     ? editedMonitorRows[currentSO][cfg.key]
                     : (trackingMatch[cfg.key] || '');
@@ -714,11 +705,13 @@ function renderSelectedStatusTable(targetStatus) {
                 input.addEventListener('input', (e) => {
                     if (!editedMonitorRows[currentSO]) {
                         editedMonitorRows[currentSO] = { 
+                            assignation_id: trackingMatch.assignation_id,
                             so: currentSO,
                             assigned_tech: trackingMatch.assigned_tech || '',
                             end_tech: trackingMatch.end_tech || '',
                             end_coord: trackingMatch.end_coord || '',
-                            collected: trackingMatch.collected || ''
+                            collected: trackingMatch.collected || '',
+                            status: trackingMatch.status || '' // Safely track status edits
                         };
                     }
                     editedMonitorRows[currentSO][cfg.key] = e.target.value;
@@ -743,9 +736,10 @@ document.getElementById('monitorSubmitBtn').addEventListener('click', async () =
         return;
     }
 
+    // Upsert using the unique assignation_id so Supabase knows exactly which row to update
     const { error } = await supabaseClient
         .from(MONITOR_TABLE_NAME)
-        .upsert(payloadsToSync, { onConflict: 'so' });
+        .upsert(payloadsToSync, { onConflict: 'assignation_id' });
 
     if (error) {
         alert("Failed to sync tracking data adjustments: " + error.message);
@@ -778,19 +772,26 @@ async function fetchOrdersForAssignation(soArray) {
         .from('orders')
         .select('*')
         .in('so', soArray);
-
+     // ADD THIS LINE:
+    console.log("Supabase returned:", ordersData, "Error:", ordersError);
     if (ordersError) {
         alert("Error fetching orders: " + ordersError.message);
         return;
     }
 
-    // 2. Fetch today's assignments from the 'repair_log' table
-    const todayDate = new Date().toISOString().split('T')[0];
+    // Calculate today's date and format it as DD-MM-YYYY
+    const targetDateObj = new Date();    
+    const dd = String(targetDateObj.getDate()).padStart(2, '0');
+    const mm = String(targetDateObj.getMonth() + 1).padStart(2, '0');
+    const yyyy = targetDateObj.getFullYear();
+    
+    const targetDate = `${dd}-${mm}-${yyyy}`; 
+
     const { data: logData, error: logError } = await supabaseClient
         .from('repair_log')
         .select('so, assigned_tech')
         .in('so', soArray)
-        .eq('assign_date', todayDate);
+        .eq('assign_date', targetDate);
 
     // 3. Build a quick lookup dictionary for today's assigned techs
     const assignedTechsToday = {};
@@ -801,9 +802,9 @@ async function fetchOrdersForAssignation(soArray) {
         });
     }
 
-    // 4. Prepare data: Force status change visually and inject the found technicians
+    // 4. Prepare data: Inject the found technicians (Status override removed)
     ordersData.forEach(order => {
-        order.status = "Technician"; // Force visual update
+        // REMOVED: order.status = "Technician"; 
         
         // Check if we found a technician in the database for today, otherwise leave blank
         const existingTech = assignedTechsToday[order.so] || '';
@@ -811,7 +812,8 @@ async function fetchOrdersForAssignation(soArray) {
         if (!editedAssignations[order.so]) {
             editedAssignations[order.so] = { ...order, assigned_tech: existingTech };
         } else {
-             editedAssignations[order.so].status = "Technician";
+             // REMOVED: editedAssignations[order.so].status = "Technician";
+             
              // If a fresh fetch finds a tech, inject it if the user hasn't typed anything yet
              if(!editedAssignations[order.so].assigned_tech) {
                  editedAssignations[order.so].assigned_tech = existingTech;
@@ -908,6 +910,31 @@ function renderAssignationTable(dataToRender = assignationOrders) {
                 }
             });
 
+            input.addEventListener('input', (e) => {
+                if (!editedAssignations[currentSO]) {
+                    editedAssignations[currentSO] = { ...row };
+                }
+                editedAssignations[currentSO][colKey] = e.target.value;
+            });
+
+            // --- ADDED: Active Tracking Header Link ---
+            input.addEventListener('focus', (e) => {
+                activeInputTarget = e.target; // Reuse your existing global tracking variable
+                
+                const masterSOKey = document.getElementById('assignMasterSOKey');
+                const masterHeaderLabel = document.getElementById('assignMasterHeaderLabel');
+                const masterValueInput = document.getElementById('assignMasterValueInput');
+
+                if (masterSOKey && masterHeaderLabel && masterValueInput) {
+                    masterSOKey.textContent = `SO: (${currentSO}) - `;
+                    masterHeaderLabel.textContent = `${colKey === 'so' ? 'SO' : colKey}: `;
+                    
+                    masterValueInput.value = e.target.value;
+                    masterValueInput.style.display = 'inline-block';
+                }
+            });
+            // --- END ADDED ---
+
             td.appendChild(input);
             tr.appendChild(td);
         });
@@ -970,42 +997,38 @@ function sortAssignationColumn(colKey) {
 }
 
 
-// --- CLEAR FILTERS AND SORTING ---
-document.getElementById('assignClearFiltersBtn').addEventListener('click', () => {
-    // 1. Wipe the text from all filter input boxes
-    const filterInputs = document.querySelectorAll('#assignFilterRow input');
-    filterInputs.forEach(input => {
-        input.value = '';
-    });
-    
-    // 2. Reset the sorting dictionary memory
-    assignationSortDir = {};
-    
-    // 3. Redraw the table using the original, un-filtered fetched data
-    renderAssignationTable(assignationOrders);
-});
-
-// --- CLEAR ALL TECHNICIANS : no orders will be assigned to anyone---
-document.getElementById('assignClearTechsBtn').addEventListener('click', () => {
-    if (!confirm("Are you sure you want to clear all assigned technicians from this list?")) {
+// --- CLEAR ALL TECHNICIANS FROM THE ENTIRE DATABASE ---
+document.getElementById('assignClearTechsBtn').addEventListener('click', async () => {
+    if (!confirm("⚠️ WARNING: This will permanently clear the 'assigned_tech' column for EVERY order in the database. Are you absolutely sure?")) {
         return;
     }
 
-    // Loop through all currently fetched orders
+    // 1. Tell Supabase to wipe the assigned_tech column for all rows
+    const { error } = await supabaseClient
+        .from('repair_log')
+        .update({ assigned_tech: '' })
+        .neq('so', '0'); // Targets every row
+
+    if (error) {
+        alert("Database Error: Could not clear technicians. " + error.message);
+        return;
+    }
+
+    // 2. Wipe the local memory so the screen updates instantly without needing a refresh
     assignationOrders.forEach(row => {
         const currentSO = row.so;
         
-        // Ensure the order exists in our edit tracking object
         if (!editedAssignations[currentSO]) {
             editedAssignations[currentSO] = { ...row };
         }
         
-        // Wipe the assigned tech data
         editedAssignations[currentSO].assigned_tech = '';
     });
 
-    // Redraw the table so the inputs show up as blank
+    // 3. Redraw the blank table
     renderAssignationTable();
+    
+    alert("Success: All assigned technicians have been wiped from the database.");
 });
 
 // --- ASSIGNATION SUBMISSION LOGIC ---
@@ -1016,7 +1039,19 @@ document.getElementById('assignSubmitBtn').addEventListener('click', async () =>
         return;
     }
 
-    const todayDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    // Grab the exact current moment
+    const now = new Date();
+
+    // 1. Calculate Today's Date (DD-MM-YYYY)
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const targetDate = `${dd}-${mm}-${yyyy}`;
+
+    // 2. Calculate Current Time (HH:MM)
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const targetTime = `${hh}:${min}`;
     
     // 1. Prepare payload for 'orders' table
     const ordersPayload = recordsToProcess.map(record => {
@@ -1029,12 +1064,14 @@ document.getElementById('assignSubmitBtn').addEventListener('click', async () =>
         return orderUpdate;
     });
 
-    // 2. Prepare payload for 'repair_log' table
+   // Prepare payload for 'repair_log' table
     const repairLogPayload = recordsToProcess.map(record => ({
         so: record.so,
         assigned_tech: record.assigned_tech || '',
         assigned_by: currentUser ? currentUser.username : 'Unknown',
-        assign_date: todayDate
+        assign_date: targetDate,
+        assign_time: targetTime,
+        status: "Technician" // <--- ADD THIS LINE HERE
     }));
 
     // Execute Orders Update
@@ -1047,11 +1084,12 @@ document.getElementById('assignSubmitBtn').addEventListener('click', async () =>
         return;
     }
 
-// Execute Repair Log Update
-    // Notice the updated onConflict targeting the composite constraint
+    // Execute Repair Log Update
+    // Changed to .insert() so it creates a new log entry every time, 
+    // allowing multiple assignments for the same SO on the same day.
     const { error: logErr } = await supabaseClient
         .from('repair_log')
-        .upsert(repairLogPayload, { onConflict: 'so, assign_date' });
+        .insert(repairLogPayload);
 
     if (logErr) {
         alert("Orders updated, but failed to sync repair log: " + logErr.message);
@@ -1062,3 +1100,327 @@ document.getElementById('assignSubmitBtn').addEventListener('click', async () =>
         renderAssignationTable(); // Clear view
     }
 });
+
+// --- ASSIGNATION PAGE: MASTER EDIT ENGINE ---
+
+// 1. Sync typing from the Master Edit Box back into the assignation table cell
+const assignMasterInput = document.getElementById('assignMasterValueInput');
+if (assignMasterInput) {
+    assignMasterInput.addEventListener('input', (e) => {
+        if (activeInputTarget) {
+            // Update the visual cell
+            activeInputTarget.value = e.target.value;
+            
+            // Trigger the internal input event so it saves to editedAssignations memory
+            activeInputTarget.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+}
+
+// --- UNIFIED MASTER EDIT CLICK TRACKER ---
+// Clears tracking details only when clicking completely away from BOTH tables and containers
+document.addEventListener('click', (e) => {
+    // System Page Elements
+    const sysBody = document.getElementById('tableBody');
+    const sysContainer = document.getElementById('masterEditContainer');
+
+    // Assignation Page Elements
+    const assignBody = document.getElementById('assignTableBody');
+    const assignContainer = document.getElementById('assignMasterEditContainer');
+
+    // Check if the click happened inside either of our active work zones
+    const clickedInSystem = (sysBody && sysBody.contains(e.target)) || (sysContainer && sysContainer.contains(e.target));
+    const clickedInAssign = (assignBody && assignBody.contains(e.target)) || (assignContainer && assignContainer.contains(e.target));
+
+    // If the user clicked outside of BOTH work zones, wipe everything clean
+    if (!clickedInSystem && !clickedInAssign) {
+         // Wipe System View UI
+         const sysKey = document.getElementById('masterSOKey');
+         const sysLabel = document.getElementById('masterHeaderLabel');
+         const sysVal = document.getElementById('masterValueInput');
+         if (sysKey && sysLabel && sysVal) { 
+             sysKey.textContent = ''; 
+             sysLabel.textContent = ''; 
+             sysVal.value = ''; 
+             sysVal.style.display = 'none'; 
+         }
+
+         // Wipe Assignation View UI
+         const assignKey = document.getElementById('assignMasterSOKey');
+         const assignLabel = document.getElementById('assignMasterHeaderLabel');
+         const assignVal = document.getElementById('assignMasterValueInput');
+         if (assignKey && assignLabel && assignVal) { 
+             assignKey.textContent = ''; 
+             assignLabel.textContent = ''; 
+             assignVal.value = ''; 
+             assignVal.style.display = 'none'; 
+         }
+
+         // Hide the new action buttons
+         const actionButtons = document.getElementById('masterActionButtons');
+         if (actionButtons) actionButtons.style.display = 'none';
+         // Safely clear the tracking target
+         activeInputTarget = null;
+    }
+});
+
+// --- SYSTEM PAGE: MASTER ACTION BUTTONS LOGIC ---
+
+// Helper function to format today's date and time for the database
+function getCurrentDateTime() {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    return { date: `${dd}-${mm}-${yyyy}`, time: `${hh}:${min}` };
+}
+
+// Action 1: Agree (Coord)
+document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
+    const activeSo = document.getElementById('masterActionButtons').dataset.activeSo;
+    if (!activeSo) return;
+
+    const { date, time } = getCurrentDateTime();
+    const currentUsername = currentUser ? currentUser.username : 'Unknown';
+
+    const payload = {
+        so: activeSo,
+        status: 'Technician',
+        assigned_by: currentUsername,
+        agree_coord: currentUsername,
+        assign_date: date,
+        assign_time: time,
+        assigned_tech: '' // <-- ADD THIS LINE to satisfy the database constraint
+    };
+
+    const { error } = await supabaseClient.from('repair_log').insert(payload);
+
+    if (error) {
+        alert("Error saving record: " + error.message);
+    } else {
+        alert(`Coordination agreement logged for SO: ${activeSo}`);
+    }
+});
+
+// Action 2 (Part 1): Show the Tech Dropdown
+document.getElementById('btnCompleteTech').addEventListener('click', async () => {
+    const dropdown = document.getElementById('masterTechDropdown');
+    const confirmBtn = document.getElementById('btnSubmitTechAssign');
+    
+    // If we haven't loaded technicians yet on this page, fetch them from Supabase
+    if (availableTechnicians.length === 0) {
+        const { data, error } = await supabaseClient
+            .from('profiles')
+            .select('username')
+            .ilike('role', '%technician%'); 
+        
+        if (data && !error) {
+            availableTechnicians = data.map(d => d.username);
+        }
+    }
+
+    // Fill the dropdown options
+    dropdown.innerHTML = '<option value="">-- Select Tech --</option>';
+    availableTechnicians.forEach(tech => {
+        const opt = document.createElement('option');
+        opt.value = tech;
+        opt.textContent = tech;
+        dropdown.appendChild(opt);
+    });
+
+    // Reveal the dropdown and the final submit button
+    dropdown.style.display = 'inline-block';
+    confirmBtn.style.display = 'inline-block';
+});
+
+// Action 2 (Part 2): Confirm Assignment and Insert Database Record
+document.getElementById('btnSubmitTechAssign').addEventListener('click', async () => {
+    const activeSo = document.getElementById('masterActionButtons').dataset.activeSo;
+    const selectedTech = document.getElementById('masterTechDropdown').value;
+
+    if (!activeSo) return;
+    if (!selectedTech) {
+        alert("Please select a technician from the dropdown list first.");
+        return;
+    }
+
+    const { date, time } = getCurrentDateTime();
+    const currentUsername = currentUser ? currentUser.username : 'Unknown';
+
+    const payload = {
+        so: activeSo,
+        status: 'Complete',
+        assigned_by: currentUsername,
+        complete_coord: currentUsername,
+        end_tech: selectedTech,
+        assigned_tech: selectedTech, // <-- ADD THIS LINE to satisfy the database constraint
+        assign_date: date,
+        assign_time: time
+    };
+
+    const { error } = await supabaseClient.from('repair_log').insert(payload);
+
+    if (error) {
+        alert("Error assigning tech: " + error.message);
+    } else {
+        alert(`SO: ${activeSo} successfully assigned to ${selectedTech}`);
+        
+        // Hide the dropdown elements to clean up the UI
+        document.getElementById('masterTechDropdown').style.display = 'none';
+        document.getElementById('btnSubmitTechAssign').style.display = 'none';
+        document.getElementById('masterTechDropdown').value = '';
+    }
+});
+
+
+// ==========================================
+// --- BONUSES / PERFORMANCE TRACKING PAGE ---
+// ==========================================
+
+const bonusesPage = document.getElementById('bonusesPage');
+
+// Set dates to First of Current Month and Today
+function setBonusesDefaultDates() {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    // Format to YYYY-MM-DD for standard HTML date inputs
+    const formatInputDate = (dateObj) => {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    document.getElementById('bonusesStartDate').value = formatInputDate(firstDay);
+    document.getElementById('bonusesEndDate').value = formatInputDate(now);
+}
+
+// Navigation Listeners
+document.getElementById('btnBonuses').addEventListener('click', () => {
+    menuPage.classList.remove('active');
+    bonusesPage.classList.add('active');
+    setBonusesDefaultDates();
+    loadBonusesData(); // Auto-load data for the current month when opened
+});
+
+document.getElementById('bonusesHubBtn').addEventListener('click', () => {
+    bonusesPage.classList.remove('active');
+    menuPage.classList.add('active');
+});
+
+document.getElementById('btnFetchBonuses').addEventListener('click', loadBonusesData);
+
+// Main Fetch and Filter Engine
+async function loadBonusesData() {
+    const startDateVal = document.getElementById('bonusesStartDate').value;
+    const endDateVal = document.getElementById('bonusesEndDate').value;
+
+    if (!startDateVal || !endDateVal) {
+        alert("Please ensure both a start and end date are selected.");
+        return;
+    }
+
+    const startLimit = new Date(startDateVal);
+    startLimit.setHours(0, 0, 0, 0);
+    const endLimit = new Date(endDateVal);
+    endLimit.setHours(23, 59, 59, 999); 
+
+    const { data, error } = await supabaseClient.from(MONITOR_TABLE_NAME).select('*');
+    
+    if (error) {
+        alert("Error loading bonuses data: " + error.message);
+        return;
+    }
+
+    const currentName = currentUser ? currentUser.username : '';
+    
+    // 1. DYNAMIC COLUMN TRACKING
+    // Every column in the table that could potentially hold a staff member's name
+    const nameColumns = [
+        'assigned_by', 'agree_coord', 'complete_coord', 
+        'assigned_tech', 'end_tech', 'hass', 'smart_things'
+    ];
+    
+    let summaryCounts = {};
+    nameColumns.forEach(col => summaryCounts[col] = 0);
+
+    // 2. FILTER & COUNT ENGINE
+    const filteredRows = data.filter(row => {
+        if (!row.assign_date) return false;
+        const parts = row.assign_date.split('-');
+        if (parts.length !== 3) return false;
+        const rowDate = new Date(parts[2], parts[1] - 1, parts[0]);
+        
+        if (rowDate < startLimit || rowDate > endLimit) return false;
+
+        let userWasInvolved = false;
+        
+        nameColumns.forEach(colKey => {
+            if (row[colKey] && String(row[colKey]).trim() === currentName) {
+                userWasInvolved = true;
+                summaryCounts[colKey]++; 
+            }
+        });
+
+        // The row is kept if their name appeared in AT LEAST one of those columns
+        return userWasInvolved; 
+    });
+
+    renderBonusesData(filteredRows, summaryCounts);
+}
+
+// Render the UI
+function renderBonusesData(rows, counts) {
+    // 1. RENDER SUMMARY BOXES
+    const summaryContent = document.getElementById('bonusesSummaryContent');
+    summaryContent.innerHTML = '';
+    
+    Object.entries(counts).forEach(([colName, totalCount]) => {
+        // HIDE ZEROES: If the count is 0, skip building this box entirely
+        if (totalCount === 0) return; 
+
+        const cleanName = colName.replace('_', ' ').toUpperCase();
+        
+        const box = document.createElement('div');
+        box.style.cssText = "background: var(--btn-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; min-width: 120px; flex-grow: 1;";
+        
+        // DARKER FONTS: Changed colors to #333 and #000 with maximum font-weight
+        box.innerHTML = `
+            <span style="font-size: 11px; color: #333; margin-bottom: 5px; font-weight: 900; letter-spacing: 1px;">${cleanName}</span>
+            <span style="font-size: 24px; font-weight: 900; color: #000;">${totalCount}</span>
+        `;
+        summaryContent.appendChild(box);
+    });
+
+    // 2. RENDER TABLE DATA
+    const tbody = document.getElementById('bonusesTableBody');
+    tbody.innerHTML = '';
+    
+    const columnsToDisplay = [
+        'so', 'assign_date', 'assign_time', 'status', 'assigned_by', 
+        'agree_coord', 'complete_coord', 'assigned_tech', 'end_tech', 
+        'hass', 'smart_things', 'comment', 'collected'
+    ];
+
+    rows.forEach(row => {
+        const tr = document.createElement('tr');
+        
+        columnsToDisplay.forEach(col => {
+            const td = document.createElement('td');
+            const cellValue = row[col] ? String(row[col]) : '';
+            td.textContent = cellValue;
+            
+            if (cellValue.trim() === (currentUser ? currentUser.username : '')) {
+                td.style.fontWeight = "bold";
+                td.style.color = "#4caf50"; 
+            }
+            
+            tr.appendChild(td);
+        });
+        
+        tbody.appendChild(tr);
+    });
+}

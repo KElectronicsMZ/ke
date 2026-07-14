@@ -337,7 +337,7 @@ body {
     background: var(--bg-color);
     width: 100%;
     max-width: 500px;
-    margin: 0 auto; /* Bulletproof fallback for horizontal centering */
+    margin: 20px auto 40px auto; /* <--  Forces a safe gap at the bottom of the phone screen */
     border-radius: 8px;
     border: 1px solid var(--border-color);
     display: flex;

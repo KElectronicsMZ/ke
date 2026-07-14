@@ -1981,6 +1981,18 @@ function renderTickets(tickets) {
             const p1 = ticket.phone ? `<a class="phone-link" href="tel:${safePhone1}">📞 ${ticket.phone}</a>` : 'N/A';
             const p2 = ticket.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${ticket.phone_2}</a>` : 'N/A';
 
+            // --- NEW: EXTRACT AND FORMAT PARTS FOR THE OUTSIDE CARD ---
+            let partsArray = [];
+            for (let i = 1; i <= 5; i++) {
+                let part = (ticket[`part_${i}`] || '').trim();
+                let qty = (ticket[`qty_${i}`] || '').trim();
+                if (part && part.toUpperCase() !== 'EMPTY') {
+                    partsArray.push(`${part} (x${qty && qty.toUpperCase() !== 'EMPTY' ? qty : '1'})`);
+                }
+            }
+            let partsHtml = partsArray.length > 0 ? `<div style="color: #8e24aa; font-size: 13px; font-weight: bold; margin-top: 8px; padding-top: 5px; border-top: 1px dashed var(--border-color);">🛠️ Parts: ${partsArray.join(', ')}</div>` : '';
+            // ----------------------------------------------------------
+
             card.innerHTML = `
                 <div class="ticket-header">
                     <span>SO: ${ticket.so}</span>
@@ -1990,6 +2002,7 @@ function renderTickets(tickets) {
                 <div class="ticket-row"><span>Date: ${ticket.date || 'N/A'}</span> <span>${p2}</span></div>
                 <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
                 <div class="ticket-row"><span><strong>Model:</strong> ${ticket.model || 'N/A'}</span> <span><strong>SN:</strong> ${ticket.serial || 'N/A'}</span></div>
+                ${partsHtml}
                 <button class="details-btn">Details & Action</button>
             `;
 
@@ -2022,7 +2035,12 @@ function renderMediaLink(elementId, url, label) {
 
 function openDetailsModal(ticket) {
     activeTechTicket = ticket;
-    
+    // --- UPDATE THE MODAL HEADER WITH THE SO NUMBER ---
+    const modalHeaders = document.querySelectorAll('#modalSoHeader');
+    modalHeaders.forEach(header => {
+        header.textContent = 'Order Details - SO: ' + ticket.so;
+    });
+    // -------------------------------------------------------
     // --- WIPE PREVIOUS UPLOAD TEXT ---
     const progressBox = document.getElementById('uploadProgressContainer');
     if (progressBox) {

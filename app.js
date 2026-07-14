@@ -4,6 +4,75 @@ const SUPABASE_KEY = "sb_publishable_9uEZtAWURjryzdCaVwH2Eg_OaW1MmpC";
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// --- OFFLINE DATABASE (INDEXEDDB) SETUP ---
+let localDB;
+// We request the browser to open a local database named "KETechDB" (Version 1)
+const dbRequest = indexedDB.open("KETechDB", 1);
+
+// This only runs the very first time the app loads, or if we change the version number
+dbRequest.onupgradeneeded = function(event) {
+    localDB = event.target.result;
+    
+    // Create an 'inbox' table to hold the tickets we download while online
+    if (!localDB.objectStoreNames.contains('inbox')) {
+        localDB.createObjectStore('inbox', { keyPath: 'id' }); // 'id' will just be a generic tag like "activeTickets"
+    }
+    
+    // Create an 'outbox' table to hold the files and data we want to upload later
+    if (!localDB.objectStoreNames.contains('outbox')) {
+        localDB.createObjectStore('outbox', { keyPath: 'so' }); // We use the Service Order (SO) as the unique ID
+    }
+};
+
+// This runs every time the app opens successfully
+dbRequest.onsuccess = function(event) {
+    localDB = event.target.result;
+    console.log("IndexedDB Local Vault initialized perfectly!");
+
+    // Check the vault the second the database wakes up
+    if (typeof checkOfflineVault === 'function') checkOfflineVault();
+};
+
+// If the browser blocks it (like in some strict incognito modes)
+dbRequest.onerror = function(event) {
+    console.error("IndexedDB Error:", event.target.error);
+};
+
+// --- LOAD TICKETS FROM LOCAL VAULT (OFFLINE) ---
+function loadTicketsFromVault() {
+    console.log("Loading tickets from IndexedDB Vault...");
+    
+    // SAFETY CHECK: Is the database actually open?
+    if (!localDB) {
+        alert("The offline database is still waking up. Please wait one second and click 'My Orders' again!");
+        return;
+    }
+
+    try {
+        const transaction = localDB.transaction('inbox', 'readonly');
+        const store = transaction.objectStore('inbox');
+        const request = store.get('latest_tickets');
+
+        request.onsuccess = function() {
+            if (request.result && request.result.tickets && request.result.tickets.length > 0) {
+                console.log("Successfully retrieved " + request.result.tickets.length + " tickets. Rendering now...");
+                renderTickets(request.result.tickets);
+            } else {
+                document.getElementById('ticketContainer').innerHTML = 
+                    "<h3 style='text-align:center;'>No offline data saved. Please connect to internet to sync.</h3>";
+            }
+        };
+        
+        request.onerror = function() {
+            console.error("Failed to read from local vault.");
+            alert("Database Error: Could not read from the offline vault.");
+        };
+    } catch (err) {
+        console.error("Critical Vault Error:", err);
+        alert("CRASH PREVENTED: Could not access the local database: " + err.message);
+    }
+}
+
 // --- 2. APPLICATION STATE CONFIGURATION ---
 let activeInputTarget = null; // Tracks the currently selected table cell input
 let sortDirection = {}; // Tracks if column is sorting 'asc' or 'desc'
@@ -11,7 +80,8 @@ let currentUser = null;
 let databaseOrders = []; 
 let editedOrders = {};    
 let hiddenColumns = [];
-
+let selectedSystemOrders = new Set(); //to track the selected order in system page
+let selectedAssignationOrders = new Set();  //to track the selected order in assignation page
 // NEW TRACKING DATASETS FOR MONITOR SPLIT
 let monitorTrackingRows = []; 
 let editedMonitorRows = {};   
@@ -19,12 +89,12 @@ const MONITOR_TABLE_NAME = 'repair_log'; // Your secondary table name in Supabas
 
 // CHANGED: 'SO' is now 'so' to match the database strict case rules
 const ALL_COLUMNS = [
-    "so", "created_by", "branch", "date", "days", "status", "reason", "name", 
+    "so", "created_by", "branch", "date", "days", "status", "reason","service_type", "name", 
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", "remark", 
     "status_comment", "change_log", "return", "part_1", "qty_1", "part_2", 
     "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
     "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3",
-    "end_tech", "end_coord", "collected", "history"
+    "end_tech", "end_coord", "collected", "history", "assigned_tech"
 ];
 let activeColumns = [...ALL_COLUMNS];
 
@@ -33,7 +103,7 @@ let assignationOrders = [];
 let availableTechnicians = [];
 let editedAssignations = {};
 const ASSIGN_COLUMNS = [
-    "so", "date", "days", "status", "name", "phone", "address", "rout", 
+    "so", "date", "days", "status", "service_type", "address", "rout", 
     "assigned_tech", "model", "remark", "status_comment", 
     "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3"
 ];
@@ -48,6 +118,61 @@ const themeSelect = document.getElementById('themeSelect');
 themeSelect.addEventListener('change', (e) => {
     document.body.setAttribute('data-theme', e.target.value);
 });
+
+
+// --- ASSIGNATION PAGE: RESET LAYOUT ---
+document.getElementById('assignResetLayoutBtn').addEventListener('click', () => {
+    const userKey = currentUser ? currentUser.username : 'guest';
+    
+    // 1. Wipe saved memory for this page
+    localStorage.removeItem('assign_cols_' + userKey);
+    localStorage.removeItem('assign_order_' + userKey);
+    
+    // 2. Restore factory defaults
+    ASSIGN_COLUMNS.length = 0;
+    ASSIGN_COLUMNS.push("so", "date", "days", "status", "service_type", "address", "rout", "assigned_tech", "model", "remark", "status_comment", "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3");
+    
+    // 3. Redraw table
+    renderAssignationTable();
+    alert("Assignation layout has been reset to defaults.");
+});
+
+
+// --- 4.5 SESSION MANAGEMENT (AUTO-LOGIN) ---
+const SESSION_DURATION_MS = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+
+function checkExistingSession() {
+    const savedSession = localStorage.getItem('ke_user_session');
+    
+    if (savedSession) {
+        const sessionData = JSON.parse(savedSession);
+        const now = Date.now();
+
+        // Check if the session is younger than 6 hours
+        if (now - sessionData.timestamp < SESSION_DURATION_MS) {
+            currentUser = sessionData.user; // Restore the user instantly
+            
+            // Restore their column preferences
+            const savedHidden = localStorage.getItem('hiddenColumns_' + currentUser.username);
+            if (savedHidden) {
+                hiddenColumns = JSON.parse(savedHidden);
+                activeColumns = ALL_COLUMNS.filter(col => !hiddenColumns.includes(col));
+            }
+
+            // Hide the login screen and show the HUB menu
+            loginPage.classList.remove('active');
+            menuPage.classList.add('active');
+            console.log("Session restored automatically.");
+        } else {
+            // The 6 hours are up! Wipe the old session.
+            localStorage.removeItem('ke_user_session');
+            console.log("Session expired. Login required.");
+        }
+    }
+}
+
+// Run this check the exact second the app finishes loading
+window.addEventListener('DOMContentLoaded', checkExistingSession);
 
 // --- 5. AUTHENTICATION & NAVIGATION FLOW ---
 document.getElementById('loginOkBtn').addEventListener('click', async () => {
@@ -72,6 +197,15 @@ document.getElementById('loginOkBtn').addEventListener('click', async () => {
     }
 
     currentUser = data;
+    
+    // --- NEW: SAVE SESSION TICKET TO PHONE ---
+    const sessionPayload = {
+        user: currentUser,
+        timestamp: Date.now() // Record the exact millisecond they logged in
+    };
+    localStorage.setItem('ke_user_session', JSON.stringify(sessionPayload));
+    // -----------------------------------------
+
     const savedHidden = localStorage.getItem('hiddenColumns_' + currentUser.username);
     if (savedHidden) {
         hiddenColumns = JSON.parse(savedHidden);
@@ -90,6 +224,10 @@ document.getElementById('loginCancelBtn').addEventListener('click', () => {
 });
 
 document.getElementById('menuCancelBtn').addEventListener('click', () => {
+
+    // --- DESTROY SESSION TICKET ---
+    localStorage.removeItem('ke_user_session');
+
     hiddenColumns = [];
     activeColumns = [...ALL_COLUMNS];
     currentUser = null;
@@ -136,8 +274,29 @@ document.getElementById('btnMonitor').addEventListener('click', () => {
 
     menuPage.classList.remove('active');
     monitorPage.classList.add('active');
-    loadMonitorDataEngine(); // Pull from both database tables
+    
+    // --- NEW: SET DEFAULT DATES TO CURRENT MONTH ---
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    const formatInputDate = (dateObj) => {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    document.getElementById('monitorStartDate').value = formatInputDate(firstDay);
+    document.getElementById('monitorEndDate').value = formatInputDate(now);
+    // -----------------------------------------------
+
+    // Wait for the data engine to finish downloading the records, 
+    // then automatically apply the filter for the current month!
+    loadMonitorDataEngine().then(() => {
+        document.getElementById('monitorFilterDateBtn').click();
+    }); 
 });
+
 
 // Back to HUB button inside Monitor Page
 document.getElementById('monitorHubBtn').addEventListener('click', () => {
@@ -221,6 +380,25 @@ document.getElementById('assignHubBtn').addEventListener('click', () => {
     menuPage.classList.add('active');
 });
 
+// --- TECH PAGE (MY ORDERS) NAVIGATION ---
+const techPage = document.getElementById('techPage');
+
+document.getElementById('btnMyOrders').addEventListener('click', () => {
+    // 1. Hide the main menu and show the technician page
+    menuPage.classList.remove('active');
+    techPage.classList.add('active');
+    
+    // 2. Trigger the fetch logic to load their active tickets
+    loadActiveTickets();
+});
+
+// Wire up the Logout/Back button inside the Tech Page
+document.getElementById('techHubBtn').addEventListener('click', () => {
+    // Go back to the HUB menu
+    techPage.classList.remove('active');
+    menuPage.classList.add('active');
+});
+
 // --- 6. DATA VISUALIZATION ENGINE (DYNAMIC TABLE) ---
 async function loadDatabaseData() {
     const { data, error } = await supabaseClient.from('orders').select('*');
@@ -239,6 +417,15 @@ function renderTableStructure() {
     
     headerRow.innerHTML = '';
     filterRow.innerHTML = '';
+
+    // --- Add empty header cells for the checkbox column --------------
+    const checkHeader = document.createElement('th');
+    checkHeader.textContent = "Select";
+    headerRow.appendChild(checkHeader);
+    
+    const checkFilter = document.createElement('th');
+    filterRow.appendChild(checkFilter);
+    // -------end of Add empty header cells for the checkbox colum------
 
     activeColumns.forEach(colKey => {
         const th = document.createElement('th');
@@ -266,6 +453,10 @@ function renderTableStructure() {
 
     populateTableRows(databaseOrders);
     updateDropdownOptions();
+    // Fire resizer
+    applyResizableColumns('dataTable', 'sys_cols');
+
+    attachHeaderDragLogic('headerRow', activeColumns, 'sys_order', renderTableStructure); 
 }
 
 function populateTableRows(dataToDisplay) {
@@ -275,6 +466,26 @@ function populateTableRows(dataToDisplay) {
     dataToDisplay.forEach(row => {
         const tr = document.createElement('tr');
         const currentSO = row.so; // CHANGED to lowercase 'so'
+
+        // --- Inject the Checkbox Cell ---
+        const checkTd = document.createElement('td');
+        checkTd.style.textAlign = 'center';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.style.width = 'auto'; // Prevent it from stretching
+        checkbox.checked = selectedSystemOrders.has(currentSO);
+        
+        checkbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                selectedSystemOrders.add(currentSO);
+            } else {
+                selectedSystemOrders.delete(currentSO);
+            }
+        });
+        
+        checkTd.appendChild(checkbox);
+        tr.appendChild(checkTd);
+        // --- end of Inject the Checkbox Cell --
 
         activeColumns.forEach(colKey => {
             const td = document.createElement('td');
@@ -407,27 +618,38 @@ function updateDropdownOptions() {
 document.getElementById('columnDropdown').addEventListener('change', (e) => {
     const chosenCol = e.target.value;
     
-    // NEW: Handle the RESET action
+    // --- PHASE 3: MASTER LAYOUT RESET ---
     if (chosenCol === "RESET") {
-        hiddenColumns = []; // Clear hidden tracking
-        activeColumns = [...ALL_COLUMNS]; // Restore all columns
+        hiddenColumns = [];
+        activeColumns = [...ALL_COLUMNS]; 
         
-        // Save the clean slate to the user's memory
-        localStorage.setItem('hiddenColumns_' + currentUser.username, JSON.stringify(hiddenColumns));
+        const userKey = currentUser ? currentUser.username : 'guest';
         
-        renderTableStructure(); // Redraw the table
-        e.target.value = ""; // Reset the visual dropdown back to the top
-        return; // Stop the function here
+        // 1. Wipe Hidden Columns
+        localStorage.removeItem('hiddenColumns_' + userKey);
+        // 2. Wipe Resized Widths (System & Assignation)
+        localStorage.removeItem('sys_cols_' + userKey);
+        localStorage.removeItem('assign_cols_' + userKey);
+        // 3. Wipe Column Ordering
+        localStorage.removeItem('sys_order_' + userKey);
+        localStorage.removeItem('assign_order_' + userKey);
+        
+        // Force reload original assignation columns
+        ASSIGN_COLUMNS.length = 0;
+        ASSIGN_COLUMNS.push("so", "date", "days", "status", "service_type", "address", "rout", "assigned_tech", "model", "remark", "status_comment", "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3");
+
+        renderTableStructure(); 
+        if (assignationPage.classList.contains('active')) renderAssignationTable();
+        
+        e.target.value = ""; 
+        alert("Layout reset to factory defaults.");
+        return; 
     }
 
-    // Existing logic for adding a normal column back
     if (chosenCol) {
         hiddenColumns = hiddenColumns.filter(c => c !== chosenCol);
         activeColumns.push(chosenCol);
-        activeColumns.sort((a, b) => ALL_COLUMNS.indexOf(a) - ALL_COLUMNS.indexOf(b));
-        
-        localStorage.setItem('hiddenColumns_' + currentUser.username, JSON.stringify(hiddenColumns));
-        
+        localStorage.setItem('hiddenColumns_' + (currentUser ? currentUser.username : 'guest'), JSON.stringify(hiddenColumns));
         renderTableStructure();
     }
 });
@@ -451,6 +673,55 @@ document.getElementById('systemSubmitBtn').addEventListener('click', async () =>
         alert("Database successfully synchronized!");
         loadDatabaseData(); 
     }
+});
+
+// --- WIPE ENTIRE SYSTEM LOGIC ---
+document.getElementById('btnWipeSystem').addEventListener('click', async () => {
+    
+    // 1. Check Permissions (You mentioned possibly changing this later)
+    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
+    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
+        alert("Access Denied: Your account role does not have permission to wipe the database.");
+        return;
+    }
+
+    // 2. Strict Confirmation Sequence
+    const firstConfirm = confirm("⚠️ CRITICAL WARNING: You are about to DELETE ALL DATA in the system (Orders and Logs). This cannot be undone. Are you absolutely sure?");
+    if (!firstConfirm) return;
+    
+    const secondConfirm = prompt("To confirm total deletion, type the word 'DELETE' in all capital letters:");
+    if (secondConfirm !== "DELETE") {
+        alert("Wipe aborted. Your data is safe.");
+        return;
+    }
+
+    // 3. Execution: Delete dependencies first (repair_log), then parent table (orders)
+    
+    // Step A: Wipe repair_log
+    const { error: logError } = await supabaseClient
+        .from('repair_log')
+        .delete()
+        .neq('so', '0'); // Dummy filter required by Supabase to allow mass deletion
+
+    if (logError) {
+        alert("Failed to wipe repair_log table: " + logError.message);
+        return; // Stop here so we don't try to delete orders if logs failed
+    }
+
+    // Step B: Wipe orders
+    const { error: ordersError } = await supabaseClient
+        .from('orders')
+        .delete()
+        .neq('so', '0'); 
+
+    if (ordersError) {
+        alert("Logs were wiped, but failed to wipe orders table: " + ordersError.message);
+        return;
+    }
+
+    // 4. Reset User Interface
+    alert("System successfully wiped. All data has been permanently deleted.");
+    loadDatabaseData(); // Fetch the now-empty database to update the view
 });
 
 // --- 10. CSV PARSING (WITH PAPAPARSE) ---
@@ -516,6 +787,109 @@ function processCSVText(text) {
     });
 }
 
+// --- NEW FEATURE: ADD ORDER FROM CLIPBOARD ---
+document.getElementById('clipboardUploadBtn').addEventListener('click', async () => {
+    try {
+        // Request permission and read the clipboard
+        const text = await navigator.clipboard.readText();
+        if (!text || text.trim() === '') {
+            alert("Your clipboard is empty.");
+            return;
+        }
+
+        // Use PapaParse to read the raw text without expecting column headers
+        Papa.parse(text, {
+            header: false, // We are mapping raw data, not looking for headers
+            skipEmptyLines: true,
+            complete: function(results) {
+                const data = results.data;
+                let addedCount = 0;
+
+                data.forEach(rowArray => {
+                    let rowObj = {};
+                    
+                    // Map the raw clipboard values to your system's ALL_COLUMNS sequence
+                    rowArray.forEach((val, index) => {
+                        if (ALL_COLUMNS[index]) {
+                            rowObj[ALL_COLUMNS[index]] = val ? String(val).trim() : '';
+                        }
+                    });
+
+                    // Ensure the row has an 'so' before adding it
+                    if (rowObj.so) {
+                        // Stage it in memory so the Submit button sees it as a new edit
+                        if (!editedOrders[rowObj.so]) {
+                            editedOrders[rowObj.so] = {};
+                        }
+                        editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
+                        addedCount++;
+                        
+                        // Push it visually to the top of the table
+                        const existingIndex = databaseOrders.findIndex(o => String(o.so) === String(rowObj.so));
+                        if (existingIndex === -1) {
+                            databaseOrders.unshift(rowObj); 
+                        } else {
+                            // If it exists, update the visual data
+                            databaseOrders[existingIndex] = { ...databaseOrders[existingIndex], ...rowObj };
+                        }
+                    }
+                });
+
+                if (addedCount > 0) {
+                    alert(`${addedCount} order(s) staged from clipboard! Click 'Submit' to push to the database.`);
+                    renderTableStructure(); // Redraw the table to show the new rows
+                } else {
+                    alert("No valid Service Orders (SO) found in the clipboard data.");
+                }
+            },
+            error: function(err) {
+                alert("Error parsing clipboard data: " + err.message);
+            }
+        });
+    } catch (err) {
+        alert("Clipboard access failed. Please ensure you allow browser clipboard permissions. Error: " + err.message);
+    }
+});
+
+
+// --- NEW FEATURE: NEW BLANK ORDER ---
+document.getElementById('newBlankOrderBtn').addEventListener('click', () => {
+    // 1. Force the user to declare the primary key upfront
+    const newSO = prompt("Enter the unique Service Order (SO) number for this new blank order:");
+    
+    if (!newSO || newSO.trim() === '') {
+        alert("Action canceled. A unique SO number is required to create a new order.");
+        return;
+    }
+
+    const cleanSO = newSO.trim();
+
+    // 2. Protect the database by checking if this SO already exists locally
+    const existingOrder = databaseOrders.find(o => String(o.so) === cleanSO);
+    if (existingOrder || editedOrders[cleanSO]) {
+        alert(`Error: SO "${cleanSO}" already exists in the system. Primary keys must be unique.`);
+        return;
+    }
+
+    // 3. Generate a completely blank row mapped to your exact columns
+    const blankOrder = { so: cleanSO };
+    
+    ALL_COLUMNS.forEach(col => {
+        if (col !== 'so') {
+            blankOrder[col] = '';
+        }
+    });
+
+    // 4. Stage it in memory for the final database submission
+    editedOrders[cleanSO] = { ...blankOrder };
+    
+    // 5. Inject it at the very top of the visual table
+    databaseOrders.unshift(blankOrder);
+    
+    // 6. Redraw the UI
+    renderTableStructure();
+});
+
 function sortColumn(colKey) {
     // Toggle sort direction between ascending and descending
     const currentDir = sortDirection[colKey] === 'asc' ? 'desc' : 'asc';
@@ -562,7 +936,6 @@ document.getElementById('masterValueInput').addEventListener('input', (e) => {
 
 
 
-
 // --- 12. MONITOR ENGINE AND DATA INTERSECTION LOGIC ---
 async function loadMonitorDataEngine() {
     // 1. Fetch main rows from the orders table
@@ -577,12 +950,10 @@ async function loadMonitorDataEngine() {
     
     databaseOrders = mainOrders || [];
     monitorTrackingRows = trackRows || [];
-    editedMonitorRows = {};
 
     calculateStatusMetrics();
 }
 
-// Variable to hold currently filtered rows so we don't lose data
 let currentFilteredMonitorRows = [];
 
 document.getElementById('monitorFilterDateBtn').addEventListener('click', () => {
@@ -595,14 +966,11 @@ document.getElementById('monitorFilterDateBtn').addEventListener('click', () => 
     }
 
     const start = new Date(startDateVal);
-    // Set end date to the very end of the day to ensure inclusive filtering
     const end = new Date(endDateVal);
     end.setHours(23, 59, 59, 999); 
     
     currentFilteredMonitorRows = monitorTrackingRows.filter(row => {
         if (!row.assign_date) return false;
-        
-        // Parse the DD-MM-YYYY string from your database
         const parts = row.assign_date.split('-');
         if (parts.length !== 3) return false;
         
@@ -610,7 +978,6 @@ document.getElementById('monitorFilterDateBtn').addEventListener('click', () => 
         return rowDate >= start && rowDate <= end;
     });
 
-    // Re-calculate the sidebar based ONLY on the filtered dates
     calculateStatusMetrics(currentFilteredMonitorRows);
     document.getElementById('monitorTableArea').style.display = 'none';
 });
@@ -623,130 +990,176 @@ document.getElementById('monitorClearDateBtn').addEventListener('click', () => {
     document.getElementById('monitorTableArea').style.display = 'none';
 });
 
-// Modify your existing function to accept a parameter, defaulting to all tracking rows
+// UPDATED: Calculates both Status counts AND Technician counts
 function calculateStatusMetrics(dataToProcess = monitorTrackingRows) {
-    const metricsList = document.getElementById('statusMetricsList');
-    metricsList.innerHTML = '';
+    const statusList = document.getElementById('statusMetricsList');
+    const techList = document.getElementById('technicianMetricsList');
+    
+    statusList.innerHTML = '';
+    techList.innerHTML = '';
 
-    let counts = { "All Tracking Logs": dataToProcess.length };
+    let statusCounts = { "All Tracking Logs": dataToProcess.length };
+    let techCounts = {};
 
-    // Group matching names dynamically from the REPAIR LOG payload now
     dataToProcess.forEach(row => {
+        // Status Tally
         let statusName = row.status ? row.status.trim() : 'Unknown';
         if (statusName === '') statusName = 'Unknown';
-        counts[statusName] = (counts[statusName] || 0) + 1;
+        statusCounts[statusName] = (statusCounts[statusName] || 0) + 1;
+
+        // Technician Tally (Tracks by assigned_tech)
+        let techName = row.assigned_tech ? row.assigned_tech.trim() : '';
+        if (techName) {
+            techCounts[techName] = (techCounts[techName] || 0) + 1;
+        }
     });
 
-    for (const [statusName, totalCount] of Object.entries(counts)) {
+    // Render Status Buttons
+    for (const [statusName, totalCount] of Object.entries(statusCounts)) {
         const li = document.createElement('li');
+        li.className = 'monitor-filter-item'; // Tag for CSS manipulation
         li.innerHTML = `<span>${statusName}</span> <span style="background: var(--border-color); padding: 2px 8px; border-radius: 10px; font-size: 12px;">${totalCount}</span>`;
-        
         li.addEventListener('click', () => {
-            renderSelectedStatusTable(statusName, dataToProcess);
+            document.querySelectorAll('.monitor-filter-item').forEach(el => el.classList.remove('active-monitor-btn'));
+            li.classList.add('active-monitor-btn');
+            renderMonitorTable('status', statusName, dataToProcess);
         });
-        metricsList.appendChild(li);
+        statusList.appendChild(li);
+    }
+
+    // Render Technician Buttons
+    for (const [techName, totalCount] of Object.entries(techCounts)) {
+        const li = document.createElement('li');
+        li.className = 'monitor-filter-item'; // Tag for CSS manipulation
+        li.innerHTML = `<span>${techName}</span> <span style="background: var(--border-color); padding: 2px 8px; border-radius: 10px; font-size: 12px;">${totalCount}</span>`;
+        li.addEventListener('click', () => {
+            document.querySelectorAll('.monitor-filter-item').forEach(el => el.classList.remove('active-monitor-btn'));
+            li.classList.add('active-monitor-btn');
+            renderMonitorTable('technician', techName, dataToProcess);
+        });
+        techList.appendChild(li);
     }
 }
 
-// Add a second parameter to know which data pool to use
-function renderSelectedStatusTable(targetStatus, dataPool = monitorTrackingRows) {
-    document.getElementById('activeMonitorStatusHeader').textContent = `Status View: ${targetStatus}`;
-    document.getElementById('monitorTableArea').style.display = 'block';
-    document.getElementById('monitorSubmitBtn').style.display = 'inline-block';
-
-    // Filter based on repair_log status
-    const rowsToRender = targetStatus === "All Tracking Logs" 
-        ? dataPool 
-        : dataPool.filter(r => (r.status || 'Unknown').trim() === targetStatus || (targetStatus === 'Unknown' && !r.status));
-
+// NEW UNIFIED RENDERER: Handles both Status and Technician views in strictly Read-Only mode
+function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRows) {
+    const headerEl = document.getElementById('activeMonitorStatusHeader');
+    const tableArea = document.getElementById('monitorTableArea');
+    const badgesArea = document.getElementById('technicianBadges');
     const tbody = document.getElementById('monitorTableBody');
+    const theadRow = document.getElementById('monitorHeaderRow');
+    
+    tableArea.style.display = 'block';
+    badgesArea.style.display = 'none'; // Hidden by default
     tbody.innerHTML = '';
+    theadRow.innerHTML = '';
 
+    let rowsToRender = [];
+
+    // 1. FILTER DATA BASED ON VIEW TYPE
+    if (viewType === 'status') {
+        headerEl.textContent = `Status View: ${targetValue}`;
+        rowsToRender = targetValue === "All Tracking Logs" 
+            ? dataPool 
+            : dataPool.filter(r => (r.status || 'Unknown').trim() === targetValue || (targetValue === 'Unknown' && !r.status));
+    } else if (viewType === 'technician') {
+        headerEl.textContent = `Technician View: ${targetValue}`;
+        // Filters based on your rule: matches assigned_by OR assigned_tech
+        rowsToRender = dataPool.filter(r => 
+            (r.assigned_by && r.assigned_by.trim() === targetValue) || 
+            (r.assigned_tech && r.assigned_tech.trim() === targetValue)
+        );
+    }
+
+    // 2. DEFINE COLUMNS (Added 'assigned_by' to table to help trace origin)
+    const columnsConfig = [
+        { key: 'so', label: 'SO', source: 'main' },
+        { key: 'assign_date', label: 'Assign Date', source: 'track' },
+        { key: 'assign_time', label: 'Assign Time', source: 'track' },
+        { key: 'status', label: 'Status', source: 'track' }, 
+        { key: 'days', label: 'Days', source: 'main' },
+        { key: 'rout', label: 'Rout', source: 'main' },
+        { key: 'assigned_by', label: 'Assigned By', source: 'track' },
+        { key: 'assigned_tech', label: 'Assigned Tech', source: 'track' },
+        { key: 'end_tech', label: 'End Tech', source: 'track' },
+        { key: 'end_coord', label: 'End Coord', source: 'track' },
+        { key: 'collected', label: 'Collected', source: 'track' },
+        { key: 'comment', label: 'Comment', source: 'track' }
+    ];
+
+    // 3. BUILD HEADERS DYNAMICALLY
+    columnsConfig.forEach(cfg => {
+        const th = document.createElement('th');
+        th.textContent = cfg.label;
+        theadRow.appendChild(th);
+    });
+
+    // Tracking Variables for Technician Badges
+    let totalCollected = 0;
+    let countHass = 0;
+    let countSmartThings = 0;
+    let countFinished = 0;
+
+    // 4. BUILD ROWS (Strictly Read-Only)
     rowsToRender.forEach(trackingMatch => {
         const tr = document.createElement('tr');
         const currentSO = trackingMatch.so;
-        
-        // Find the main order data to display static columns (like days, rout, history)
         const orderMatch = databaseOrders.find(o => String(o.so) === String(currentSO)) || {};
-
-        // Notice we pull 'status' from the 'track' source now
-        const columnsConfig = [
-            { key: 'so', editable: false, source: 'main' },
-            { key: 'assign_date', editable: false, source: 'track' }, // NEW: Pulls from repair_log
-            { key: 'assign_time', editable: false, source: 'track' }, // NEW: Pulls from repair_log
-            { key: 'status', editable: true, source: 'track' }, 
-            { key: 'days', editable: false, source: 'main' },
-            { key: 'rout', editable: false, source: 'main' },
-            { key: 'assigned_tech', editable: true, source: 'track' },
-            { key: 'end_tech', editable: true, source: 'track' },
-            { key: 'end_coord', editable: true, source: 'track' },
-            { key: 'collected', editable: true, source: 'track' },
-            { key: 'history', editable: false, source: 'main' }
-        ];
 
         columnsConfig.forEach(cfg => {
             const td = document.createElement('td');
+            let val = cfg.source === 'main' ? orderMatch[cfg.key] : trackingMatch[cfg.key];
             
-            let baseValue = '';
-            if (cfg.source === 'main') {
-                baseValue = orderMatch[cfg.key] || '';
-            } else {
-                baseValue = (editedMonitorRows[currentSO] && editedMonitorRows[currentSO][cfg.key] !== undefined)
-                    ? editedMonitorRows[currentSO][cfg.key]
-                    : (trackingMatch[cfg.key] || '');
-            }
-
-            if (cfg.editable) {
-                const input = document.createElement('input');
-                input.value = baseValue;
-                input.style.width = "100%";
-                input.style.boxSizing = "border-box";
-                
-                input.addEventListener('input', (e) => {
-                    if (!editedMonitorRows[currentSO]) {
-                        editedMonitorRows[currentSO] = { 
-                            assignation_id: trackingMatch.assignation_id,
-                            so: currentSO,
-                            assigned_tech: trackingMatch.assigned_tech || '',
-                            end_tech: trackingMatch.end_tech || '',
-                            end_coord: trackingMatch.end_coord || '',
-                            collected: trackingMatch.collected || '',
-                            status: trackingMatch.status || '' // Safely track status edits
-                        };
-                    }
-                    editedMonitorRows[currentSO][cfg.key] = e.target.value;
-                });
-                td.appendChild(input);
-            } else {
-                td.textContent = baseValue;
-                td.style.padding = "10px";
-            }
+            td.textContent = val || '';
+            td.style.padding = "10px";
             tr.appendChild(td);
         });
-
         tbody.appendChild(tr);
+
+        // 5. CALCULATE BADGES (Only matters if viewType is technician)
+        if (viewType === 'technician') {
+            totalCollected += (Number(trackingMatch.collected) || 0);
+            if (trackingMatch.hass && String(trackingMatch.hass).trim() !== '') countHass++;
+            if (trackingMatch.smart_things && String(trackingMatch.smart_things).toLowerCase() === 'yes') countSmartThings++;
+            if (trackingMatch.end_tech && trackingMatch.end_tech.trim() === targetValue) countFinished++;
+        }
     });
+
+    // 6. RENDER BADGES (If Technician View)
+    if (viewType === 'technician') {
+        badgesArea.style.display = 'flex';
+        badgesArea.innerHTML = `
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold;">
+                💰 Collected: <span style="font-size: 1.2em; color: var(--text-color);">${totalCollected}</span>
+            </div>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold;">
+                🔌 Hass: <span style="font-size: 1.2em; color: var(--text-color);">${countHass}</span>
+            </div>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold;">
+                📱 Smart Things: <span style="font-size: 1.2em; color: var(--text-color);">${countSmartThings}</span>
+            </div>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold;">
+                ✅ Finished Orders: <span style="font-size: 1.2em; color: var(--text-color);">${countFinished}</span>
+            </div>
+        `;
+    }
+
+    // 7. FIRE RESIZER ENGINE
+    applyResizableColumns('monitorDataTable', 'mon_cols');
 }
 
-// Handle Submitting tracking changes back to Supabase
-document.getElementById('monitorSubmitBtn').addEventListener('click', async () => {
-    const payloadsToSync = Object.values(editedMonitorRows);
-    if (payloadsToSync.length === 0) {
-        alert("No monitoring tracking adjustments were discovered to update.");
-        return;
-    }
+// --- HUB & CLOSE BUTTONS ---
+// Make sure we remove the old "unsaved changes" warning since it's read-only now
+document.getElementById('monitorHubBtn').addEventListener('click', () => {
+    document.getElementById('monitorTableArea').style.display = 'none';
+    document.getElementById('activeMonitorStatusHeader').textContent = 'Select a Status or Technician from the Left';
+    monitorPage.classList.remove('active');
+    menuPage.classList.add('active');
+});
 
-    // Upsert using the unique assignation_id so Supabase knows exactly which row to update
-    const { error } = await supabaseClient
-        .from(MONITOR_TABLE_NAME)
-        .upsert(payloadsToSync, { onConflict: 'assignation_id' });
-
-    if (error) {
-        alert("Failed to sync tracking data adjustments: " + error.message);
-    } else {
-        alert("Logistical tracking adjustments successfully stored!");
-        loadMonitorDataEngine(); // Reload everything clean
-    }
+document.getElementById('closeMonitorTableBtn').addEventListener('click', () => {
+    document.getElementById('monitorTableArea').style.display = 'none';
+    document.getElementById('activeMonitorStatusHeader').textContent = 'Select a Status or Technician from the Left';
 });
 
 
@@ -759,10 +1172,7 @@ document.getElementById('btnFetchBatchSo').addEventListener('click', () => {
     fetchOrdersForAssignation(soList);
 });
 
-document.getElementById('btnFetchSingleSo').addEventListener('click', () => {
-    const singleSo = document.getElementById('singleSoInput').value.trim();
-    if (singleSo) fetchOrdersForAssignation([singleSo]);
-});
+
 
 async function fetchOrdersForAssignation(soArray) {
     if (soArray.length === 0) return;
@@ -772,62 +1182,37 @@ async function fetchOrdersForAssignation(soArray) {
         .from('orders')
         .select('*')
         .in('so', soArray);
-     // ADD THIS LINE:
+        
     console.log("Supabase returned:", ordersData, "Error:", ordersError);
+    
     if (ordersError) {
         alert("Error fetching orders: " + ordersError.message);
         return;
     }
 
-    // Calculate today's date and format it as DD-MM-YYYY
-    const targetDateObj = new Date();    
-    const dd = String(targetDateObj.getDate()).padStart(2, '0');
-    const mm = String(targetDateObj.getMonth() + 1).padStart(2, '0');
-    const yyyy = targetDateObj.getFullYear();
-    
-    const targetDate = `${dd}-${mm}-${yyyy}`; 
-
-    const { data: logData, error: logError } = await supabaseClient
-        .from('repair_log')
-        .select('so, assigned_tech')
-        .in('so', soArray)
-        .eq('assign_date', targetDate);
-
-    // 3. Build a quick lookup dictionary for today's assigned techs
-    const assignedTechsToday = {};
-    if (logData && !logError) {
-        logData.forEach(log => {
-            // Clean up the word 'EMPTY' if it accidentally got saved to the database
-            assignedTechsToday[log.so] = (log.assigned_tech === 'EMPTY' ? '' : log.assigned_tech);
-        });
-    }
-
-    // 4. Prepare data: Inject the found technicians (Status override removed)
+    // 2. Prepare data using the assigned_tech directly from the orders table
     ordersData.forEach(order => {
-        // REMOVED: order.status = "Technician"; 
-        
-        // Check if we found a technician in the database for today, otherwise leave blank
-        const existingTech = assignedTechsToday[order.so] || '';
+        // Clean up the word 'EMPTY' if it accidentally got saved to the database previously
+        const existingTech = (order.assigned_tech === 'EMPTY' ? '' : order.assigned_tech) || '';
 
         if (!editedAssignations[order.so]) {
+            // Store the order in memory with the tech we just pulled from the orders table
             editedAssignations[order.so] = { ...order, assigned_tech: existingTech };
         } else {
-             // REMOVED: editedAssignations[order.so].status = "Technician";
-             
-             // If a fresh fetch finds a tech, inject it if the user hasn't typed anything yet
+             // If the row is already on the screen but the user hasn't typed a new tech yet, 
+             // update it with what the database currently has
              if(!editedAssignations[order.so].assigned_tech) {
                  editedAssignations[order.so].assigned_tech = existingTech;
              }
         }
     });
 
-    // 5. Merge new fetches with existing ones in the view
+    // 3. Merge new fetches with existing ones in the view
     const newSOs = ordersData.map(d => d.so);
     assignationOrders = [...assignationOrders.filter(o => !newSOs.includes(o.so)), ...ordersData];
     
     renderAssignationTable();
     document.getElementById('batchSoInput').value = '';
-    document.getElementById('singleSoInput').value = '';
 }
 
 let assignationSortDir = {};
@@ -840,6 +1225,17 @@ function renderAssignationTable(dataToRender = assignationOrders) {
     // BUG FIX: Only build the headers and filter inputs if they are empty!
     // This stops the input box from being destroyed while you are actively typing in it.
     if (headerRow.children.length === 0) {
+
+        // --- Add empty header cells for the checkbox column ---
+        const checkHeader = document.createElement('th');
+        checkHeader.textContent = "Select";
+        headerRow.appendChild(checkHeader);
+        
+        const checkFilter = document.createElement('th');
+        filterRow.appendChild(checkFilter);
+        // --- end of Add empty header cells for the checkbox column ---
+
+
         ASSIGN_COLUMNS.forEach(colKey => {
             // 1. Header with Sorting capability
             const th = document.createElement('th');
@@ -860,6 +1256,8 @@ function renderAssignationTable(dataToRender = assignationOrders) {
             filterTd.appendChild(filterInput);
             filterRow.appendChild(filterTd);
         });
+
+        attachHeaderDragLogic('assignHeaderRow', ASSIGN_COLUMNS, 'assign_order', renderAssignationTable);
     }
 
     // Only wipe the body, leaving the headers intact
@@ -869,6 +1267,25 @@ function renderAssignationTable(dataToRender = assignationOrders) {
     dataToRender.forEach(row => {
         const tr = document.createElement('tr');
         const currentSO = row.so;
+
+        // --- NEW: Inject the Checkbox Cell ---
+        const checkTd = document.createElement('td');
+        checkTd.style.textAlign = 'center';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.style.width = 'auto'; 
+        checkbox.checked = selectedAssignationOrders.has(currentSO);
+        
+        checkbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                selectedAssignationOrders.add(currentSO);
+            } else {
+                selectedAssignationOrders.delete(currentSO);
+            }
+        });
+        checkTd.appendChild(checkbox);
+        tr.appendChild(checkTd);
+        // --- end of Inject the Checkbox Cell ---
 
         ASSIGN_COLUMNS.forEach(colKey => {
             const td = document.createElement('td');
@@ -917,29 +1334,55 @@ function renderAssignationTable(dataToRender = assignationOrders) {
                 editedAssignations[currentSO][colKey] = e.target.value;
             });
 
-            // --- ADDED: Active Tracking Header Link ---
+            // --- UPDATED: Active Tracking & Highlighting ---
             input.addEventListener('focus', (e) => {
-                activeInputTarget = e.target; // Reuse your existing global tracking variable
+                activeInputTarget = e.target; 
                 
+                // 1. VISUAL HIGHLIGHTING
+                // Clear existing highlights from the whole table first
+                const allRows = document.querySelectorAll('#assignTableBody tr');
+                allRows.forEach(r => {
+                    r.style.backgroundColor = ''; // Reset row
+                    r.querySelectorAll('input').forEach(i => i.style.backgroundColor = ''); // Reset cells
+                });
+
+                // Apply darker background to the active row, and even darker to the active input
+                // Using rgba with black lets it blend nicely over your dark/greenish themes
+                tr.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; 
+                e.target.style.backgroundColor = 'rgba(0, 0, 0, 0.05)';
+
+                // 2. MASTER EDIT CONTAINER UPDATES
                 const masterSOKey = document.getElementById('assignMasterSOKey');
                 const masterHeaderLabel = document.getElementById('assignMasterHeaderLabel');
                 const masterValueInput = document.getElementById('assignMasterValueInput');
 
                 if (masterSOKey && masterHeaderLabel && masterValueInput) {
-                    masterSOKey.textContent = `SO: (${currentSO}) - `;
-                    masterHeaderLabel.textContent = `${colKey === 'so' ? 'SO' : colKey}: `;
+                    
+                    // Pull current data (checking edited memory first, then the base row)
+                    const orderData = editedAssignations[currentSO] || row;
+                    const rout = orderData.rout || 'N/A';
+                    const model = orderData.model || 'N/A';
+                    const address = orderData.address || 'N/A';
+
+                    // Inject the rich tracking string 
+                    masterSOKey.innerHTML = `<span style="color: var(--text-color); opacity: 0.7;">SO:</span> ${currentSO} &nbsp;|&nbsp; <span style="color: var(--text-color); opacity: 0.7;">Route:</span> ${rout} &nbsp;|&nbsp; <span style="color: var(--text-color); opacity: 0.7;">Model:</span> ${model} &nbsp;|&nbsp; <span style="color: var(--text-color); opacity: 0.7;">Address:</span> ${address}`;
+                    
+                    // Update label and show input
+                    masterHeaderLabel.innerHTML = `&nbsp;&nbsp;<strong>▶ Editing [${colKey === 'so' ? 'SO' : colKey}]:</strong> `;
                     
                     masterValueInput.value = e.target.value;
                     masterValueInput.style.display = 'inline-block';
                 }
             });
-            // --- END ADDED ---
+            // --- END UPDATED BLOCK ---
 
             td.appendChild(input);
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
     });
+    // Fire resizer for assignation page table 
+    applyResizableColumns('assignationTable', 'assign_cols');
 }
 
 // --- FILTERING FOR ASSIGNATION PAGE ---
@@ -1424,3 +1867,1275 @@ function renderBonusesData(rows, counts) {
         tbody.appendChild(tr);
     });
 }
+
+
+// --- My orders - TECHNICIAN PAGE LOGIC ---
+
+let activeTechTicket = null; // Keeps track of the currently opened order
+
+async function loadActiveTickets() {
+    if (!currentUser) return;
+
+    // --- COORDINATOR ROUTE as they have different pool of tickets ---
+    if (currentUser.role.includes('coordinator')) {
+        document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Loading Back Office Pool...</h3>";
+        try {
+            // Fetch directly from orders table where status is back_office
+            const { data, error } = await supabaseClient
+                .from('orders')
+                .select('*')
+                .eq('status', 'back_office');
+
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>No orders in the Back Office pool! 🎉</h3>";
+                return;
+            }
+
+            // Sort by Days (Highest first)
+            data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
+            renderTickets(data);
+        } catch (err) {
+            alert("Error loading coordinator tickets: " + err.message);
+        }
+        return; // Stop here, so it doesn't run the Technician code below
+    }
+    // ---------end of COORDINATOR ROUTE------------
+
+    // ---TECHNICIAN ROUTE ---
+    if (!navigator.onLine) {
+        loadTicketsFromVault();
+        return; 
+    }
+
+    try {
+        document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Loading tickets...</h3>";
+
+        const { data: logs, error: logErr } = await supabaseClient.from('repair_log').select('*');
+        if (logErr) throw logErr;
+
+        logs.sort((a, b) => {
+            const parseDate = (d) => d ? d.split('-').reverse().join('-') : '1970-01-01';
+            const timeA = new Date(`${parseDate(a.assign_date)}T${a.assign_time || '00:00'}`);
+            const timeB = new Date(`${parseDate(b.assign_date)}T${b.assign_time || '00:00'}`);
+            return timeB - timeA; 
+        });
+
+        const latestLogs = {};
+        logs.forEach(log => {
+            if (!latestLogs[log.so]) latestLogs[log.so] = log;
+        });
+
+        const myTicketSOs = Object.values(latestLogs)
+            .filter(log => log.status === 'Technician' && log.assigned_tech === currentUser.username)
+            .map(log => log.so);
+
+        if (myTicketSOs.length === 0) {
+            document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>You have no active orders! 🎉</h3>";
+            if (localDB) {
+                const transaction = localDB.transaction('inbox', 'readwrite');
+                const store = transaction.objectStore('inbox');
+                store.put({ id: 'latest_tickets', tickets: [] });
+            }
+            return;
+        }
+
+        const { data: ordersData, error: orderErr } = await supabaseClient
+            .from('orders')
+            .select('*')
+            .in('so', myTicketSOs);
+
+        if (orderErr) throw orderErr;
+
+        ordersData.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
+
+        if (localDB) {
+            const transaction = localDB.transaction('inbox', 'readwrite');
+            const store = transaction.objectStore('inbox');
+            store.put({ id: 'latest_tickets', tickets: ordersData });
+            console.log("Offline snapshot successfully updated!");
+        }
+
+        renderTickets(ordersData);
+
+    } catch (err) {
+        console.error('Network request failed, falling back to Vault:', err);
+        loadTicketsFromVault();
+    }
+}
+
+function renderTickets(tickets) {
+    const container = document.getElementById('ticketContainer');
+    container.innerHTML = '';
+
+    try {
+        tickets.forEach(ticket => {
+            const card = document.createElement('div');
+            card.className = 'ticket-card';
+            
+            // ARMORED: We use String() to force numbers into text so .replace() never crashes!
+            const safePhone1 = ticket.phone ? String(ticket.phone).replace(/\s+/g, '') : '';
+            const safePhone2 = ticket.phone_2 ? String(ticket.phone_2).replace(/\s+/g, '') : '';
+
+            const p1 = ticket.phone ? `<a class="phone-link" href="tel:${safePhone1}">📞 ${ticket.phone}</a>` : 'N/A';
+            const p2 = ticket.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${ticket.phone_2}</a>` : 'N/A';
+
+            card.innerHTML = `
+                <div class="ticket-header">
+                    <span>SO: ${ticket.so}</span>
+                    <span style="color:#ffb300;">Days: ${ticket.days || 0}</span>
+                </div>
+                <div class="ticket-row"><span>Name: ${ticket.name || 'N/A'}</span> <span>${p1}</span></div>
+                <div class="ticket-row"><span>Date: ${ticket.date || 'N/A'}</span> <span>${p2}</span></div>
+                <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
+                <div class="ticket-row"><span><strong>Model:</strong> ${ticket.model || 'N/A'}</span> <span><strong>SN:</strong> ${ticket.serial || 'N/A'}</span></div>
+                <button class="details-btn">Details & Action</button>
+            `;
+
+            card.querySelector('.details-btn').addEventListener('click', () => openDetailsModal(ticket));
+            container.appendChild(card);
+        });
+    } catch (err) {
+        console.error("Error building ticket cards:", err);
+        alert("CRASH PREVENTED: An error occurred while drawing the tickets: " + err.message);
+    }
+}
+// --- MODAL & VALIDATION ENGINE ---
+
+const detailsModal = document.getElementById('detailsModal');
+const collectedInput = document.getElementById('collectedInput');
+const reasonGroup = document.getElementById('reasonGroup');
+const reasonSelect = document.getElementById('reasonSelect');
+const commentInput = document.getElementById('commentInput');
+const confirmTechBtn = document.getElementById('confirmTechBtn');
+
+// Helper to generate the Download or Greyed-out link
+function renderMediaLink(elementId, url, label) {
+    const el = document.getElementById(elementId);
+    if (url && url.trim() !== '') {
+        el.innerHTML = `<a href="${url}" target="_blank" style="color: #1976d2; font-weight: bold; text-decoration: underline;">📥 ${label}</a>`;
+    } else {
+        el.innerHTML = `<span style="color: #9e9e9e; text-decoration: line-through;">${label}</span>`;
+    }
+}
+
+function openDetailsModal(ticket) {
+    activeTechTicket = ticket;
+    
+    // --- WIPE PREVIOUS UPLOAD TEXT ---
+    const progressBox = document.getElementById('uploadProgressContainer');
+    if (progressBox) {
+        progressBox.style.display = 'none';
+        progressBox.innerHTML = '';
+    }
+    // ---------------------------------
+    
+    // 1. Render Media Links (Shared for both roles)
+    renderMediaLink('linkImg1', ticket.img1, 'Img 1');
+    renderMediaLink('linkImg2', ticket.img2, 'Img 2');
+    renderMediaLink('linkImg3', ticket.img3, 'Img 3');
+    renderMediaLink('linkVid1', ticket.vid1, 'Vid 1');
+    renderMediaLink('linkVid2', ticket.vid2, 'Vid 2');
+    renderMediaLink('linkVid3', ticket.vid3, 'Vid 3');
+
+    // --- Generate Clickable Phone Links for Modal ---
+    const safePhone1 = ticket.phone ? String(ticket.phone).replace(/\s+/g, '') : '';
+    const safePhone2 = ticket.phone_2 ? String(ticket.phone_2).replace(/\s+/g, '') : '';
+    const p1 = ticket.phone ? `<a class="phone-link" href="tel:${safePhone1}">📞 ${ticket.phone}</a>` : 'N/A';
+    const p2 = ticket.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${ticket.phone_2}</a>` : 'N/A';
+    // -------------------------------------------------
+
+    // 2. Populate Read-Only Details
+    document.getElementById('modalReadOnlyDetails').innerHTML = `
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+            <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
+        </div>
+        <div class="ticket-row"><span><strong>Name:</strong> ${ticket.name || 'N/A'}</span> <span>${p1}</span></div>
+        <div class="ticket-row"><span><strong>Date:</strong> ${ticket.date || 'N/A'}</span> <span>${p2}</span></div>
+        <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
+        <div class="ticket-row"><span><strong>Model:</strong> ${ticket.model || 'N/A'}</span> <span><strong>SN:</strong> ${ticket.serial || 'N/A'}</span></div>
+        <hr style="border-color: var(--border-color); margin: 12px 0;">
+        <strong>Remark:</strong> ${ticket.remark || 'N/A'}<br>
+        <strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}<br>
+        <strong>Route:</strong> ${ticket.rout || 'N/A'}<br>
+        <strong>I/O:</strong> ${ticket.io || 'N/A'}<br>
+        <strong>Parts:</strong> ${ticket.part_1||''} (x${ticket.qty_1||0}), ${ticket.part_2||''} (x${ticket.qty_2||0})<br>
+        <strong>Call Details:</strong> ${ticket.call_details || 'N/A'}
+    `;
+
+    // 3. ROLE-BASED UI TOGGLE
+    if (currentUser.role.includes('coordinator')) {
+        // Hide Tech Zone
+        document.getElementById('techActionSection').style.display = 'none';
+        document.getElementById('confirmTechBtn').style.display = 'none';
+        
+        // Show Coordinator Zone & History Zone
+        document.getElementById('coordActionSection').style.display = 'block';
+        document.getElementById('coordHistorySection').style.display = 'block';
+        
+        const confirmCoordBtn = document.getElementById('confirmCoordBtn');
+        confirmCoordBtn.style.display = 'block';
+        
+        // --- NEW: FETCH TICKET HISTORY FROM REPAIR_LOG ---
+        document.getElementById('lastPushedByValue').textContent = 'Loading...';
+        document.getElementById('coordCommentsList').innerHTML = '<span style="color: gray;">Loading comments...</span>';
+
+        supabaseClient.from('repair_log')
+            .select('*')
+            .eq('so', ticket.so)
+            .then(({ data: logs, error }) => {
+                if (error) {
+                    document.getElementById('coordCommentsList').innerHTML = '<span style="color: #d32f2f;">Failed to load history.</span>';
+                    document.getElementById('lastPushedByValue').textContent = 'Error loading data';
+                    return;
+                }
+                
+                if (!logs || logs.length === 0) {
+                     document.getElementById('coordCommentsList').innerHTML = '<span style="color: gray;">No comments found.</span>';
+                     document.getElementById('lastPushedByValue').textContent = 'Unknown';
+                     return;
+                }
+
+                // Sort logs newest-first so the most recent events are at the top
+                logs.sort((a, b) => {
+                    const parseDate = (d) => d ? d.split('-').reverse().join('-') : '1970-01-01';
+                    const timeA = new Date(`${parseDate(a.assign_date)}T${a.assign_time || '00:00'}`);
+                    const timeB = new Date(`${parseDate(b.assign_date)}T${b.assign_time || '00:00'}`);
+                    return timeB - timeA; 
+                });
+
+                // 1. Find who last pushed this to back_office
+                const backOfficeLogs = logs.filter(l => l.status === 'back_office');
+                if (backOfficeLogs.length > 0) {
+                    const latestPush = backOfficeLogs[0]; // First item is the newest
+                    document.getElementById('lastPushedByValue').textContent = `${latestPush.assigned_by || 'Unknown'} (on ${latestPush.assign_date} at ${latestPush.assign_time})`;
+                } else {
+                    document.getElementById('lastPushedByValue').textContent = 'N/A';
+                }
+
+                // 2. Extract and format all comments
+                const commentLogs = logs.filter(l => l.comment && l.comment.trim() !== '');
+                const commentsContainer = document.getElementById('coordCommentsList');
+                commentsContainer.innerHTML = '';
+
+                if (commentLogs.length > 0) {
+                    commentLogs.forEach(log => {
+                        const div = document.createElement('div');
+                        div.style.padding = '8px';
+                        div.style.background = 'var(--bg-color)';
+                        div.style.border = '1px solid var(--border-color)';
+                        div.style.borderRadius = '4px';
+                        div.innerHTML = `
+                            <strong style="color: #4caf50;">${log.assigned_by || 'Unknown'}</strong> 
+                            <span style="font-size: 11px; opacity: 0.7;">(${log.assign_date} at ${log.assign_time}):</span><br>
+                            <span style="margin-top: 4px; display: inline-block;">${log.comment}</span>
+                        `;
+                        commentsContainer.appendChild(div);
+                    });
+                } else {
+                    commentsContainer.innerHTML = '<span style="color: gray;">No comments recorded yet.</span>';
+                }
+            });
+        // -------------------------------------------------
+
+        // Reset Coord Form
+        document.getElementById('coordStatusSelect').value = '';
+        confirmCoordBtn.disabled = true;
+        confirmCoordBtn.textContent = 'Confirm (Coord) 🔒';
+
+    } else {
+        // Show Tech Zone
+        document.getElementById('techActionSection').style.display = 'block';
+        document.getElementById('confirmTechBtn').style.display = 'block';
+        
+        // Hide Coordinator Zone & History Zone
+        document.getElementById('coordActionSection').style.display = 'none';
+        document.getElementById('coordHistorySection').style.display = 'none'; // NEW
+        document.getElementById('confirmCoordBtn').style.display = 'none';
+
+        // Execute original Tech form reset
+        collectedInput.value = '';
+        reasonSelect.value = '';
+        commentInput.value = '';
+        document.getElementById('smartThingsCheck').checked = false;
+        document.getElementById('hassCheck').checked = false
+        // --- Reset the Warranty Checkbox ---
+        document.getElementById('warrantyCheck').checked = false;
+
+        reasonGroup.style.display = 'none';
+
+        document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
+            input.value = ''; 
+            const labelBtn = input.parentElement;
+            labelBtn.style.backgroundColor = ''; 
+            labelBtn.style.color = ''; 
+            if (labelBtn.childNodes[0].nodeValue) {
+                const originalIcon = input.accept.includes('video') ? '📹' : '📷';
+                labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('✅', originalIcon);
+            }
+        });
+        validateTechForm(); 
+    }
+
+    detailsModal.style.display = 'flex';
+}
+
+// Close Triggers
+document.getElementById('closeModalBtn').addEventListener('click', () => detailsModal.style.display = 'none');
+document.getElementById('cancelModalBtn').addEventListener('click', () => detailsModal.style.display = 'none');
+
+// --- MEDIA BUTTON VISUAL FEEDBACK (FIXED) ---
+document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
+    input.addEventListener('change', function() {
+        // Find the label that wraps this specific input
+        const labelBtn = this.parentElement; 
+        
+        if (this.files && this.files.length > 0) {
+            // A file was selected! Change color safely
+            labelBtn.style.backgroundColor = '#2e7d32'; // Green
+            labelBtn.style.color = 'white';
+            
+            // Safely update ONLY the text node (child 0), leaving the hidden input untouched
+            if (labelBtn.childNodes[0].nodeValue) {
+                labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('📷', '✅').replace('📹', '✅');
+            }
+        } else {
+            // They cancelled the selection, revert it safely
+            labelBtn.style.backgroundColor = '';
+            labelBtn.style.color = '';
+            
+            if (labelBtn.childNodes[0].nodeValue) {
+                labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('✅', this.accept.includes('video') ? '📹' : '📷');
+            }
+        }
+    });
+});
+
+// Validation Logic Gate
+function validateTechForm() {
+    const money = parseFloat(collectedInput.value) || 0;
+    const reason = reasonSelect.value;
+    const comment = commentInput.value.trim();
+    const isWarranty = document.getElementById('warrantyCheck').checked;
+
+    // Show Reason Dropdown if money is collected OR warranty is checked
+    if (money > 0 || isWarranty) {
+        reasonGroup.style.display = 'flex';
+    } else {
+        reasonGroup.style.display = 'none';
+        reasonSelect.value = ''; // Clear it if neither is active
+    }
+
+    // 1. Comment is ALWAYS the master key (must not be empty)
+    const isCommentValid = comment !== '';
+
+    // 2. Financial Rule: If money is greater than 0, they MUST pick a reason.
+    // If money is 0, this rule automatically passes.
+    let isFinancialValid = true;
+    if (money > 0 && reason === '') {
+        isFinancialValid = false; 
+    }
+
+    // BOTH conditions must be met to unlock the confirm button
+    if (isCommentValid && isFinancialValid) {
+        confirmTechBtn.disabled = false;
+        confirmTechBtn.textContent = 'Confirm ✅';
+    } else {
+        confirmTechBtn.disabled = true;
+        confirmTechBtn.textContent = 'Confirm 🔒';
+    }
+}
+
+// Listen for typing/changes to run the validation gate instantly
+collectedInput.addEventListener('input', validateTechForm);
+reasonSelect.addEventListener('change', validateTechForm);
+commentInput.addEventListener('input', validateTechForm);
+// Listen for clicks on the Warranty box!
+document.getElementById('warrantyCheck').addEventListener('change', validateTechForm);
+
+
+// Submit Button Action
+confirmTechBtn.addEventListener('click', async () => {
+    if (!activeTechTicket) return;
+
+    // Lock button to prevent double-clicks and update text to show progress
+    confirmTechBtn.disabled = true;
+    confirmTechBtn.textContent = 'Uploading Media...';
+
+    // 1. Grab files from inputs
+    const fileImg1 = document.getElementById('img1Input').files[0];
+    const fileImg2 = document.getElementById('img2Input').files[0];
+    const fileImg3 = document.getElementById('img3Input').files[0];
+    const fileVid1 = document.getElementById('vid1Input').files[0];
+    const fileVid2 = document.getElementById('vid2Input').files[0];
+    const fileVid3 = document.getElementById('vid3Input').files[0];
+
+    // 2. Prepare the visual checklist box
+    const progressBox = document.getElementById('uploadProgressContainer');
+    progressBox.style.display = 'flex';
+    progressBox.style.flexDirection = 'column';
+    progressBox.innerHTML = ''; // Wipe clean from previous tickets
+
+    // Helper function to draw or update a line on the screen
+    function setProgressLine(id, text, isFinished = false) {
+        let line = document.getElementById(id);
+        if (!line) {
+            line = document.createElement('div');
+            line.id = id;
+            line.style.margin = '4px 0';
+            progressBox.appendChild(line);
+        }
+        line.innerHTML = isFinished ? `✅ ${text}` : `⏳ ${text}...`;
+    }
+
+    // --- 3. NEW: PHASE 4 OFFLINE INTERCEPTOR ---
+    if (!navigator.onLine) {
+        setProgressLine('step-offline', 'No internet detected. Packaging data...');
+        
+        // Get current exact time
+        const now = new Date();
+        const dd = String(now.getDate()).padStart(2, '0');
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const yyyy = now.getFullYear();
+        const hh = String(now.getHours()).padStart(2, '0');
+        const min = String(now.getMinutes()).padStart(2, '0');
+
+        // Build the text payload (without URLs)
+        const textData = {
+            so: activeTechTicket.so,
+            status: 'back_office',
+            assigned_by: currentUser.username,
+            assign_date: `${dd}-${mm}-${yyyy}`,
+            assign_time: `${hh}:${min}`,
+            smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
+            hass: document.getElementById('hassCheck').checked ? 'yes' : '',
+            collected: collectedInput.value || '0',
+            collected_reason: reasonSelect.value || '',
+            comment: commentInput.value.trim()
+        };
+
+        // Package the raw File objects and text into one bundle
+        const offlineBundle = {
+            so: activeTechTicket.so,
+            timestamp: Date.now(), // Helps us upload the oldest tickets first later
+            textData: textData,
+            files: { img1: fileImg1, img2: fileImg2, img3: fileImg3, vid1: fileVid1, vid2: fileVid2, vid3: fileVid3 }
+        };
+
+        if (localDB) {
+            // Open BOTH tables so we can move the ticket from "To Do" to "Done"
+            const transaction = localDB.transaction(['outbox', 'inbox'], 'readwrite');
+            const outboxStore = transaction.objectStore('outbox');
+            const inboxStore = transaction.objectStore('inbox');
+
+            // 1. Drop the bundle into the outbox
+            outboxStore.put(offlineBundle);
+
+            // 2. Remove the ticket from the local inbox so it visually disappears from the screen!
+            const inboxReq = inboxStore.get('latest_tickets');
+            inboxReq.onsuccess = function() {
+                if (inboxReq.result && inboxReq.result.tickets) {
+                    const remainingTickets = inboxReq.result.tickets.filter(t => String(t.so) !== String(activeTechTicket.so));
+                    inboxStore.put({ id: 'latest_tickets', tickets: remainingTickets });
+                }
+            };
+
+            // 3. When the database finishes saving...
+            transaction.oncomplete = function() {
+                setProgressLine('step-offline', 'Safely stored in Offline Vault!', true);
+                alert("You are offline. Ticket saved to local Vault! Please sync when you regain connection.");
+                
+                detailsModal.style.display = 'none';
+                document.querySelectorAll('.media-grid input[type="file"]').forEach(input => input.value = '');
+                
+                loadActiveTickets(); // Redraws the UI (the ticket is now gone!)
+            };
+        }
+        return; // CRITICAL: Stop the function here so it doesn't try to upload to Supabase!
+    }
+    // -------------------------------------------
+
+
+    // --- 4. EXISTING ONLINE SEQUENCE ---
+    // Upload sequentially, updating the UI for each existing file
+    let urlImg1 = '', urlImg2 = '', urlImg3 = '', urlVid1 = '', urlVid2 = '', urlVid3 = '';
+
+    if (fileImg1) {
+        setProgressLine('step-img1', 'Uploading Img 1');
+        urlImg1 = await uploadMediaToSupabase(fileImg1, activeTechTicket.so, 'img1');
+        setProgressLine('step-img1', 'Img 1 Complete', true);
+    }
+    if (fileImg2) {
+        setProgressLine('step-img2', 'Uploading Img 2');
+        urlImg2 = await uploadMediaToSupabase(fileImg2, activeTechTicket.so, 'img2');
+        setProgressLine('step-img2', 'Img 2 Complete', true);
+    }
+    if (fileImg3) {
+        setProgressLine('step-img3', 'Uploading Img 3');
+        urlImg3 = await uploadMediaToSupabase(fileImg3, activeTechTicket.so, 'img3');
+        setProgressLine('step-img3', 'Img 3 Complete', true);
+    }
+    if (fileVid1) {
+        setProgressLine('step-vid1', 'Uploading Vid 1 (This may take a moment)');
+        urlVid1 = await uploadMediaToSupabase(fileVid1, activeTechTicket.so, 'vid1');
+        setProgressLine('step-vid1', 'Vid 1 Complete', true);
+    }
+    if (fileVid2) {
+        setProgressLine('step-vid2', 'Uploading Vid 2');
+        urlVid2 = await uploadMediaToSupabase(fileVid2, activeTechTicket.so, 'vid2');
+        setProgressLine('step-vid2', 'Vid 2 Complete', true);
+    }
+    if (fileVid3) {
+        setProgressLine('step-vid3', 'Uploading Vid 3');
+        urlVid3 = await uploadMediaToSupabase(fileVid3, activeTechTicket.so, 'vid3');
+        setProgressLine('step-vid3', 'Vid 3 Complete', true);
+    }
+
+    setProgressLine('step-db', 'Saving text to database');
+
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    
+    const logPayload = {
+        so: activeTechTicket.so,
+        status: 'back_office',
+        assigned_by: currentUser.username,
+        assign_date: `${dd}-${mm}-${yyyy}`,
+        assign_time: `${hh}:${min}`,
+        smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
+        hass: document.getElementById('hassCheck').checked ? 'yes' : '',
+        collected: collectedInput.value || '0',
+        collected_reason: reasonSelect.value || '',
+        comment: commentInput.value.trim(),
+        
+        img1: urlImg1, img2: urlImg2, img3: urlImg3,
+        vid1: urlVid1, vid2: urlVid2, vid3: urlVid3
+    };
+
+    const { error: logErr } = await supabaseClient.from('repair_log').insert(logPayload);
+
+    if (logErr) {
+        alert("Sync Failed (Logs): " + logErr.message);
+        validateTechForm(); 
+        return;
+    }
+
+    const { error: orderErr } = await supabaseClient
+        .from('orders')
+        .update({ 
+            status: 'back_office',
+            img1: urlImg1, img2: urlImg2, img3: urlImg3,
+            vid1: urlVid1, vid2: urlVid2, vid3: urlVid3
+        })
+        .eq('so', activeTechTicket.so);
+
+    if (orderErr) {
+        alert("Sync Failed (Orders): " + orderErr.message);
+        validateTechForm(); 
+        return;
+    }
+
+    alert("Ticket Successfully Submitted with Media!");
+    detailsModal.style.display = 'none';
+    document.querySelectorAll('.media-grid input[type="file"]').forEach(input => input.value = '');
+    loadActiveTickets(); 
+});
+
+
+// --- COORDINATOR MODAL LOGIC ---
+const coordStatusSelect = document.getElementById('coordStatusSelect');
+const confirmCoordBtn = document.getElementById('confirmCoordBtn');
+
+// Unlock button when a status is chosen
+coordStatusSelect.addEventListener('change', () => {
+    if (coordStatusSelect.value !== '') {
+        confirmCoordBtn.disabled = false;
+        confirmCoordBtn.textContent = 'Confirm Action ✅';
+    } else {
+        confirmCoordBtn.disabled = true;
+        confirmCoordBtn.textContent = 'Confirm (Coord) 🔒';
+    }
+});
+
+// Submit Coord Changes
+confirmCoordBtn.addEventListener('click', async () => {
+    if (!activeTechTicket || !coordStatusSelect.value) return;
+
+    // Lock button to prevent double-clicks
+    confirmCoordBtn.disabled = true;
+    confirmCoordBtn.textContent = 'Processing...';
+
+    const newStatus = coordStatusSelect.value;
+    
+    // Calculate timestamp
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+
+    // 1. Log the action in repair_log
+    const logPayload = {
+        so: activeTechTicket.so,
+        status: newStatus, // "Pending" or "Complete"
+        assigned_by: currentUser.username, // Record who made the change
+        assign_date: `${dd}-${mm}-${yyyy}`,
+        assign_time: `${hh}:${min}`
+    };
+
+    const { error: logErr } = await supabaseClient.from('repair_log').insert(logPayload);
+    
+    if (logErr) {
+        alert("Action failed (Log Error): " + logErr.message);
+        confirmCoordBtn.disabled = false;
+        confirmCoordBtn.textContent = 'Confirm Action ✅';
+        return;
+    }
+
+    // 2. Update the main orders table
+    const { error: orderErr } = await supabaseClient
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('so', activeTechTicket.so);
+
+    if (orderErr) {
+        alert("Action failed (Order Update Error): " + orderErr.message);
+        confirmCoordBtn.disabled = false;
+        confirmCoordBtn.textContent = 'Confirm Action ✅';
+        return;
+    }
+
+    alert(`Success: Order ${activeTechTicket.so} has been moved to ${newStatus}!`);
+    
+    // Close modal and refresh the list (the ticket will vanish because status is no longer back_office)
+    detailsModal.style.display = 'none';
+    loadActiveTickets(); 
+});
+
+
+
+// --- MEDIA UPLOAD ENGINE ---
+
+/**
+ * Uploads a file to Supabase Storage and returns the public URL.
+ * @param {File} fileObject - The actual image or video file from the input.
+ * @param {string} soNumber - The Service Order number (used to organize files).
+ * @param {string} fileTypeLabel - E.g., 'img1' or 'vid1' to keep names unique.
+ */
+async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel) {
+    console.log(`Preparing to upload ${fileTypeLabel}... Does the file exist?`, fileObject);
+
+    // 1. Safety check
+    if (!fileObject) return '';
+
+    const fileExtension = fileObject.name.split('.').pop();
+
+    // 2. Build the exact Date & Time strings
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+
+    // Using a dash (-) instead of a colon (:) so Windows computers don't crash if you download the file later!
+    const formattedDate = `${dd}-${mm}-${yyyy}`;
+    const formattedTime = `${hh}-${min}`;
+
+    // 3. Create the requested file name: e.g., "4258163256img1_07-07-2026_04-18.jpg"
+    const uniqueFileName = `${soNumber}${fileTypeLabel}_${formattedDate}_${formattedTime}.${fileExtension}`;
+
+    try {
+        // 4. Send the file to the 'repair_media' bucket in Supabase
+        const { data, error } = await supabaseClient
+            .storage
+            .from('repair_media')
+            .upload(uniqueFileName, fileObject);
+
+        if (error) {
+            console.error(`Upload failed for ${fileTypeLabel}:`, error);
+            alert(`Upload blocked by Supabase for ${fileTypeLabel}: ` + error.message);
+            return '';
+        }
+
+        // 5. If upload succeeds, ask Supabase for the direct public web link
+        const { data: publicUrlData } = supabaseClient
+            .storage
+            .from('repair_media')
+            .getPublicUrl(uniqueFileName);
+
+        return publicUrlData.publicUrl;
+
+    } catch (err) {
+        console.error("Unexpected error during upload:", err);
+        return '';
+    }
+}
+
+// ==========================================
+// --- PHASE 5: OFFLINE SYNC ENGINE ---
+// ==========================================
+
+const offlineSyncBanner = document.getElementById('offlineSyncBanner');
+const syncCountText = document.getElementById('syncCountText');
+
+// 1. Check the vault and update the banner
+window.checkOfflineVault = function() {
+    if (!localDB) return;
+    const transaction = localDB.transaction('outbox', 'readonly');
+    const store = transaction.objectStore('outbox');
+    const countRequest = store.count();
+
+    countRequest.onsuccess = function() {
+        if (countRequest.result > 0) {
+            syncCountText.textContent = countRequest.result;
+            offlineSyncBanner.style.display = 'block';
+        } else {
+            offlineSyncBanner.style.display = 'none';
+        }
+    };
+};
+
+// 2. The Sync Process
+offlineSyncBanner.addEventListener('click', async () => {
+    // Safety check: Don't let them try to sync if they are still offline!
+    if (!navigator.onLine) {
+        alert("You are still offline! Please connect to Wi-Fi or Mobile Data to sync.");
+        return;
+    }
+
+    // Lock the banner so they can't click it twice
+    offlineSyncBanner.innerHTML = "⏳ Syncing Data... Please leave the app open.";
+    offlineSyncBanner.style.backgroundColor = "#f57c00"; // Orange to show it's working
+    offlineSyncBanner.style.pointerEvents = "none"; 
+
+    // Pull all saved bundles from the vault
+    const transaction = localDB.transaction('outbox', 'readonly');
+    const store = transaction.objectStore('outbox');
+    const request = store.getAll();
+
+    request.onsuccess = async function() {
+        const pendingOrders = request.result;
+
+        // Loop through each ticket one by one
+        for (const bundle of pendingOrders) {
+            console.log(`Syncing offline SO: ${bundle.so}...`);
+
+            // A. Upload the media (the function automatically skips if the file is missing)
+            const urlImg1 = await uploadMediaToSupabase(bundle.files.img1, bundle.so, 'img1');
+            const urlImg2 = await uploadMediaToSupabase(bundle.files.img2, bundle.so, 'img2');
+            const urlImg3 = await uploadMediaToSupabase(bundle.files.img3, bundle.so, 'img3');
+            const urlVid1 = await uploadMediaToSupabase(bundle.files.vid1, bundle.so, 'vid1');
+            const urlVid2 = await uploadMediaToSupabase(bundle.files.vid2, bundle.so, 'vid2');
+            const urlVid3 = await uploadMediaToSupabase(bundle.files.vid3, bundle.so, 'vid3');
+
+            // B. Attach the generated URLs to the text payload we saved earlier
+            const finalLogPayload = {
+                ...bundle.textData,
+                img1: urlImg1, img2: urlImg2, img3: urlImg3,
+                vid1: urlVid1, vid2: urlVid2, vid3: urlVid3
+            };
+
+            // C. Push the combined data to the repair_log table
+            const { error: logErr } = await supabaseClient.from('repair_log').insert(finalLogPayload);
+            if (logErr) {
+                console.error("Failed to sync log for " + bundle.so, logErr);
+                continue; // Skip deleting this ticket so we can try syncing it again later!
+            }
+
+            // D. Push the status change to the orders table
+            const { error: orderErr } = await supabaseClient.from('orders')
+                .update({ 
+                    status: 'back_office',
+                    img1: urlImg1, img2: urlImg2, img3: urlImg3,
+                    vid1: urlVid1, vid2: urlVid2, vid3: urlVid3
+                })
+                .eq('so', bundle.so);
+
+            // E. SUCCESS! Remove this ticket from the offline vault to free up phone storage
+            if (!orderErr) {
+                const deleteTx = localDB.transaction('outbox', 'readwrite');
+                deleteTx.objectStore('outbox').delete(bundle.so);
+            }
+        }
+
+        // Clean up UI when the loop is totally finished
+        alert("✅ All offline tickets have been successfully synced to the database!");
+        
+        // Reset banner styling
+        offlineSyncBanner.innerHTML = '⚠️ <span id="syncCountText">0</span> Orders Pending Offline Sync. Click here to sync now!';
+        offlineSyncBanner.style.backgroundColor = "#d32f2f"; 
+        offlineSyncBanner.style.pointerEvents = "auto";
+        
+        // This will hide the banner if all tickets cleared successfully
+        checkOfflineVault(); 
+    };
+});
+
+
+// --- DOWNLOAD SELECTED BUTTON LOGIC ---
+document.getElementById('btnDownloadSelected').addEventListener('click', () => {
+    if (selectedSystemOrders.size === 0) {
+        alert("Please select at least one order to download.");
+        return;
+    }
+
+    let fileContent = "";
+
+    selectedSystemOrders.forEach(so => {
+        // Find the most up-to-date version of this row (checking edits first)
+        const activeRow = editedOrders[so] || databaseOrders.find(o => String(o.so) === String(so));
+        
+        if (activeRow) {
+            // Map the active columns to their values, joined by a tab space
+            const rowString = activeColumns.map(col => activeRow[col] || '').join('\t');
+            fileContent += rowString + "\n===========================\n";
+        }
+    });
+
+    // Create a downloadable text file inside the browser
+    const blob = new Blob([fileContent], { type: "text/plain" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `Orders_Export_${new Date().getTime()}.txt`;
+    
+    // Simulate a click to force the download, then clean up
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+});
+
+// --- DELETE SELECTED BUTTON LOGIC ---
+document.getElementById('btnDeleteSelected').addEventListener('click', async () => {
+    if (selectedSystemOrders.size === 0) {
+        alert("Please select at least one order to delete.");
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to permanently delete ${selectedSystemOrders.size} selected order(s)?`)) {
+        return;
+    }
+
+    const soArray = Array.from(selectedSystemOrders);
+
+    // Delete from Supabase
+    const { error } = await supabaseClient
+        .from('orders')
+        .delete()
+        .in('so', soArray);
+
+    if (error) {
+        alert("Failed to delete orders: " + error.message);
+    } else {
+        alert("Successfully deleted selected orders.");
+        
+        // Wipe the memory and refresh the table
+        selectedSystemOrders.clear();
+        editedOrders = {}; // Clear pending edits so deleted items don't resurrect
+        loadDatabaseData(); 
+    }
+});
+
+// --- REMOVE SELECTED FROM ASSIGNATION VIEW ---
+document.getElementById('assignRemoveSelectedBtn').addEventListener('click', () => {
+    if (selectedAssignationOrders.size === 0) {
+        alert("Please select at least one order to remove from the view.");
+        return;
+    }
+
+    // Filter out the selected SOs from the array and clean up memory
+    assignationOrders = assignationOrders.filter(o => !selectedAssignationOrders.has(o.so));
+    selectedAssignationOrders.forEach(so => delete editedAssignations[so]);
+    
+    // Clear the selections and redraw the table
+    selectedAssignationOrders.clear();
+    renderAssignationTable();
+});
+
+// --- DOWNLOAD SELECTED FULL DATA (ORDERS FORMAT) ---
+document.getElementById('assignDownloadSelectedBtn').addEventListener('click', () => {
+    if (selectedAssignationOrders.size === 0) {
+        alert("Please select at least one order to download.");
+        return;
+    }
+
+    let fileContent = "";
+
+    selectedAssignationOrders.forEach(so => {
+        // Fetch the base row from the assignation array (which holds all orders data from the fetch)
+        const baseRow = assignationOrders.find(o => String(o.so) === String(so)) || {};
+        // Overlay any live edits
+        const activeRow = { ...baseRow, ...(editedAssignations[so] || {}) };
+        
+        if (activeRow && activeRow.so) {
+            // Use ALL_COLUMNS to export the complete data profile, just like the System page
+            const rowString = ALL_COLUMNS.map(col => activeRow[col] || '').join('\t');
+            fileContent += rowString + "\n===========================\n";
+        }
+    });
+
+    const blob = new Blob([fileContent], { type: "text/plain" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `Assignation_Data_Export_${new Date().getTime()}.txt`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+});
+
+
+// --- COLUMN RESIZING ENGINE ---
+function applyResizableColumns(tableId, storageKey) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    
+    const headers = table.querySelectorAll('thead tr:first-child th');
+    
+    // Load previously saved widths for this specific user
+    const userStorageKey = `${storageKey}_${currentUser ? currentUser.username : 'guest'}`;
+    const savedWidths = JSON.parse(localStorage.getItem(userStorageKey) || '{}');
+
+    headers.forEach((th, index) => {
+        // Prevent adding multiple handles if re-rendered
+        if (th.querySelector('.resizer')) return;
+
+        // Use the text content as a unique key (e.g., 'SO', 'assigned_tech')
+        const colKey = th.textContent.trim() || `col_${index}`;
+
+        // Apply saved width if it exists
+        if (savedWidths[colKey]) {
+            th.style.width = savedWidths[colKey];
+        } else if (!th.style.width) {
+            // Default width if none exists
+            th.style.width = '120px'; 
+        }
+
+        const resizer = document.createElement('div');
+        resizer.classList.add('resizer');
+        th.appendChild(resizer);
+
+        let startX, startWidth;
+
+        resizer.addEventListener('mousedown', (e) => {
+            startX = e.pageX;
+            startWidth = th.offsetWidth;
+            resizer.classList.add('resizing');
+
+            const mouseMoveHandler = (e) => {
+                const newWidth = Math.max(30, startWidth + (e.pageX - startX)); // 30px minimum width
+                th.style.width = `${newWidth}px`;
+            };
+
+            const mouseUpHandler = () => {
+                document.removeEventListener('mousemove', mouseMoveHandler);
+                document.removeEventListener('mouseup', mouseUpHandler);
+                resizer.classList.remove('resizing');
+
+                // Save to local storage on release
+                savedWidths[colKey] = th.style.width;
+                localStorage.setItem(userStorageKey, JSON.stringify(savedWidths));
+            };
+
+            document.addEventListener('mousemove', mouseMoveHandler);
+            document.addEventListener('mouseup', mouseUpHandler);
+        });
+    });
+}
+
+// ==========================================
+// --- PHASE 1: EXCEL DATA-ENTRY ENGINE ---
+// ==========================================
+
+let isSelecting = false;
+let selectedInputs = new Set();
+
+// Mouse selection tracking
+document.addEventListener('mousedown', (e) => {
+    if (e.target.tagName === 'INPUT' && e.target.closest('td')) {
+        isSelecting = true;
+        selectedInputs.forEach(input => input.classList.remove('selected-cell'));
+        selectedInputs.clear();
+        e.target.classList.add('selected-cell');
+        selectedInputs.add(e.target);
+    } else {
+        // Clear selection if clicking outside
+        selectedInputs.forEach(input => input.classList.remove('selected-cell'));
+        selectedInputs.clear();
+    }
+});
+
+document.addEventListener('mouseover', (e) => {
+    if (isSelecting && e.target.tagName === 'INPUT' && e.target.closest('td')) {
+        e.target.classList.add('selected-cell');
+        selectedInputs.add(e.target);
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    isSelecting = false;
+});
+
+// Paste Interceptor
+document.addEventListener('paste', (e) => {
+    const targetInput = e.target;
+    if (targetInput.tagName !== 'INPUT' || !targetInput.closest('td')) return;
+
+    const pasteData = (e.clipboardData || window.clipboardData).getData('text');
+    
+    // SCENARIO A: Mass Fill (Multiple highlighted cells + Single word pasted)
+    const isSingleWord = !pasteData.includes('\n') && !pasteData.includes('\t');
+    if (selectedInputs.size > 1 && isSingleWord) {
+        e.preventDefault();
+        selectedInputs.forEach(input => {
+            input.value = pasteData;
+            input.dispatchEvent(new Event('input', { bubbles: true })); // Trigger staging memory
+        });
+        return;
+    }
+
+    // SCENARIO B: Column Auto-Flow (Pasting multiple rows of data from Excel)
+    if (pasteData.includes('\n')) {
+        e.preventDefault();
+        const rowsToPaste = pasteData.split(/\r?\n/).filter(r => r !== ''); // Clean empty trailing rows
+        
+        const startTd = targetInput.closest('td');
+        const startTr = startTd.closest('tr');
+        const cellIndex = Array.from(startTr.children).indexOf(startTd);
+        
+        let currentRow = startTr;
+        
+        rowsToPaste.forEach(pastedValue => {
+            if (currentRow) {
+                const targetCell = currentRow.children[cellIndex];
+                if (targetCell) {
+                    const inputField = targetCell.querySelector('input');
+                    if (inputField) {
+                        inputField.value = pastedValue.trim();
+                        inputField.dispatchEvent(new Event('input', { bubbles: true })); // Trigger memory
+                    }
+                }
+                currentRow = currentRow.nextElementSibling; // Move to the row below
+            }
+        });
+    }
+});
+
+// ==========================================
+// --- PHASE 2: DRAG AND DROP ARCHITECTURE ---
+// ==========================================
+
+function attachHeaderDragLogic(headerRowId, colArray, storageKey, renderCallback) {
+    const headerRow = document.getElementById(headerRowId);
+    let dragSrcEl = null;
+
+    // We skip the first 'th' because it's the Checkbox column
+    const headers = Array.from(headerRow.querySelectorAll('th')).slice(1); 
+
+    headers.forEach((th, index) => {
+        th.draggable = true;
+        th.classList.add('draggable-header');
+        th.dataset.colIndex = index; // Map it to the underlying array
+
+        th.addEventListener('dragstart', function(e) {
+            dragSrcEl = this;
+            e.dataTransfer.effectAllowed = 'move';
+            this.classList.add('dragging-header');
+        });
+
+        th.addEventListener('dragover', function(e) {
+            e.preventDefault(); // Necessary to allow dropping
+            e.dataTransfer.dropEffect = 'move';
+            
+            headers.forEach(h => { h.classList.remove('drag-over-left', 'drag-over-right'); });
+            
+            // Visual indicator side depends on mouse position
+            const rect = this.getBoundingClientRect();
+            const relX = e.clientX - rect.left;
+            if (relX < rect.width / 2) this.classList.add('drag-over-left');
+            else this.classList.add('drag-over-right');
+            return false;
+        });
+
+        th.addEventListener('dragleave', function() {
+            this.classList.remove('drag-over-left', 'drag-over-right');
+        });
+
+        th.addEventListener('drop', function(e) {
+            e.stopPropagation();
+            this.classList.remove('drag-over-left', 'drag-over-right');
+            
+            if (dragSrcEl !== this) {
+                const srcIndex = parseInt(dragSrcEl.dataset.colIndex);
+                let targetIndex = parseInt(this.dataset.colIndex);
+
+                // Adjust target if dropping on the right half
+                const rect = this.getBoundingClientRect();
+                const relX = e.clientX - rect.left;
+                if (relX >= rect.width / 2) targetIndex++;
+                if (srcIndex < targetIndex) targetIndex--; // Adjust for shift
+
+                // Execute Array Swap
+                const movedItem = colArray.splice(srcIndex, 1)[0];
+                colArray.splice(targetIndex, 0, movedItem);
+
+                // Save persistent memory
+                const userKey = currentUser ? currentUser.username : 'guest';
+                localStorage.setItem(storageKey + '_' + userKey, JSON.stringify(colArray));
+
+                // Force a redraw
+                renderCallback();
+            }
+            return false;
+        });
+
+        th.addEventListener('dragend', function() {
+            this.classList.remove('dragging-header');
+            headers.forEach(h => h.classList.remove('drag-over-left', 'drag-over-right'));
+        });
+    });
+}
+
+// ==========================================
+// --- PHASE 4: DYNAMIC EXPORT ENGINE ---
+// ==========================================
+
+// Helper: Formats the specific parts string request
+function formatParts(row) {
+    let partsArray = [];
+    for (let i = 1; i <= 5; i++) {
+        let part = (row[`part_${i}`] || '').trim();
+        let qty = (row[`qty_${i}`] || '').trim();
+        // Ignore "EMPTY" strings or actual empty fields
+        if (part && part.toUpperCase() !== 'EMPTY') {
+            partsArray.push(`${part} ${qty && qty.toUpperCase() !== 'EMPTY' ? qty : ''}`.trim());
+        }
+    }
+    return partsArray.length > 0 ? partsArray.join('| ') + '|' : '';
+}
+
+// Reusable text export function for grouped Data
+function downloadGroupedVisibleText(tableBodyId, memoryMap, allColsArray, filename) {
+    const tableBody = document.getElementById(tableBodyId);
+    if (!tableBody || tableBody.children.length === 0) {
+        alert("No visible data to export.");
+        return;
+    }
+
+    // 1. Gather visible SOs from DOM
+    const visibleSOs = Array.from(tableBody.querySelectorAll('tr')).map(tr => {
+        // Look up the row's SO based on the first active column (usually SO, but handles dynamic columns)
+        const soInput = tr.querySelector('td:nth-child(2) input'); // nth-child(2) skips the checkbox td
+        if(soInput) return soInput.value;
+        return null;
+    }).filter(val => val !== null);
+
+    // 2. Organize data into groupings by Technician
+    const groupedData = {};
+
+    visibleSOs.forEach(so => {
+        const rowData = memoryMap[so] || databaseOrders.find(o => String(o.so) === String(so)) || {};
+        
+        let tech = (rowData.assigned_tech || '').trim();
+        if (tech === '' || tech.toUpperCase() === 'EMPTY') tech = 'Unassigned';
+
+        if (!groupedData[tech]) groupedData[tech] = [];
+
+        // Build the text line
+        let lineCols = [];
+        allColsArray.forEach(col => {
+            // Exclude specified columns from export
+            if (col === 'rout' || col === 'assigned_tech') return; 
+
+            // If it's the start of the parts loop, inject the formatted parts string once
+            if (col === 'part_1') {
+                lineCols.push(formatParts(rowData));
+            } 
+            // Skip the rest of the raw part/qty columns since we aggregated them
+            else if (col.startsWith('part_') || col.startsWith('qty_')) {
+                return; 
+            } else {
+                lineCols.push(rowData[col] || '');
+            }
+        });
+        
+        groupedData[tech].push(lineCols.join('\t'));
+    });
+
+    // 3. Construct File Content
+    let fileContent = "";
+    Object.keys(groupedData).sort().forEach(tech => {
+        fileContent += `${tech}\n--------------------\n`;
+        groupedData[tech].forEach(line => {
+            fileContent += line + "\n===========================\n";
+        });
+        fileContent += "\n";
+    });
+
+    // 4. Download
+    const blob = new Blob([fileContent], { type: "text/plain" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}_${new Date().getTime()}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Bind System Export
+document.getElementById('btnDownloadVisibleSystem').addEventListener('click', () => {
+    if (!currentUser || currentUser.role !== 'manager') {
+        alert("Access Denied: Only Manager accounts can download grouped exports.");
+        return;
+    }
+    downloadGroupedVisibleText('tableBody', editedOrders, ALL_COLUMNS, 'System_Visible_Export');
+});
+
+// Bind Assignation Export
+document.getElementById('assignDownloadVisibleBtn').addEventListener('click', () => {
+    if (!currentUser || currentUser.role !== 'manager') {
+        alert("Access Denied: Only Manager accounts can download grouped exports.");
+        return;
+    }
+    downloadGroupedVisibleText('assignTableBody', editedAssignations, ALL_COLUMNS, 'Assignation_Visible_Export');
+});
+
+// Bind Monitor CSV Export (Using PapaParse)
+document.getElementById('monitorDownloadCsvBtn').addEventListener('click', () => {
+    const tbody = document.getElementById('monitorTableBody');
+    if (!tbody || tbody.children.length === 0) {
+        alert("No visible Monitor data to export.");
+        return;
+    }
+
+    // Extract headers dynamically
+    const headers = Array.from(document.querySelectorAll('#monitorHeaderRow th')).map(th => th.textContent);
+    
+    // Extract visible rows text
+    const csvData = [];
+    Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
+        const rowData = Array.from(tr.querySelectorAll('td')).map(td => td.textContent);
+        csvData.push(rowData);
+    });
+
+    // Generate CSV string using your existing PapaParse dependency
+    const csv = Papa.unparse({
+        fields: headers,
+        data: csvData
+    });
+
+    // Trigger Download
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `Monitor_Export_${new Date().getTime()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+});

@@ -96,7 +96,10 @@ const ALL_COLUMNS = [
     "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3",
     "end_tech", "end_coord", "collected", "history", "assigned_tech"
 ];
-let activeColumns = [...ALL_COLUMNS];
+
+
+const DEFAULT_SYSTEM_COLUMNS = ['so', 'date', "days" , 'address', "rout", "assigned_tech",'status', 'reason', 'service_type', 'name', 'phone']; // edit column name as they are in the supabase tables orders table as you see fit
+let activeColumns = [...DEFAULT_SYSTEM_COLUMNS];
 
 // related to assignation page
 let assignationOrders = [];
@@ -214,14 +217,26 @@ document.getElementById('loginOkBtn').addEventListener('click', async () => {
     localStorage.setItem('ke_user_session', JSON.stringify(sessionPayload));
     // -----------------------------------------
 
+    // --- UPDATED LOGIN COLUMN LOGIC ---
+    // First, check if they have a saved custom column order
+    const savedOrder = localStorage.getItem('sys_order_' + currentUser.username);
+    if (savedOrder) {
+        activeColumns = JSON.parse(savedOrder);
+    } else {
+        // If no custom order, load your preferred defaults instead of ALL_COLUMNS
+        activeColumns = [...DEFAULT_SYSTEM_COLUMNS]; 
+    }
+
+    // Then, apply any hidden columns they saved
     const savedHidden = localStorage.getItem('hiddenColumns_' + currentUser.username);
     if (savedHidden) {
         hiddenColumns = JSON.parse(savedHidden);
-        activeColumns = ALL_COLUMNS.filter(col => !hiddenColumns.includes(col));
+        // Filter out the hidden columns from whatever the activeColumns list currently is
+        activeColumns = activeColumns.filter(col => !hiddenColumns.includes(col));
     } else {
         hiddenColumns = [];
-        activeColumns = [...ALL_COLUMNS];
     }
+    // ----------------------------------
     loginPage.classList.remove('active');
     menuPage.classList.add('active');
 });
@@ -237,7 +252,7 @@ document.getElementById('menuCancelBtn').addEventListener('click', () => {
     localStorage.removeItem('ke_user_session');
 
     hiddenColumns = [];
-    activeColumns = [...ALL_COLUMNS];
+    activeColumns = [...DEFAULT_SYSTEM_COLUMNS];
     currentUser = null;
     menuPage.classList.remove('active');
     loginPage.classList.add('active');
@@ -377,7 +392,18 @@ document.getElementById('btnAssignation').addEventListener('click', async () => 
     
     assignationOrders = [];
     editedAssignations = {};
-    renderAssignationTable();
+    
+    // --- LAYOUT FIX: LOAD SAVED COLUMN ORDER ---
+    const userKey = currentUser ? currentUser.username : 'guest';
+    const savedAssignOrder = localStorage.getItem('assign_order_' + userKey);
+    
+    if (savedAssignOrder) {
+        // Empty the default array and fill it with their saved custom order
+        const parsedOrder = JSON.parse(savedAssignOrder);
+        ASSIGN_COLUMNS.length = 0;
+        ASSIGN_COLUMNS.push(...parsedOrder);
+    }
+    // -------------------------------------------
 });
 
 document.getElementById('assignHubBtn').addEventListener('click', () => {
@@ -453,13 +479,38 @@ function renderTableStructure() {
         
         headerRow.appendChild(th);
 
+        // --- NEW EXCEL-STYLE DROPDOWN FILTER ---
         const filterTd = document.createElement('th');
-        const filterInput = document.createElement('input');
-        filterInput.placeholder = `Filter...`;
-        filterInput.dataset.column = colKey;
-        filterInput.addEventListener('input', runFilters);
-        filterTd.appendChild(filterInput);
+        const filterSelect = document.createElement('select');
+        filterSelect.dataset.column = colKey;
+        
+        // Add the default option at the top
+        filterSelect.innerHTML = `<option value="">-- All --</option>`;
+        
+        // Extract unique values from the database for this specific column
+        const uniqueValues = new Set();
+        databaseOrders.forEach(row => {
+            let val = (editedOrders[row.so] && editedOrders[row.so][colKey] !== undefined) 
+                ? editedOrders[row.so][colKey] 
+                : row[colKey];
+            
+            if (val !== null && val !== undefined && String(val).trim() !== '') {
+                uniqueValues.add(String(val).trim());
+            }
+        });
+
+        // Sort alphabetically and add them to the dropdown list
+        Array.from(uniqueValues).sort().forEach(val => {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.textContent = val;
+            filterSelect.appendChild(opt);
+        });
+
+        filterSelect.addEventListener('change', runFilters);
+        filterTd.appendChild(filterSelect);
         filterRow.appendChild(filterTd);
+        // ---------------------------------------
     });
 
     populateTableRows(databaseOrders);
@@ -573,7 +624,7 @@ function populateTableRows(dataToDisplay) {
 
 // --- 7. FILTERING SYSTEM ---
 function runFilters() {
-    const filterInputs = document.querySelectorAll('#filterRow input');
+    const filterInputs = document.querySelectorAll('#filterRow select');
     let filteredData = [...databaseOrders];
 
     filterInputs.forEach(input => {
@@ -1292,13 +1343,12 @@ function renderAssignationTable(dataToRender = assignationOrders) {
             });
             headerRow.appendChild(th);
 
-            // 2. Filter Input Box
+            // 2. Filter Input Box (Creates empty dropdowns structure)
             const filterTd = document.createElement('th');
-            const filterInput = document.createElement('input');
-            filterInput.placeholder = `Filter...`;
-            filterInput.dataset.column = colKey;
-            filterInput.addEventListener('input', runAssignationFilters);
-            filterTd.appendChild(filterInput);
+            const filterSelect = document.createElement('select');
+            filterSelect.dataset.column = colKey;
+            filterSelect.addEventListener('change', runAssignationFilters);
+            filterTd.appendChild(filterSelect);
             filterRow.appendChild(filterTd);
         });
 
@@ -1308,6 +1358,37 @@ function renderAssignationTable(dataToRender = assignationOrders) {
             renderAssignationTable();
         });
     }
+
+    // --- REFRESH DROPDOWN OPTIONS EVERY TIME DATA IS FETCHED ---
+    const allFilterDropdowns = document.querySelectorAll('#assignFilterRow select');
+    allFilterDropdowns.forEach(select => {
+        const colKey = select.dataset.column;
+        const currentSelection = select.value; // Save what the user has currently selected
+
+        select.innerHTML = `<option value="">-- All --</option>`;
+        
+        const uniqueValues = new Set();
+        assignationOrders.forEach(row => {
+            let val = (editedAssignations[row.so] && editedAssignations[row.so][colKey] !== undefined) 
+                ? editedAssignations[row.so][colKey] 
+                : row[colKey];
+            
+            if (val !== null && val !== undefined && String(val).trim() !== '') {
+                uniqueValues.add(String(val).trim());
+            }
+        });
+
+        Array.from(uniqueValues).sort().forEach(val => {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.textContent = val;
+            select.appendChild(opt);
+        });
+
+        // Restore the selection if they were currently filtering
+        select.value = currentSelection;
+    });
+    // ------------------------------------------------------------
 
     // Only wipe the body, leaving the headers intact
     tbody.innerHTML = '';
@@ -1442,7 +1523,7 @@ function renderAssignationTable(dataToRender = assignationOrders) {
 
 // --- FILTERING FOR ASSIGNATION PAGE ---
 function runAssignationFilters() {
-    const filterInputs = document.querySelectorAll('#assignFilterRow input');
+    const filterInputs = document.querySelectorAll('#assignFilterRow select');
     let filteredData = [...assignationOrders];
 
     filterInputs.forEach(input => {
@@ -1495,39 +1576,7 @@ function sortAssignationColumn(colKey) {
 }
 
 
-// --- CLEAR ALL TECHNICIANS FROM THE ENTIRE DATABASE ---
-document.getElementById('assignClearTechsBtn').addEventListener('click', async () => {
-    if (!confirm("⚠️ WARNING: This will permanently clear the 'assigned_tech' column for EVERY order in the database. Are you absolutely sure?")) {
-        return;
-    }
 
-    // 1. Tell Supabase to wipe the assigned_tech column for all rows
-    const { error } = await supabaseClient
-        .from('repair_log')
-        .update({ assigned_tech: '' })
-        .neq('so', '0'); // Targets every row
-
-    if (error) {
-        alert("Database Error: Could not clear technicians. " + error.message);
-        return;
-    }
-
-    // 2. Wipe the local memory so the screen updates instantly without needing a refresh
-    assignationOrders.forEach(row => {
-        const currentSO = row.so;
-        
-        if (!editedAssignations[currentSO]) {
-            editedAssignations[currentSO] = { ...row };
-        }
-        
-        editedAssignations[currentSO].assigned_tech = '';
-    });
-
-    // 3. Redraw the blank table
-    renderAssignationTable();
-    
-    alert("Success: All assigned technicians have been wiped from the database.");
-});
 
 // --- ASSIGNATION SUBMISSION LOGIC ---
 document.getElementById('assignSubmitBtn').addEventListener('click', async () => {
@@ -3160,8 +3209,9 @@ function downloadGroupedVisibleText(tableBodyId, memoryMap, allColsArray, filena
 
 // Bind System Export
 document.getElementById('btnDownloadVisibleSystem').addEventListener('click', () => {
-    if (!currentUser || currentUser.role !== 'manager') {
-        alert("Access Denied: Only Manager accounts can download grouped exports.");
+    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
+    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
+        alert("Access Denied: You do not have permission to download grouped exports.");
         return;
     }
     downloadGroupedVisibleText('tableBody', editedOrders, ALL_COLUMNS, 'System_Visible_Export');
@@ -3169,8 +3219,9 @@ document.getElementById('btnDownloadVisibleSystem').addEventListener('click', ()
 
 // Bind Assignation Export
 document.getElementById('assignDownloadVisibleBtn').addEventListener('click', () => {
-    if (!currentUser || currentUser.role !== 'manager') {
-        alert("Access Denied: Only Manager accounts can download grouped exports.");
+    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
+    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
+        alert("Access Denied: You do not have permission to download grouped exports.");
         return;
     }
     downloadGroupedVisibleText('assignTableBody', editedAssignations, ALL_COLUMNS, 'Assignation_Visible_Export');

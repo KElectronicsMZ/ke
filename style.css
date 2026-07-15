@@ -133,7 +133,7 @@ body {
     overflow-x: auto;
     overflow-y: auto;
     /*height: 60vh; /* Locks height to exactly 60% of the screen/viewport */
-    max-height: 75vh; /* <--- ADD THIS: Restricts the table height to 65% of your screen */
+    max-height: 70vh; /* <--- ADD THIS: Restricts the table height to 65% of your screen */
     width: 100%; /* Prevents horizontal stretching outside the page */
     border: 1px solid var(--border-color);
     background: var(--card-bg);

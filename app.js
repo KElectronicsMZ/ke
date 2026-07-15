@@ -151,7 +151,10 @@ function checkExistingSession() {
         // Check if the session is younger than 6 hours
         if (now - sessionData.timestamp < SESSION_DURATION_MS) {
             currentUser = sessionData.user; // Restore the user instantly
-            
+            // Show top banner
+            document.getElementById('bannerUsername').textContent = currentUser.username;
+            document.getElementById('bannerRole').textContent = currentUser.role;
+            document.getElementById('globalUserBanner').style.display = 'block';
             // Restore their column preferences
             const savedHidden = localStorage.getItem('hiddenColumns_' + currentUser.username);
             if (savedHidden) {
@@ -197,6 +200,11 @@ document.getElementById('loginOkBtn').addEventListener('click', async () => {
     }
 
     currentUser = data;
+
+    // Show top banner
+    document.getElementById('bannerUsername').textContent = currentUser.username;
+    document.getElementById('bannerRole').textContent = currentUser.role;
+    document.getElementById('globalUserBanner').style.display = 'block';
     
     // --- NEW: SAVE SESSION TICKET TO PHONE ---
     const sessionPayload = {
@@ -224,7 +232,7 @@ document.getElementById('loginCancelBtn').addEventListener('click', () => {
 });
 
 document.getElementById('menuCancelBtn').addEventListener('click', () => {
-
+    document.getElementById('globalUserBanner').style.display = 'none'; //hide the banner on logout
     // --- DESTROY SESSION TICKET ---
     localStorage.removeItem('ke_user_session');
 
@@ -432,13 +440,16 @@ function renderTableStructure() {
         const displayName = colKey === 'so' ? 'SO' : colKey;
         
         // Wrap the name in a clickable span for sorting
-        th.innerHTML = `<span class="sort-header" style="cursor:pointer;">${displayName}</span> 
-                        <button class="delete-col-btn" onclick="hideColumn('${colKey}')">-</button>`;
-        
-        // Add sorting click event listener
-        th.querySelector('.sort-header').addEventListener('click', () => {
-            sortColumn(colKey);
-        });
+        th.innerHTML = `
+            <div class="header-wrapper" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <button class="move-arrow left-arrow" title="Move Left" style="display: none; background: transparent; border: none; cursor: pointer; font-size: 16px;">◀</button>
+                <div style="display: flex; justify-content: center; align-items: center; flex-grow: 1;">
+                    <span class="sort-header" style="cursor:pointer;">${displayName}</span> 
+                    <button class="delete-col-btn" onclick="hideColumn('${colKey}')" style="margin-left: 5px;">-</button>
+                </div>
+                <button class="move-arrow right-arrow" title="Move Right" style="display: none; background: transparent; border: none; cursor: pointer; font-size: 16px;">▶</button>
+            </div>
+        `;
         
         headerRow.appendChild(th);
 
@@ -456,7 +467,7 @@ function renderTableStructure() {
     // Fire resizer
     applyResizableColumns('dataTable', 'sys_cols');
 
-    attachHeaderDragLogic('headerRow', activeColumns, 'sys_order', renderTableStructure); 
+    attachClickMoveLogic('headerRow', activeColumns, 'sys_order', renderTableStructure);
 }
 
 function populateTableRows(dataToDisplay) {
@@ -1218,6 +1229,32 @@ async function fetchOrdersForAssignation(soArray) {
 let assignationSortDir = {};
 
 function renderAssignationTable(dataToRender = assignationOrders) {
+
+    // --- NEW: DYNAMIC DATALISTS FOR SERVICE_TYPE AND ROUT ---
+    const uniqueServiceTypes = new Set();
+    const uniqueRouts = new Set();
+
+    dataToRender.forEach(row => {
+        const st = (editedAssignations[row.so] && editedAssignations[row.so]['service_type'] !== undefined) ? editedAssignations[row.so]['service_type'] : row['service_type'];
+        if (st && String(st).trim() !== '') uniqueServiceTypes.add(String(st).trim());
+
+        const rt = (editedAssignations[row.so] && editedAssignations[row.so]['rout'] !== undefined) ? editedAssignations[row.so]['rout'] : row['rout'];
+        if (rt && String(rt).trim() !== '') uniqueRouts.add(String(rt).trim());
+    });
+
+    const stList = document.getElementById('serviceTypeList');
+    const rtList = document.getElementById('routList');
+    if (stList) {
+        stList.innerHTML = '';
+        uniqueServiceTypes.forEach(val => stList.appendChild(new Option(val, val)));
+    }
+    if (rtList) {
+        rtList.innerHTML = '';
+        uniqueRouts.forEach(val => rtList.appendChild(new Option(val, val)));
+    }
+    // --------------------------------------------------------
+
+
     const headerRow = document.getElementById('assignHeaderRow');
     const filterRow = document.getElementById('assignFilterRow');
     const tbody = document.getElementById('assignTableBody');
@@ -1240,7 +1277,15 @@ function renderAssignationTable(dataToRender = assignationOrders) {
             // 1. Header with Sorting capability
             const th = document.createElement('th');
             const displayName = colKey === 'so' ? 'SO' : colKey;
-            th.innerHTML = `<span class="sort-header" style="cursor:pointer;">${displayName}</span>`;
+            th.innerHTML = `
+                <div class="header-wrapper" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <button class="move-arrow left-arrow" title="Move Left" style="display: none; background: transparent; border: none; cursor: pointer; font-size: 16px;">◀</button>
+                    <div style="display: flex; justify-content: center; align-items: center; flex-grow: 1;">
+                        <span class="sort-header" style="cursor:pointer;">${displayName}</span>
+                    </div>
+                    <button class="move-arrow right-arrow" title="Move Right" style="display: none; background: transparent; border: none; cursor: pointer; font-size: 16px;">▶</button>
+                </div>
+            `;
             
             th.querySelector('.sort-header').addEventListener('click', () => {
                 sortAssignationColumn(colKey);
@@ -1257,7 +1302,11 @@ function renderAssignationTable(dataToRender = assignationOrders) {
             filterRow.appendChild(filterTd);
         });
 
-        attachHeaderDragLogic('assignHeaderRow', ASSIGN_COLUMNS, 'assign_order', renderAssignationTable);
+        attachClickMoveLogic('assignHeaderRow', ASSIGN_COLUMNS, 'assign_order', () => {
+            document.getElementById('assignHeaderRow').innerHTML = ''; // Force header redraw
+            document.getElementById('assignFilterRow').innerHTML = ''; // Force filter redraw
+            renderAssignationTable();
+        });
     }
 
     // Only wipe the body, leaving the headers intact
@@ -1310,6 +1359,12 @@ function renderAssignationTable(dataToRender = assignationOrders) {
                         alert(`Warning: '${val}' is not in the recognized technicians list.`);
                     }
                 });
+            } else if (colKey === 'service_type') {
+                input.setAttribute('list', 'serviceTypeList');
+                input.setAttribute('autocomplete', 'off'); 
+            } else if (colKey === 'rout') {
+                input.setAttribute('list', 'routList');
+                input.setAttribute('autocomplete', 'off'); 
             }
 
             input.addEventListener('input', (e) => {
@@ -2946,79 +3001,76 @@ document.addEventListener('paste', (e) => {
 });
 
 // ==========================================
-// --- PHASE 2: DRAG AND DROP ARCHITECTURE ---
+// --- NEW PHASE 2: CLICK-TO-MOVE ARROWS ---
 // ==========================================
 
-function attachHeaderDragLogic(headerRowId, colArray, storageKey, renderCallback) {
+function attachClickMoveLogic(headerRowId, colArray, storageKey, renderCallback) {
     const headerRow = document.getElementById(headerRowId);
-    let dragSrcEl = null;
+    const headers = Array.from(headerRow.querySelectorAll('th')); 
+    const skipCount = (headerRowId === 'headerRow' || headerRowId === 'assignHeaderRow') ? 1 : 0; // Skip checkbox column
+    
+    headers.slice(skipCount).forEach((th, i) => {
+        const index = i; // Map to the exact array index
+        const leftBtn = th.querySelector('.left-arrow');
+        const rightBtn = th.querySelector('.right-arrow');
+        
+        if (!leftBtn || !rightBtn) return;
 
-    // We skip the first 'th' because it's the Checkbox column
-    const headers = Array.from(headerRow.querySelectorAll('th')).slice(1); 
-
-    headers.forEach((th, index) => {
-        th.draggable = true;
-        th.classList.add('draggable-header');
-        th.dataset.colIndex = index; // Map it to the underlying array
-
-        th.addEventListener('dragstart', function(e) {
-            dragSrcEl = this;
-            e.dataTransfer.effectAllowed = 'move';
-            this.classList.add('dragging-header');
-        });
-
-        th.addEventListener('dragover', function(e) {
-            e.preventDefault(); // Necessary to allow dropping
-            e.dataTransfer.dropEffect = 'move';
-            
-            headers.forEach(h => { h.classList.remove('drag-over-left', 'drag-over-right'); });
-            
-            // Visual indicator side depends on mouse position
-            const rect = this.getBoundingClientRect();
-            const relX = e.clientX - rect.left;
-            if (relX < rect.width / 2) this.classList.add('drag-over-left');
-            else this.classList.add('drag-over-right');
-            return false;
-        });
-
-        th.addEventListener('dragleave', function() {
-            this.classList.remove('drag-over-left', 'drag-over-right');
-        });
-
-        th.addEventListener('drop', function(e) {
-            e.stopPropagation();
-            this.classList.remove('drag-over-left', 'drag-over-right');
-            
-            if (dragSrcEl !== this) {
-                const srcIndex = parseInt(dragSrcEl.dataset.colIndex);
-                let targetIndex = parseInt(this.dataset.colIndex);
-
-                // Adjust target if dropping on the right half
-                const rect = this.getBoundingClientRect();
-                const relX = e.clientX - rect.left;
-                if (relX >= rect.width / 2) targetIndex++;
-                if (srcIndex < targetIndex) targetIndex--; // Adjust for shift
-
-                // Execute Array Swap
-                const movedItem = colArray.splice(srcIndex, 1)[0];
-                colArray.splice(targetIndex, 0, movedItem);
-
-                // Save persistent memory
-                const userKey = currentUser ? currentUser.username : 'guest';
-                localStorage.setItem(storageKey + '_' + userKey, JSON.stringify(colArray));
-
-                // Force a redraw
-                renderCallback();
+        th.addEventListener('click', (e) => {
+            // Ignore clicks on inner elements so sorting and resizing still work normally
+            if (e.target.classList.contains('sort-header') || e.target.classList.contains('delete-col-btn') || e.target.classList.contains('move-arrow') || e.target.classList.contains('resizer')) {
+                return; 
             }
-            return false;
+
+            const isActive = th.classList.contains('move-active');
+
+            // Turn off all other headers
+            document.querySelectorAll('.move-arrow').forEach(btn => btn.style.display = 'none');
+            document.querySelectorAll('th.move-active').forEach(activeTh => activeTh.classList.remove('move-active'));
+
+            // Turn this one on if it wasn't already open
+            if (!isActive) {
+                th.classList.add('move-active');
+                leftBtn.style.display = 'inline-block';
+                rightBtn.style.display = 'inline-block';
+            }
         });
 
-        th.addEventListener('dragend', function() {
-            this.classList.remove('dragging-header');
-            headers.forEach(h => h.classList.remove('drag-over-left', 'drag-over-right'));
+        leftBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (index > 0) {
+                const temp = colArray[index];
+                colArray[index] = colArray[index - 1];
+                colArray[index - 1] = temp;
+                saveAndRender();
+            }
         });
+
+        rightBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (index < colArray.length - 1) {
+                const temp = colArray[index];
+                colArray[index] = colArray[index + 1];
+                colArray[index + 1] = temp;
+                saveAndRender();
+            }
+        });
+
+        function saveAndRender() {
+            const userKey = currentUser ? currentUser.username : 'guest';
+            localStorage.setItem(storageKey + '_' + userKey, JSON.stringify(colArray));
+            renderCallback();
+        }
     });
 }
+
+// Global click to dismiss the arrows if you click outside the headers
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('th')) {
+        document.querySelectorAll('.move-arrow').forEach(btn => btn.style.display = 'none');
+        document.querySelectorAll('th.move-active').forEach(activeTh => activeTh.classList.remove('move-active'));
+    }
+});
 
 // ==========================================
 // --- PHASE 4: DYNAMIC EXPORT ENGINE ---

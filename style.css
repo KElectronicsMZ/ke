@@ -427,21 +427,17 @@ th {
     outline: 1px solid #1976d2;
 }
 
-/* --- PHASE 2: DRAG AND DROP HEADERS --- */
-.draggable-header {
-    cursor: grab;
-}
-.draggable-header:active {
-    cursor: grabbing;
-}
-.dragging-header {
-    opacity: 0.4;
+/* --- NEW: CLICK TO MOVE HEADERS --- */
+th { transition: background-color 0.2s, min-width 0.2s; }
+th.move-active {
+    min-width: 140px; /* Forces it to slightly expand */
     background-color: var(--btn-hover);
-    border: 1px dashed var(--text-color);
 }
-.drag-over-left {
-    border-left: 3px solid #1976d2 !important;
+.move-arrow {
+    color: var(--text-color);
+    padding: 2px 6px;
 }
-.drag-over-right {
-    border-right: 3px solid #1976d2 !important;
+.move-arrow:hover {
+    color: #1976d2;
+    transform: scale(1.2);
 }

@@ -18,7 +18,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 </head>
 <body data-theme="greenish">
-
+    <div id="globalUserBanner" style="display: none; background: #1976d2; color: white; padding: 5px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid #115293; z-index: 9999; position: sticky; top: 0;">
+        User: <span id="bannerUsername"></span> - <span id="bannerRole"></span>
+    </div>
     <div class="theme-container">
         <label for="themeSelect">Theme: </label>
         <select id="themeSelect">
@@ -191,8 +193,10 @@
                 <input type="text" id="assignMasterValueInput" style="display: none; padding: 4px; font-size: 14px; width: 300px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" />
             </div>
         </div>
-        <datalist id="technicianList"></datalist>
         
+        <datalist id="technicianList"></datalist>
+        <datalist id="serviceTypeList"></datalist>
+        <datalist id="routList"></datalist>
 
         <div class="table-container">
             <table id="assignationTable">

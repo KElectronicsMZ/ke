@@ -883,6 +883,82 @@ function processCSVText(text) {
     });
 }
 
+// ---TXT FILE UPLOAD ENGINE ---
+document.getElementById('txtUploadBtn').addEventListener('click', () => {
+    document.getElementById('txtFileInput').click();
+});
+
+document.getElementById('txtFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        const text = evt.target.result;
+
+        // Use PapaParse just like the clipboard logic (no headers, tab delimited)
+        Papa.parse(text, {
+            header: false,
+            delimiter: "\t", // Explicitly look for Tabs instead of commas
+            skipEmptyLines: true,
+            complete: function(results) {
+                const data = results.data;
+                let addedCount = 0;
+
+                data.forEach(rowArray => {
+                    let rowObj = {};
+                    
+                    // Map the raw tab-separated values to your system's ALL_COLUMNS sequence
+                    rowArray.forEach((val, index) => {
+                        if (ALL_COLUMNS[index]) {
+                            let finalValue = val ? String(val).trim() : '';
+                            
+                            // Strip leading apostrophes from phone numbers (Excel formatting)
+                            if (finalValue.startsWith("'")) {
+                                finalValue = finalValue.substring(1);
+                            }
+                            
+                            rowObj[ALL_COLUMNS[index]] = finalValue;
+                        }
+                    });
+
+                    // Ensure the row has an 'so' before adding it to memory
+                    if (rowObj.so) {
+                        if (!editedOrders[rowObj.so]) {
+                            editedOrders[rowObj.so] = {};
+                        }
+                        editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
+                        addedCount++;
+                        
+                        // Push it visually to the table
+                        const existingIndex = databaseOrders.findIndex(o => String(o.so) === String(rowObj.so));
+                        if (existingIndex === -1) {
+                            databaseOrders.unshift(rowObj); 
+                        } else {
+                            databaseOrders[existingIndex] = { ...databaseOrders[existingIndex], ...rowObj };
+                        }
+                    }
+                });
+
+                if (addedCount > 0) {
+                    alert(`${addedCount} order(s) staged from TXT file! Click 'Submit' to push to the database.`);
+                    renderTableStructure(); 
+                } else {
+                    alert("No valid Service Orders (SO) found in the TXT file.");
+                }
+                
+                // Reset the input so they can upload the exact same file again if they need to
+                document.getElementById('txtFileInput').value = '';
+            },
+            error: function(err) {
+                alert("Error parsing TXT file: " + err.message);
+            }
+        });
+    };
+    reader.readAsText(file);
+});
+// -------------------------------------------
+
 // --- NEW FEATURE: ADD ORDER FROM CLIPBOARD ---
 document.getElementById('clipboardUploadBtn').addEventListener('click', async () => {
     try {

@@ -158,12 +158,23 @@ function checkExistingSession() {
             document.getElementById('bannerUsername').textContent = currentUser.username;
             document.getElementById('bannerRole').textContent = currentUser.role;
             document.getElementById('globalUserBanner').style.display = 'block';
-            // Restore their column preferences
+            
+            // --- RESTORE COLUMN PREFERENCES ON AUTO-LOGIN ---
+            const savedOrder = localStorage.getItem('sys_order_' + currentUser.username);
+            if (savedOrder) {
+                activeColumns = JSON.parse(savedOrder);
+            } else {
+                activeColumns = [...DEFAULT_SYSTEM_COLUMNS]; 
+            }
+
             const savedHidden = localStorage.getItem('hiddenColumns_' + currentUser.username);
             if (savedHidden) {
                 hiddenColumns = JSON.parse(savedHidden);
-                activeColumns = ALL_COLUMNS.filter(col => !hiddenColumns.includes(col));
+                activeColumns = activeColumns.filter(col => !hiddenColumns.includes(col));
+            } else {
+                hiddenColumns = [];
             }
+            // ------------------------------------------------
 
             // Hide the login screen and show the HUB menu
             loginPage.classList.remove('active');
@@ -477,6 +488,12 @@ function renderTableStructure() {
             </div>
         `;
         
+        // --- ADD MISSING SORT CLICK EVENT ---
+        th.querySelector('.sort-header').addEventListener('click', () => {
+            sortColumn(colKey);
+        });
+        // ------------------------------------
+        
         headerRow.appendChild(th);
 
         // --- NEW EXCEL-STYLE DROPDOWN FILTER ---
@@ -559,12 +576,29 @@ function populateTableRows(dataToDisplay) {
 
             input.value = currentValue;
 
-            input.addEventListener('input', (e) => {
-                if (!editedOrders[currentSO]) {
-                    editedOrders[currentSO] = { ...row };
-                }
-                editedOrders[currentSO][colKey] = e.target.value;
-            });
+            // --- MAKE SO CLICKABLE & READ-ONLY ---
+            if (colKey === 'so') {
+                input.readOnly = true; // Protects the primary key from accidental typing
+                input.style.cursor = 'pointer';
+                // Uses your CSS theme colors and makes it extra bold!
+                input.style.color = 'var(--text-color)'; 
+                input.style.textDecoration = 'none';
+                input.style.fontWeight = '900';
+                
+                input.addEventListener('click', () => {
+                    openViewOnlyModal(row); // Opens the ticket!
+                });
+            } else {
+                // Normal typing allowed for all other columns
+                input.addEventListener('input', (e) => {
+                    if (!editedOrders[currentSO]) {
+                        editedOrders[currentSO] = { ...row };
+                    }
+                    editedOrders[currentSO][colKey] = e.target.value;
+                });
+            }
+            // -------------------------------------
+
 
             td.appendChild(input);
 
@@ -1427,6 +1461,21 @@ function renderAssignationTable(dataToRender = assignationOrders) {
 
             input.value = currentValue;
 
+            // --- MAKE SO CLICKABLE & READ-ONLY ---
+            if (colKey === 'so') {
+                input.readOnly = true; 
+                input.style.cursor = 'pointer';
+                input.style.color = 'var(--text-color)'; 
+                input.style.textDecoration = 'none';
+                input.style.fontWeight = '900'; 
+                
+                input.addEventListener('click', () => {
+                    openViewOnlyModal(row); // Opens the ticket!
+                });
+            }
+            // -------------------------------------
+
+
             // Datalist Hookup for Technician
             if (colKey === 'assigned_tech') {
                 input.setAttribute('list', 'technicianList');
@@ -1724,14 +1773,44 @@ function getCurrentDateTime() {
     return { date: `${dd}-${mm}-${yyyy}`, time: `${hh}:${min}` };
 }
 
+// --- NEW: SEARCH ORDER LOGIC ---
+document.getElementById('btnSearchOrder').addEventListener('click', () => {
+    const searchInput = document.getElementById('systemSearchSoInput').value.trim();
+    if (!searchInput) {
+        alert("Please enter an SO number to search.");
+        return;
+    }
+
+    // Look for the order in the live edits first, then the main database memory
+    const foundOrder = editedOrders[searchInput] || databaseOrders.find(o => String(o.so) === searchInput);
+
+    if (foundOrder) {
+        openViewOnlyModal(foundOrder);
+    } else {
+        alert(`Order with SO: ${searchInput} does not exist in the system.`);
+    }
+});
+
 // Action 1: Agree (Coord)
 document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
-    const activeSo = document.getElementById('masterActionButtons').dataset.activeSo;
-    if (!activeSo) return;
+    // Pull the SO directly from the search box
+    const activeSo = document.getElementById('systemSearchSoInput').value.trim();
+    if (!activeSo) {
+        alert("Please enter an SO number in the search box first.");
+        return;
+    }
+    
+    // Verify it exists before taking action
+    const foundOrder = editedOrders[activeSo] || databaseOrders.find(o => String(o.so) === activeSo);
+    if (!foundOrder) {
+        alert(`Cannot apply action: Order SO ${activeSo} not found.`);
+        return;
+    }
 
     const { date, time } = getCurrentDateTime();
     const currentUsername = currentUser ? currentUser.username : 'Unknown';
 
+    // 1. Prepare history log payload
     const payload = {
         so: activeSo,
         status: 'Technician',
@@ -1739,24 +1818,40 @@ document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
         agree_coord: currentUsername,
         assign_date: date,
         assign_time: time,
-        assigned_tech: '' // <-- ADD THIS LINE to satisfy the database constraint
+        assigned_tech: '' 
     };
 
-    const { error } = await supabaseClient.from('repair_log').insert(payload);
+    // 2. Execute history log
+    const { error: logError } = await supabaseClient.from('repair_log').insert(payload);
 
-    if (error) {
-        alert("Error saving record: " + error.message);
+    if (logError) {
+        alert("Error saving record to log: " + logError.message);
+        return;
+    }
+
+    // 3. NEW: Execute main orders table update!
+    const { error: orderError } = await supabaseClient.from('orders')
+        .update({ agree_coord: currentUsername })
+        .eq('so', activeSo);
+
+    if (orderError) {
+        alert("Log was saved, but error updating main order table: " + orderError.message);
     } else {
-        alert(`Coordination agreement logged for SO: ${activeSo}`);
+        alert(`Coordination agreement logged and order updated for SO: ${activeSo}`);
     }
 });
 
 // Action 2 (Part 1): Show the Tech Dropdown
 document.getElementById('btnCompleteTech').addEventListener('click', async () => {
+    const activeSo = document.getElementById('systemSearchSoInput').value.trim();
+    if (!activeSo) {
+        alert("Please enter an SO number in the search box first.");
+        return;
+    }
+
     const dropdown = document.getElementById('masterTechDropdown');
     const confirmBtn = document.getElementById('btnSubmitTechAssign');
     
-    // If we haven't loaded technicians yet on this page, fetch them from Supabase
     if (availableTechnicians.length === 0) {
         const { data, error } = await supabaseClient
             .from('profiles')
@@ -1768,7 +1863,6 @@ document.getElementById('btnCompleteTech').addEventListener('click', async () =>
         }
     }
 
-    // Fill the dropdown options
     dropdown.innerHTML = '<option value="">-- Select Tech --</option>';
     availableTechnicians.forEach(tech => {
         const opt = document.createElement('option');
@@ -1777,17 +1871,23 @@ document.getElementById('btnCompleteTech').addEventListener('click', async () =>
         dropdown.appendChild(opt);
     });
 
-    // Reveal the dropdown and the final submit button
     dropdown.style.display = 'inline-block';
     confirmBtn.style.display = 'inline-block';
 });
 
-// Action 2 (Part 2): Confirm Assignment and Insert Database Record
+// Action 2 (Part 2): Confirm Completion and Insert Database Records
 document.getElementById('btnSubmitTechAssign').addEventListener('click', async () => {
-    const activeSo = document.getElementById('masterActionButtons').dataset.activeSo;
+    const activeSo = document.getElementById('systemSearchSoInput').value.trim();
     const selectedTech = document.getElementById('masterTechDropdown').value;
 
     if (!activeSo) return;
+    
+    const foundOrder = editedOrders[activeSo] || databaseOrders.find(o => String(o.so) === activeSo);
+    if (!foundOrder) {
+        alert(`Cannot apply action: Order SO ${activeSo} not found.`);
+        return;
+    }
+
     if (!selectedTech) {
         alert("Please select a technician from the dropdown list first.");
         return;
@@ -1796,31 +1896,45 @@ document.getElementById('btnSubmitTechAssign').addEventListener('click', async (
     const { date, time } = getCurrentDateTime();
     const currentUsername = currentUser ? currentUser.username : 'Unknown';
 
+    // 1. Prepare history log payload
     const payload = {
         so: activeSo,
         status: 'Complete',
         assigned_by: currentUsername,
         complete_coord: currentUsername,
         end_tech: selectedTech,
-        assigned_tech: selectedTech, // <-- ADD THIS LINE to satisfy the database constraint
+        assigned_tech: '', // <-- Leaves this completely blank as requested
         assign_date: date,
         assign_time: time
     };
 
-    const { error } = await supabaseClient.from('repair_log').insert(payload);
+    // 2. Execute history log
+    const { error: logError } = await supabaseClient.from('repair_log').insert(payload);
 
-    if (error) {
-        alert("Error assigning tech: " + error.message);
+    if (logError) {
+        alert("Error saving record: " + logError.message);
+        return;
+    }
+
+    // 3. NEW: Execute main orders table update!
+    const { error: orderError } = await supabaseClient.from('orders')
+        .update({ 
+            complete_coord: currentUsername,
+            complete_tech: selectedTech // Exact column name you requested
+        })
+        .eq('so', activeSo);
+
+    if (orderError) {
+        alert("Log was saved, but error updating main order table: " + orderError.message);
     } else {
-        alert(`SO: ${activeSo} successfully assigned to ${selectedTech}`);
+        alert(`SO: ${activeSo} successfully completed by ${selectedTech}`);
         
-        // Hide the dropdown elements to clean up the UI
         document.getElementById('masterTechDropdown').style.display = 'none';
         document.getElementById('btnSubmitTechAssign').style.display = 'none';
         document.getElementById('masterTechDropdown').value = '';
     }
 });
-
+// ==========================================//
 
 // ==========================================
 // --- BONUSES / PERFORMANCE TRACKING PAGE ---
@@ -3260,3 +3374,63 @@ document.getElementById('monitorDownloadCsvBtn').addEventListener('click', () =>
     link.click();
     document.body.removeChild(link);
 });
+
+
+// ==========================================
+// --- VIEW ONLY MODAL ENGINE view ticket---
+// ==========================================
+function openViewOnlyModal(ticket) {
+    const modal = document.getElementById('detailsModal');
+    
+    // 1. Set Header
+    const modalHeaders = document.querySelectorAll('#modalSoHeader');
+    modalHeaders.forEach(h => h.textContent = 'View Order - SO: ' + ticket.so);
+    
+    // 2. Hide Upload Progress if it was left over
+    const progressBox = document.getElementById('uploadProgressContainer');
+    if (progressBox) progressBox.style.display = 'none';
+
+    // 3. Render Media Links
+    renderMediaLink('linkImg1', ticket.img1, 'Img 1');
+    renderMediaLink('linkImg2', ticket.img2, 'Img 2');
+    renderMediaLink('linkImg3', ticket.img3, 'Img 3');
+    renderMediaLink('linkVid1', ticket.vid1, 'Vid 1');
+    renderMediaLink('linkVid2', ticket.vid2, 'Vid 2');
+    renderMediaLink('linkVid3', ticket.vid3, 'Vid 3');
+
+    // 4. Generate Phone Links
+    const safePhone1 = ticket.phone ? String(ticket.phone).replace(/\s+/g, '') : '';
+    const safePhone2 = ticket.phone_2 ? String(ticket.phone_2).replace(/\s+/g, '') : '';
+    const p1 = ticket.phone ? `<a class="phone-link" href="tel:${safePhone1}">📞 ${ticket.phone}</a>` : 'N/A';
+    const p2 = ticket.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${ticket.phone_2}</a>` : 'N/A';
+
+    // 5. Populate Read-Only Details
+    document.getElementById('modalReadOnlyDetails').innerHTML = `
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+            <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
+        </div>
+        <div class="ticket-row"><span><strong>Name:</strong> ${ticket.name || 'N/A'}</span> <span>${p1}</span></div>
+        <div class="ticket-row"><span><strong>Date:</strong> ${ticket.date || 'N/A'}</span> <span>${p2}</span></div>
+        <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
+        <div class="ticket-row"><span><strong>Model:</strong> ${ticket.model || 'N/A'}</span> <span><strong>SN:</strong> ${ticket.serial || 'N/A'}</span></div>
+        <hr style="border-color: var(--border-color); margin: 12px 0;">
+        <strong>Remark:</strong> ${ticket.remark || 'N/A'}<br>
+        <strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}<br>
+        <strong>Route:</strong> ${ticket.rout || 'N/A'}<br>
+        <strong>I/O:</strong> ${ticket.io || 'N/A'}<br>
+        <strong>Parts:</strong> ${ticket.part_1||''} (x${ticket.qty_1||0}), ${ticket.part_2||''} (x${ticket.qty_2||0})<br>
+        <strong>Call Details:</strong> ${ticket.call_details || 'N/A'}
+    `;
+
+    // 6. Force View-Only Mode (Hide all action sections!)
+    document.getElementById('techActionSection').style.display = 'none';
+    document.getElementById('coordActionSection').style.display = 'none';
+    document.getElementById('coordHistorySection').style.display = 'none'; 
+    
+    // Hide Confirm buttons, leaving only the "Cancel / X" button active
+    document.getElementById('confirmTechBtn').style.display = 'none';
+    document.getElementById('confirmCoordBtn').style.display = 'none';
+
+    // 7. Show the Modal
+    modal.style.display = 'flex';
+}

@@ -86,18 +86,25 @@
             </div>
         </div>
 
-        <div id="masterEditContainer" style="padding: 10px; font-weight: bold; font-size: 14px; min-height: 35px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start;">
-            <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; width: 100%;">
+            
+            <div id="masterEditContainer" style="padding: 10px; font-weight: bold; font-size: 14px; min-height: 35px; display: flex; align-items: center; gap: 10px;">
                 <span id="masterSOKey"></span>
                 <span id="masterHeaderLabel"></span>
                 <input type="text" id="masterValueInput" style="display: none; padding: 4px; font-size: 14px; width: 300px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" />
             </div>
-            <div id="masterActionButtons" style="display: none; gap: 10px; align-items: center;">
-                <button id="btnAgreeCoord" style="background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 5px 15px; cursor: pointer; font-weight: bold;">Agree (Coord)</button>
-                <button id="btnCompleteTech" style="background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 5px 15px; cursor: pointer; font-weight: bold;">Complete (Assign Tech)</button>
-                <select id="masterTechDropdown" style="display: none; padding: 5px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);"><option value="">-- Select Tech --</option></select>
-                <button id="btnSubmitTechAssign" style="display: none; background-color: #2e7d32; color: white; border: 1px solid #1b5e20; padding: 5px 15px; cursor: pointer; font-weight: bold;">Confirm Assignment</button>
+
+            <div id="permanentOrderActions" style="display: flex; gap: 10px; align-items: center; background: var(--card-bg); padding: 10px; border: 1px solid var(--border-color); border-radius: 4px;">
+                <input type="text" id="systemSearchSoInput" placeholder="Enter SO Number..." style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); width: 150px;">
+                <button id="btnSearchOrder" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; padding: 6px 12px; font-weight: bold; cursor: pointer; border-radius: 4px;">Search Order</button>
+                
+                <div style="border-left: 2px solid var(--border-color); height: 24px; margin: 0 5px;"></div> <button id="btnAgreeCoord" style="background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Agree (Coord)</button>
+                <button id="btnCompleteTech" style="background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Complete (Assign Tech)</button>
+                
+                <select id="masterTechDropdown" style="display: none; padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);"><option value="">-- Select Tech --</option></select>
+                <button id="btnSubmitTechAssign" style="display: none; background-color: #2e7d32; color: white; border: 1px solid #1b5e20; padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Confirm Completion</button>
             </div>
+            
         </div>
 
         <div class="table-container">
@@ -230,6 +237,60 @@
         <div id="ticketContainer" style="width: 100%; max-width: 500px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; padding: 10px;">
             </div>
 
+        
+
+
+    </div>
+
+    <div id="bonusesPage" class="page">
+            <div class="system-header">
+                <h2>My Bonuses & Work Summary</h2>
+                </div>
+
+            <div class="date-filter-group" style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; background: var(--card-bg); padding: 15px; border-radius: 5px; border: 1px solid var(--border-color);">
+                <label style="font-weight: bold;">Start Date:</label>
+                <input type="date" id="bonusesStartDate" style="padding: 5px; background: transparent; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 3px;">
+                
+                <label style="font-weight: bold;">End Date:</label>
+                <input type="date" id="bonusesEndDate" style="padding: 5px; background: transparent; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 3px;">
+                
+                <button id="btnFetchBonuses" style="padding: 6px 15px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); font-weight: bold;">Load Data</button>
+            </div>
+
+            <div id="bonusesSummaryBox" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 5px;">
+                <h3 style="margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">Work Summary (My Entries)</h3>
+                <div id="bonusesSummaryContent" style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    </div>
+            </div>
+
+            <div class="table-container">
+                <table id="bonusesTable">
+                    <thead>
+                        <tr>
+                            <th>SO</th>
+                            <th>Assign Date</th>
+                            <th>Assign Time</th>
+                            <th>Status</th>
+                            <th>Assigned By</th>
+                            <th>Agree Coord</th>
+                            <th>Complete Coord</th>
+                            <th>Assigned Tech</th>
+                            <th>End Tech</th>
+                            <th>Hass</th>
+                            <th>Smart Things</th>
+                            <th>Comment</th>
+                            <th>Collected</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bonusesTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="button-group table-controls" style="margin-top: 20px;">
+                <button id="bonusesHubBtn">HUB</button>
+            </div>
+        </div>
+
         <div id="detailsModal" class="modal-overlay">
             <div class="modal-content">
                 <div class="modal-header">
@@ -330,57 +391,6 @@
             </div> 
         </div>
 
-
-    </div>
-
-    <div id="bonusesPage" class="page">
-            <div class="system-header">
-                <h2>My Bonuses & Work Summary</h2>
-                </div>
-
-            <div class="date-filter-group" style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; background: var(--card-bg); padding: 15px; border-radius: 5px; border: 1px solid var(--border-color);">
-                <label style="font-weight: bold;">Start Date:</label>
-                <input type="date" id="bonusesStartDate" style="padding: 5px; background: transparent; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 3px;">
-                
-                <label style="font-weight: bold;">End Date:</label>
-                <input type="date" id="bonusesEndDate" style="padding: 5px; background: transparent; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 3px;">
-                
-                <button id="btnFetchBonuses" style="padding: 6px 15px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); font-weight: bold;">Load Data</button>
-            </div>
-
-            <div id="bonusesSummaryBox" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 5px;">
-                <h3 style="margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">Work Summary (My Entries)</h3>
-                <div id="bonusesSummaryContent" style="display: flex; gap: 15px; flex-wrap: wrap;">
-                    </div>
-            </div>
-
-            <div class="table-container">
-                <table id="bonusesTable">
-                    <thead>
-                        <tr>
-                            <th>SO</th>
-                            <th>Assign Date</th>
-                            <th>Assign Time</th>
-                            <th>Status</th>
-                            <th>Assigned By</th>
-                            <th>Agree Coord</th>
-                            <th>Complete Coord</th>
-                            <th>Assigned Tech</th>
-                            <th>End Tech</th>
-                            <th>Hass</th>
-                            <th>Smart Things</th>
-                            <th>Comment</th>
-                            <th>Collected</th>
-                        </tr>
-                    </thead>
-                    <tbody id="bonusesTableBody"></tbody>
-                </table>
-            </div>
-
-            <div class="button-group table-controls" style="margin-top: 20px;">
-                <button id="bonusesHubBtn">HUB</button>
-            </div>
-        </div>
 
     <script src="app.js"></script>
 </body>

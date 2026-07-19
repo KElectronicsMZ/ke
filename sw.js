@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ke-tech-cache-v1.3'; // We bumped the version up!
+const CACHE_NAME = 'ke-tech-cache-v3'; // We bumped the version up!
 
 // The essential files the app needs to load visually
 const ASSETS_TO_CACHE = [

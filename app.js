@@ -38,6 +38,36 @@ dbRequest.onerror = function(event) {
     console.error("IndexedDB Error:", event.target.error);
 };
 
+// --- UNIVERSAL PAGINATION ENGINE ---
+// This safely downloads entire tables by looping in chunks of 1,000 rows to bypass server limits.
+async function fetchAllRecords(tableName) {
+    let allData = [];
+    let from = 0;
+    const step = 999; 
+    let keepFetching = true;
+
+    while (keepFetching) {
+        const { data, error } = await supabaseClient
+            .from(tableName)
+            .select('*')
+            .range(from, from + step);
+
+        if (error) {
+            console.error("Error fetching " + tableName + ": " + error.message);
+            break;
+        }
+
+        allData = allData.concat(data);
+
+        if (data.length <= step) {
+            keepFetching = false;
+        } else {
+            from += step + 1; 
+        }
+    }
+    return allData;
+}
+
 // --- LOAD TICKETS FROM LOCAL VAULT (OFFLINE) ---
 function loadTicketsFromVault() {
     console.log("Loading tickets from IndexedDB Vault...");
@@ -415,6 +445,9 @@ document.getElementById('btnAssignation').addEventListener('click', async () => 
         ASSIGN_COLUMNS.push(...parsedOrder);
     }
     // -------------------------------------------
+    // --- FORCE THE SCREEN TO CLEAR OLD DATA : without the follwing 2 lines the assignation page will keep showing the last Fetched orders even you left the page ---
+    renderAssignationTable(); 
+    document.getElementById('batchSoInput').value = '';
 });
 
 document.getElementById('assignHubBtn').addEventListener('click', () => {
@@ -446,11 +479,14 @@ document.getElementById('techHubBtn').addEventListener('click', () => {
 
 // --- 6. DATA VISUALIZATION ENGINE (DYNAMIC TABLE) ---
 async function loadDatabaseData() {
-    const { data, error } = await supabaseClient.from('orders').select('*');
-    if (error) {
-        alert("Error loading data from database: " + error.message);
+    // Replaced the simple select('*') with our powerful pagination engine
+    const data = await fetchAllRecords('orders');
+    
+    if (!data) {
+        alert("Error loading data from database. Please check your connection.");
         return;
     }
+    
     databaseOrders = data || [];
     editedOrders = {};
     renderTableStructure();
@@ -498,11 +534,32 @@ function renderTableStructure() {
 
         // --- NEW EXCEL-STYLE DROPDOWN FILTER ---
         const filterTd = document.createElement('th');
+        
+        // 1. Create the text input for typing
+        const textFilter = document.createElement('input');
+        textFilter.type = 'text';
+        textFilter.placeholder = 'Search...';
+        textFilter.dataset.column = colKey;
+        textFilter.style.width = '100%';
+        textFilter.style.boxSizing = 'border-box';
+        textFilter.style.marginBottom = '2px';
+        textFilter.addEventListener('input', runFilters);
+        filterTd.appendChild(textFilter);
+
+        // 2. Create the dropdown select
         const filterSelect = document.createElement('select');
         filterSelect.dataset.column = colKey;
-        
-        // Add the default option at the top
-        filterSelect.innerHTML = `<option value="">-- All --</option>`;
+
+        // Add these 3 styling lines:
+        filterSelect.style.width = '100%';
+        filterSelect.style.boxSizing = 'border-box';
+        filterSelect.style.display = 'block';
+                
+        // Add the default option and Blank option at the top
+        filterSelect.innerHTML = `
+            <option value="">-- All --</option>
+            <option value="[BLANK]">-- Blank --</option>
+        `;
         
         // Extract unique values from the database for this specific column
         const uniqueValues = new Set();
@@ -658,9 +715,33 @@ function populateTableRows(dataToDisplay) {
 
 // --- 7. FILTERING SYSTEM ---
 function runFilters() {
-    const filterInputs = document.querySelectorAll('#filterRow select');
+    const filterSelects = document.querySelectorAll('#filterRow select');
+    const filterInputs = document.querySelectorAll('#filterRow input[type="text"]');
     let filteredData = [...databaseOrders];
 
+    // Apply Dropdown Filters First
+    filterSelects.forEach(select => {
+        const val = select.value;
+        const colKey = select.dataset.column;
+
+        if (val === "[BLANK]") {
+            filteredData = filteredData.filter(row => {
+                const cellValue = (editedOrders[row.so] && editedOrders[row.so][colKey] !== undefined)
+                    ? String(editedOrders[row.so][colKey]).trim()
+                    : String(row[colKey] || '').trim();
+                return cellValue === '';
+            });
+        } else if (val !== "") {
+            filteredData = filteredData.filter(row => {
+                const cellValue = (editedOrders[row.so] && editedOrders[row.so][colKey] !== undefined)
+                    ? String(editedOrders[row.so][colKey])
+                    : String(row[colKey] || '');
+                return cellValue === val; // Exact match for dropdowns
+            });
+        }
+    });
+
+    // Apply Text Input Filters Second
     filterInputs.forEach(input => {
         const val = input.value.toLowerCase();
         const colKey = input.dataset.column;
@@ -1110,23 +1191,45 @@ document.getElementById('masterValueInput').addEventListener('input', (e) => {
 
 // --- 12. MONITOR ENGINE AND DATA INTERSECTION LOGIC ---
 async function loadMonitorDataEngine() {
-    // 1. Fetch main rows from the orders table
-    const { data: mainOrders, error: orderErr } = await supabaseClient.from('orders').select('*');
-    // 2. Fetch logistical columns from tracking table
-    const { data: trackRows, error: trackErr } = await supabaseClient.from(MONITOR_TABLE_NAME).select('*');
+    const headerEl = document.getElementById('activeMonitorStatusHeader');
+    if (headerEl) headerEl.textContent = 'Fetching all database records... Please wait.';
 
-    if (orderErr) {
-        alert("Error loading orders data: " + orderErr.message);
-        return;
-    }
+    // 1. Fetch ALL main rows from the orders table using our global engine
+    const mainOrders = await fetchAllRecords('orders');
+    
+    // 2. Fetch ALL logistical columns from tracking table using our global engine
+    const trackRows = await fetchAllRecords(MONITOR_TABLE_NAME);
     
     databaseOrders = mainOrders || [];
     monitorTrackingRows = trackRows || [];
+
+    if (headerEl) headerEl.textContent = 'Select a Status or Technician from the Left';
 
     calculateStatusMetrics();
 }
 
 let currentFilteredMonitorRows = [];
+// --- NEW: FAST DATE BUTTONS ---
+// Helper to format JavaScript dates into the YYYY-MM-DD format HTML requires
+const formatHtmlDate = (dateObj) => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+document.getElementById('btnMonitorToday').addEventListener('click', () => {
+    const now = new Date();
+    document.getElementById('monitorStartDate').value = formatHtmlDate(now);
+    document.getElementById('monitorEndDate').value = formatHtmlDate(now);
+});
+
+document.getElementById('btnMonitorThisMonth').addEventListener('click', () => {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    document.getElementById('monitorStartDate').value = formatHtmlDate(firstDay);
+    document.getElementById('monitorEndDate').value = formatHtmlDate(now);
+});
 
 document.getElementById('monitorFilterDateBtn').addEventListener('click', () => {
     const startDateVal = document.getElementById('monitorStartDate').value;
@@ -1162,56 +1265,75 @@ document.getElementById('monitorClearDateBtn').addEventListener('click', () => {
     document.getElementById('monitorTableArea').style.display = 'none';
 });
 
-// UPDATED: Calculates both Status counts AND Technician counts
+// UPDATED: Calculates counts and populates the Top Dropdowns
 function calculateStatusMetrics(dataToProcess = monitorTrackingRows) {
-    const statusList = document.getElementById('statusMetricsList');
-    const techList = document.getElementById('technicianMetricsList');
+    const statusSelect = document.getElementById('monitorStatusSelect');
+    const techSelect = document.getElementById('monitorTechSelect');
     
-    statusList.innerHTML = '';
-    techList.innerHTML = '';
+    // Clear dropdowns completely, but keep the default placeholder options
+    statusSelect.innerHTML = '<option value="">-- Select Status --</option>';
+    techSelect.innerHTML = '<option value="">-- Select Technician --</option>';
 
     let statusCounts = { "All Tracking Logs": dataToProcess.length };
     let techCounts = {};
 
+    // Tally the data
     dataToProcess.forEach(row => {
-        // Status Tally
         let statusName = row.status ? row.status.trim() : 'Unknown';
         if (statusName === '') statusName = 'Unknown';
         statusCounts[statusName] = (statusCounts[statusName] || 0) + 1;
 
-        // Technician Tally (Tracks by assigned_tech)
         let techName = row.assigned_tech ? row.assigned_tech.trim() : '';
         if (techName) {
             techCounts[techName] = (techCounts[techName] || 0) + 1;
         }
     });
 
-    // Render Status Buttons
+    // Populate Status Dropdown
     for (const [statusName, totalCount] of Object.entries(statusCounts)) {
-        const li = document.createElement('li');
-        li.className = 'monitor-filter-item'; // Tag for CSS manipulation
-        li.innerHTML = `<span>${statusName}</span> <span style="background: var(--border-color); padding: 2px 8px; border-radius: 10px; font-size: 12px;">${totalCount}</span>`;
-        li.addEventListener('click', () => {
-            document.querySelectorAll('.monitor-filter-item').forEach(el => el.classList.remove('active-monitor-btn'));
-            li.classList.add('active-monitor-btn');
-            renderMonitorTable('status', statusName, dataToProcess);
-        });
-        statusList.appendChild(li);
+        const opt = document.createElement('option');
+        opt.value = statusName; // Pure name for the computer to use
+        opt.textContent = `${statusName} (${totalCount})`; // Name + Count for the user to read
+        statusSelect.appendChild(opt);
     }
 
-    // Render Technician Buttons
-    for (const [techName, totalCount] of Object.entries(techCounts)) {
-        const li = document.createElement('li');
-        li.className = 'monitor-filter-item'; // Tag for CSS manipulation
-        li.innerHTML = `<span>${techName}</span> <span style="background: var(--border-color); padding: 2px 8px; border-radius: 10px; font-size: 12px;">${totalCount}</span>`;
-        li.addEventListener('click', () => {
-            document.querySelectorAll('.monitor-filter-item').forEach(el => el.classList.remove('active-monitor-btn'));
-            li.classList.add('active-monitor-btn');
-            renderMonitorTable('technician', techName, dataToProcess);
-        });
-        techList.appendChild(li);
-    }
+    // Populate Technician Dropdown (Alphabetized for easy searching)
+    Object.keys(techCounts).sort().forEach(techName => {
+        const totalCount = techCounts[techName];
+        const opt = document.createElement('option');
+        opt.value = techName;
+        opt.textContent = `${techName} (${totalCount})`;
+        techSelect.appendChild(opt);
+    });
 }
+
+// --- MUTUALLY EXCLUSIVE DROPDOWN LISTENERS ---
+// When Status changes, clear Technician, and show table
+document.getElementById('monitorStatusSelect').addEventListener('change', (e) => {
+    const selectedVal = e.target.value;
+    document.getElementById('monitorTechSelect').value = ''; // Reset the other dropdown
+    
+    if (selectedVal) {
+        // Use currentFilteredMonitorRows if a date filter is active, otherwise use all data
+        const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
+        renderMonitorTable('status', selectedVal, poolToUse);
+    } else {
+        document.getElementById('monitorTableArea').style.display = 'none';
+    }
+});
+
+// When Technician changes, clear Status, and show table
+document.getElementById('monitorTechSelect').addEventListener('change', (e) => {
+    const selectedVal = e.target.value;
+    document.getElementById('monitorStatusSelect').value = ''; // Reset the other dropdown
+    
+    if (selectedVal) {
+        const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
+        renderMonitorTable('technician', selectedVal, poolToUse);
+    } else {
+        document.getElementById('monitorTableArea').style.display = 'none';
+    }
+});
 
 // NEW UNIFIED RENDERER: Handles both Status and Technician views in strictly Read-Only mode
 function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRows) {
@@ -1271,6 +1393,11 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
     let countHass = 0;
     let countSmartThings = 0;
     let countFinished = 0;
+    
+    // --- NEW: REASON TRACKING VARIABLES ---
+    let totalAssignedOrders = rowsToRender.length; 
+    let totalWithReason = 0;
+    let reasonBreakdown = {};
 
     // 4. BUILD ROWS (Strictly Read-Only)
     rowsToRender.forEach(trackingMatch => {
@@ -1294,24 +1421,49 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
             if (trackingMatch.hass && String(trackingMatch.hass).trim() !== '') countHass++;
             if (trackingMatch.smart_things && String(trackingMatch.smart_things).toLowerCase() === 'yes') countSmartThings++;
             if (trackingMatch.end_tech && trackingMatch.end_tech.trim() === targetValue) countFinished++;
+            
+            // --- NEW: REASON COUNTING LOGIC ---
+            const reason = (trackingMatch.collected_reason || '').trim();
+            if (reason) {
+                totalWithReason++;
+                // Add 1 to this specific reason's tally, or start it at 1 if we haven't seen it yet
+                reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
+            }
         }
     });
 
     // 6. RENDER BADGES (If Technician View)
     if (viewType === 'technician') {
         badgesArea.style.display = 'flex';
+        
+        // Build the HTML loop for the individual reasons
+        let reasonsHtml = '';
+        if (totalWithReason > 0) {
+            // Sort the reasons alphabetically so 01, 02, 03 display in perfect order
+            Object.keys(reasonBreakdown).sort().forEach(reason => {
+                reasonsHtml += `<div style="margin-top: 5px; font-size: 12px; color: var(--text-color); border-bottom: 1px dashed var(--border-color); padding-bottom: 3px;">
+                    ${reason}: <strong>${reasonBreakdown[reason]}</strong>
+                </div>`;
+            });
+        } else {
+            reasonsHtml = '<div style="margin-top: 5px; font-size: 12px; opacity: 0.6;">No reasons logged.</div>';
+        }
+
+        // We use flexbox and theme variables to create a responsive, theme-matching grid of stats
         badgesArea.innerHTML = `
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold;">
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold; flex: 1; min-width: 200px;">
+                📌 Total Assigned Orders: <span style="font-size: 1.2em; color: var(--text-color);">${totalAssignedOrders}</span>
+            </div>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold; flex: 1; min-width: 250px;">
+                📋 Total Logged w/ Reason: <span style="font-size: 1.2em; color: var(--text-color);">${totalWithReason}</span>
+                <div style="margin-top: 10px; background: var(--bg-color); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                    <div style="font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px;">Reason Breakdown:</div>
+                    ${reasonsHtml}
+                </div>
+            </div>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold; flex: 1; min-width: 150px;">
+                ✅ Finished: <span style="font-size: 1.2em; color: var(--text-color);">${countFinished}</span><br><br>
                 💰 Collected: <span style="font-size: 1.2em; color: var(--text-color);">${totalCollected}</span>
-            </div>
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold;">
-                🔌 Hass: <span style="font-size: 1.2em; color: var(--text-color);">${countHass}</span>
-            </div>
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold;">
-                📱 Smart Things: <span style="font-size: 1.2em; color: var(--text-color);">${countSmartThings}</span>
-            </div>
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold;">
-                ✅ Finished Orders: <span style="font-size: 1.2em; color: var(--text-color);">${countFinished}</span>
             </div>
         `;
     }
@@ -1380,11 +1532,29 @@ async function fetchOrdersForAssignation(soArray) {
     });
 
     // 3. Merge new fetches with existing ones in the view
-    const newSOs = ordersData.map(d => d.so);
-    assignationOrders = [...assignationOrders.filter(o => !newSOs.includes(o.so)), ...ordersData];
+    // We force everything to be a String so the computer compares them perfectly
+    const newSOs = ordersData.map(d => String(d.so));
+    assignationOrders = [...assignationOrders.filter(o => !newSOs.includes(String(o.so))), ...ordersData];
     
     renderAssignationTable();
     document.getElementById('batchSoInput').value = '';
+
+    // 4. Check for missing orders and copy to clipboard
+    const missingSOs = soArray.filter(so => !newSOs.includes(String(so)));
+    
+    if (missingSOs.length > 0) {
+        // Join the missing orders with a new line so they stack neatly when pasted
+        const missingText = missingSOs.join('\n');
+        
+        navigator.clipboard.writeText(missingText).then(() => {
+            alert(`Fetched ${ordersData.length} orders.\n\n⚠️ Could not find ${missingSOs.length} order(s) in the system. The missing SO numbers have been automatically copied to your clipboard so you can add them!`);
+        }).catch(err => {
+            alert(`Fetched ${ordersData.length} orders. Missing ${missingSOs.length} orders, but your browser blocked the clipboard copy action.`);
+        });
+    } else {
+        // If everything was found, just show a standard success message
+        alert(`Success! Fetched all ${ordersData.length} orders.`);
+    }
 }
 
 let assignationSortDir = {};
@@ -1453,10 +1623,27 @@ function renderAssignationTable(dataToRender = assignationOrders) {
             });
             headerRow.appendChild(th);
 
-            // 2. Filter Input Box (Creates empty dropdowns structure)
+            // 2. Filter Input Box (Creates text input and dropdown)
             const filterTd = document.createElement('th');
+            
+            const textFilter = document.createElement('input');
+            textFilter.type = 'text';
+            textFilter.placeholder = 'Search...';
+            textFilter.dataset.column = colKey;
+            textFilter.style.width = '100%';
+            textFilter.style.boxSizing = 'border-box';
+            textFilter.style.marginBottom = '2px';
+            textFilter.addEventListener('input', runAssignationFilters);
+            filterTd.appendChild(textFilter);
+
             const filterSelect = document.createElement('select');
             filterSelect.dataset.column = colKey;
+
+            // Add these 3 styling lines:
+            filterSelect.style.width = '100%';
+            filterSelect.style.boxSizing = 'border-box';
+            filterSelect.style.display = 'block';
+
             filterSelect.addEventListener('change', runAssignationFilters);
             filterTd.appendChild(filterSelect);
             filterRow.appendChild(filterTd);
@@ -1475,7 +1662,10 @@ function renderAssignationTable(dataToRender = assignationOrders) {
         const colKey = select.dataset.column;
         const currentSelection = select.value; // Save what the user has currently selected
 
-        select.innerHTML = `<option value="">-- All --</option>`;
+        select.innerHTML = `
+            <option value="">-- All --</option>
+            <option value="[BLANK]">-- Blank --</option>
+        `;
         
         const uniqueValues = new Set();
         assignationOrders.forEach(row => {
@@ -1648,8 +1838,30 @@ function renderAssignationTable(dataToRender = assignationOrders) {
 
 // --- FILTERING FOR ASSIGNATION PAGE ---
 function runAssignationFilters() {
-    const filterInputs = document.querySelectorAll('#assignFilterRow select');
+    const filterSelects = document.querySelectorAll('#assignFilterRow select');
+    const filterInputs = document.querySelectorAll('#assignFilterRow input[type="text"]');
     let filteredData = [...assignationOrders];
+
+    filterSelects.forEach(select => {
+        const val = select.value;
+        const colKey = select.dataset.column;
+
+        if (val === "[BLANK]") {
+            filteredData = filteredData.filter(row => {
+                const cellValue = (editedAssignations[row.so] && editedAssignations[row.so][colKey] !== undefined)
+                    ? String(editedAssignations[row.so][colKey]).trim()
+                    : String(row[colKey] || '').trim();
+                return cellValue === '';
+            });
+        } else if (val !== "") {
+            filteredData = filteredData.filter(row => {
+                const cellValue = (editedAssignations[row.so] && editedAssignations[row.so][colKey] !== undefined)
+                    ? String(editedAssignations[row.so][colKey])
+                    : String(row[colKey] || '');
+                return cellValue === val;
+            });
+        }
+    });
 
     filterInputs.forEach(input => {
         const val = input.value.toLowerCase();
@@ -2206,26 +2418,18 @@ async function loadActiveTickets() {
     try {
         document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Loading tickets...</h3>";
 
-        const { data: logs, error: logErr } = await supabaseClient.from('repair_log').select('*');
-        if (logErr) throw logErr;
+        // WE NO LONGER QUERY THE HISTORY LOGS. WE QUERY THE MASTER ORDERS TABLE DIRECTLY.
+        // This guarantees the Technician sees exactly what is on the System Page.
+        // We use '.ilike' to ignore case sensitivity just as a safety net.
+        const { data: ordersData, error: orderErr } = await supabaseClient
+            .from('orders')
+            .select('*')
+            .eq('status', 'Technician')
+            .ilike('assigned_tech', currentUser.username); 
 
-        logs.sort((a, b) => {
-            const parseDate = (d) => d ? d.split('-').reverse().join('-') : '1970-01-01';
-            const timeA = new Date(`${parseDate(a.assign_date)}T${a.assign_time || '00:00'}`);
-            const timeB = new Date(`${parseDate(b.assign_date)}T${b.assign_time || '00:00'}`);
-            return timeB - timeA; 
-        });
+        if (orderErr) throw orderErr;
 
-        const latestLogs = {};
-        logs.forEach(log => {
-            if (!latestLogs[log.so]) latestLogs[log.so] = log;
-        });
-
-        const myTicketSOs = Object.values(latestLogs)
-            .filter(log => log.status === 'Technician' && log.assigned_tech === currentUser.username)
-            .map(log => log.so);
-
-        if (myTicketSOs.length === 0) {
+        if (!ordersData || ordersData.length === 0) {
             document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>You have no active orders! 🎉</h3>";
             if (localDB) {
                 const transaction = localDB.transaction('inbox', 'readwrite');
@@ -2235,15 +2439,10 @@ async function loadActiveTickets() {
             return;
         }
 
-        const { data: ordersData, error: orderErr } = await supabaseClient
-            .from('orders')
-            .select('*')
-            .in('so', myTicketSOs);
-
-        if (orderErr) throw orderErr;
-
+        // Sort by Days (Highest first)
         ordersData.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
 
+        // Update Offline Vault
         if (localDB) {
             const transaction = localDB.transaction('inbox', 'readwrite');
             const store = transaction.objectStore('inbox');
@@ -2296,6 +2495,10 @@ function renderTickets(tickets) {
                 <div class="ticket-row"><span>Date: ${ticket.date || 'N/A'}</span> <span>${p2}</span></div>
                 <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
                 <div class="ticket-row"><span><strong>Model:</strong> ${ticket.model || 'N/A'}</span> <span><strong>SN:</strong> ${ticket.serial || 'N/A'}</span></div>
+
+                <!-- NEW: Added the Status Comment line here so it shows on the outside ticket -->
+                <div class="ticket-row" style="margin-top: 5px;"><strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}</div>
+
                 ${partsHtml}
                 <button class="details-btn">Details & Action</button>
             `;
@@ -2327,7 +2530,74 @@ function renderMediaLink(elementId, url, label) {
     }
 }
 
+// --- UNIVERSAL TICKET HISTORY FETCHER ---
+function fetchAndRenderTicketHistory(soNumber) {
+    // 1. Un-hide the history section and show loading text
+    document.getElementById('coordHistorySection').style.display = 'block';
+    document.getElementById('lastPushedByValue').textContent = 'Loading...';
+    document.getElementById('coordCommentsList').innerHTML = '<span style="color: gray;">Loading comments...</span>';
+
+    // 2. Fetch the data from the repair_log
+    supabaseClient.from('repair_log')
+        .select('*')
+        .eq('so', soNumber)
+        .then(({ data: logs, error }) => {
+            if (error) {
+                document.getElementById('coordCommentsList').innerHTML = '<span style="color: #d32f2f;">Failed to load history.</span>';
+                document.getElementById('lastPushedByValue').textContent = 'Error loading data';
+                return;
+            }
+            
+            if (!logs || logs.length === 0) {
+                 document.getElementById('coordCommentsList').innerHTML = '<span style="color: gray;">No comments found.</span>';
+                 document.getElementById('lastPushedByValue').textContent = 'Unknown';
+                 return;
+            }
+
+            // 3. Sort logs newest-first
+            logs.sort((a, b) => {
+                const parseDate = (d) => d ? d.split('-').reverse().join('-') : '1970-01-01';
+                const timeA = new Date(`${parseDate(a.assign_date)}T${a.assign_time || '00:00'}`);
+                const timeB = new Date(`${parseDate(b.assign_date)}T${b.assign_time || '00:00'}`);
+                return timeB - timeA; 
+            });
+
+            // 4. Find who last pushed this to back_office
+            const backOfficeLogs = logs.filter(l => l.status === 'back_office');
+            if (backOfficeLogs.length > 0) {
+                const latestPush = backOfficeLogs[0];
+                document.getElementById('lastPushedByValue').textContent = `${latestPush.assigned_by || 'Unknown'} (on ${latestPush.assign_date} at ${latestPush.assign_time})`;
+            } else {
+                document.getElementById('lastPushedByValue').textContent = 'N/A';
+            }
+
+            // 5. Extract and format all comments
+            const commentLogs = logs.filter(l => l.comment && l.comment.trim() !== '');
+            const commentsContainer = document.getElementById('coordCommentsList');
+            commentsContainer.innerHTML = '';
+
+            if (commentLogs.length > 0) {
+                commentLogs.forEach(log => {
+                    const div = document.createElement('div');
+                    div.style.padding = '8px';
+                    div.style.background = 'var(--bg-color)';
+                    div.style.border = '1px solid var(--border-color)';
+                    div.style.borderRadius = '4px';
+                    div.innerHTML = `
+                        <strong style="color: #4caf50;">${log.assigned_by || 'Unknown'}</strong> 
+                        <span style="font-size: 11px; opacity: 0.7;">(${log.assign_date} at ${log.assign_time}):</span><br>
+                        <span style="margin-top: 4px; display: inline-block;">${log.comment}</span>
+                    `;
+                    commentsContainer.appendChild(div);
+                });
+            } else {
+                commentsContainer.innerHTML = '<span style="color: gray;">No comments recorded yet.</span>';
+            }
+        });
+}
+
 function openDetailsModal(ticket) {
+    currentlyViewedTicket = ticket;
     activeTechTicket = ticket;
     // --- UPDATE THE MODAL HEADER WITH THE SO NUMBER ---
     const modalHeaders = document.querySelectorAll('#modalSoHeader');
@@ -2359,6 +2629,24 @@ function openDetailsModal(ticket) {
     // -------------------------------------------------
 
     // 2. Populate Read-Only Details
+
+    // --- NEW: DYNAMIC PURPLE PARTS FOR INSIDE THE TICKET ---
+    // We build the parts list exactly like the outside ticket, ignoring empty slots
+    let modalPartsArray = [];
+    for (let i = 1; i <= 5; i++) {
+        let part = (ticket[`part_${i}`] || '').trim();
+        let qty = (ticket[`qty_${i}`] || '').trim();
+        if (part && part.toUpperCase() !== 'EMPTY') {
+            modalPartsArray.push(`${part} (x${qty && qty.toUpperCase() !== 'EMPTY' ? qty : '1'})`);
+        }
+    }
+    
+    // If we have parts, format the text in purple (#8e24aa) with a wrench icon. Otherwise, print N/A.
+    let modalPartsHtml = modalPartsArray.length > 0 
+        ? `<div style="color: #8e24aa; font-size: 14px; font-weight: bold; margin-bottom: 5px;">🛠️ Parts: ${modalPartsArray.join(', ')}</div>` 
+        : `<strong>Parts:</strong> N/A<br>`;
+    // -------------------------------------------------------
+
     document.getElementById('modalReadOnlyDetails').innerHTML = `
         <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
             <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
@@ -2372,7 +2660,10 @@ function openDetailsModal(ticket) {
         <strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}<br>
         <strong>Route:</strong> ${ticket.rout || 'N/A'}<br>
         <strong>I/O:</strong> ${ticket.io || 'N/A'}<br>
-        <strong>Parts:</strong> ${ticket.part_1||''} (x${ticket.qty_1||0}), ${ticket.part_2||''} (x${ticket.qty_2||0})<br>
+        
+        <!-- NEW: We replaced the old plain text parts with our dynamic purple HTML -->
+        ${modalPartsHtml}
+        
         <strong>Call Details:</strong> ${ticket.call_details || 'N/A'}
     `;
 
@@ -2389,67 +2680,8 @@ function openDetailsModal(ticket) {
         const confirmCoordBtn = document.getElementById('confirmCoordBtn');
         confirmCoordBtn.style.display = 'block';
         
-        // --- NEW: FETCH TICKET HISTORY FROM REPAIR_LOG ---
-        document.getElementById('lastPushedByValue').textContent = 'Loading...';
-        document.getElementById('coordCommentsList').innerHTML = '<span style="color: gray;">Loading comments...</span>';
-
-        supabaseClient.from('repair_log')
-            .select('*')
-            .eq('so', ticket.so)
-            .then(({ data: logs, error }) => {
-                if (error) {
-                    document.getElementById('coordCommentsList').innerHTML = '<span style="color: #d32f2f;">Failed to load history.</span>';
-                    document.getElementById('lastPushedByValue').textContent = 'Error loading data';
-                    return;
-                }
-                
-                if (!logs || logs.length === 0) {
-                     document.getElementById('coordCommentsList').innerHTML = '<span style="color: gray;">No comments found.</span>';
-                     document.getElementById('lastPushedByValue').textContent = 'Unknown';
-                     return;
-                }
-
-                // Sort logs newest-first so the most recent events are at the top
-                logs.sort((a, b) => {
-                    const parseDate = (d) => d ? d.split('-').reverse().join('-') : '1970-01-01';
-                    const timeA = new Date(`${parseDate(a.assign_date)}T${a.assign_time || '00:00'}`);
-                    const timeB = new Date(`${parseDate(b.assign_date)}T${b.assign_time || '00:00'}`);
-                    return timeB - timeA; 
-                });
-
-                // 1. Find who last pushed this to back_office
-                const backOfficeLogs = logs.filter(l => l.status === 'back_office');
-                if (backOfficeLogs.length > 0) {
-                    const latestPush = backOfficeLogs[0]; // First item is the newest
-                    document.getElementById('lastPushedByValue').textContent = `${latestPush.assigned_by || 'Unknown'} (on ${latestPush.assign_date} at ${latestPush.assign_time})`;
-                } else {
-                    document.getElementById('lastPushedByValue').textContent = 'N/A';
-                }
-
-                // 2. Extract and format all comments
-                const commentLogs = logs.filter(l => l.comment && l.comment.trim() !== '');
-                const commentsContainer = document.getElementById('coordCommentsList');
-                commentsContainer.innerHTML = '';
-
-                if (commentLogs.length > 0) {
-                    commentLogs.forEach(log => {
-                        const div = document.createElement('div');
-                        div.style.padding = '8px';
-                        div.style.background = 'var(--bg-color)';
-                        div.style.border = '1px solid var(--border-color)';
-                        div.style.borderRadius = '4px';
-                        div.innerHTML = `
-                            <strong style="color: #4caf50;">${log.assigned_by || 'Unknown'}</strong> 
-                            <span style="font-size: 11px; opacity: 0.7;">(${log.assign_date} at ${log.assign_time}):</span><br>
-                            <span style="margin-top: 4px; display: inline-block;">${log.comment}</span>
-                        `;
-                        commentsContainer.appendChild(div);
-                    });
-                } else {
-                    commentsContainer.innerHTML = '<span style="color: gray;">No comments recorded yet.</span>';
-                }
-            });
-        // -------------------------------------------------
+        // Call the universal history fetcher
+        fetchAndRenderTicketHistory(ticket.so);
 
         // Reset Coord Form
         document.getElementById('coordStatusSelect').value = '';
@@ -2463,7 +2695,6 @@ function openDetailsModal(ticket) {
         
         // Hide Coordinator Zone & History Zone
         document.getElementById('coordActionSection').style.display = 'none';
-        document.getElementById('coordHistorySection').style.display = 'none'; // NEW
         document.getElementById('confirmCoordBtn').style.display = 'none';
 
         // Execute original Tech form reset
@@ -3455,7 +3686,51 @@ document.getElementById('monitorDownloadCsvBtn').addEventListener('click', () =>
 // ==========================================
 // --- VIEW ONLY MODAL ENGINE view ticket---
 // ==========================================
+// --- UNIVERSAL COPY BUTTON LOGIC ---
+// We create a variable to track whichever ticket is currently open in either modal
+let currentlyViewedTicket = null;
+
+document.getElementById('modalCopyBtn').addEventListener('click', () => {
+    if (!currentlyViewedTicket) return;
+    
+    const t = currentlyViewedTicket;
+    
+    // Extract and format the parts neatly
+    let partsStr = '';
+    for (let i = 1; i <= 5; i++) {
+        let part = (t[`part_${i}`] || '').trim();
+        let qty = (t[`qty_${i}`] || '').trim();
+        if (part && part.toUpperCase() !== 'EMPTY') {
+            partsStr += `${part} (x${qty && qty.toUpperCase() !== 'EMPTY' ? qty : '1'}) `;
+        }
+    }
+
+    // Build the giant text block
+    const copyText = `SO: ${t.so}
+    Days: ${t.days || 0}
+    Name: ${t.name || 'N/A'}
+    Phones: ${t.phone || ''} ${t.phone_2 ? '/ ' + t.phone_2 : ''}
+    Date: ${t.date || 'N/A'}
+    Address: ${t.address || 'N/A'}
+    Model: ${t.model || 'N/A'}
+    SN: ${t.serial || 'N/A'}
+    Remark: ${t.remark || 'N/A'}
+    Status Comment: ${t.status_comment || 'N/A'}
+    Route: ${t.rout || 'N/A'}
+    I/O: ${t.io || 'N/A'}
+    Parts: ${partsStr || 'N/A'}
+    Call Details: ${t.call_details || 'N/A'}`;
+        
+    // Send to clipboard
+    navigator.clipboard.writeText(copyText).then(() => {
+        alert("Order details copied to clipboard!");
+    }).catch(err => {
+        alert("Failed to copy details: " + err.message);
+    });
+});
+
 function openViewOnlyModal(ticket) {
+    currentlyViewedTicket = ticket;
     const modal = document.getElementById('detailsModal');
     
     // 1. Set Header
@@ -3481,6 +3756,22 @@ function openViewOnlyModal(ticket) {
     const p2 = ticket.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${ticket.phone_2}</a>` : 'N/A';
 
     // 5. Populate Read-Only Details
+
+    // --- NEW: DYNAMIC PURPLE PARTS FOR THE VIEW-ONLY TICKET ---
+    let viewPartsArray = [];
+    for (let i = 1; i <= 5; i++) {
+        let part = (ticket[`part_${i}`] || '').trim();
+        let qty = (ticket[`qty_${i}`] || '').trim();
+        if (part && part.toUpperCase() !== 'EMPTY') {
+            viewPartsArray.push(`${part} (x${qty && qty.toUpperCase() !== 'EMPTY' ? qty : '1'})`);
+        }
+    }
+    
+    let viewPartsHtml = viewPartsArray.length > 0 
+        ? `<div style="color: #8e24aa; font-size: 14px; font-weight: bold; margin-bottom: 5px;">🛠️ Parts: ${viewPartsArray.join(', ')}</div>` 
+        : `<strong>Parts:</strong> N/A<br>`;
+    // -------------------------------------------------------
+
     document.getElementById('modalReadOnlyDetails').innerHTML = `
         <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
             <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
@@ -3494,14 +3785,17 @@ function openViewOnlyModal(ticket) {
         <strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}<br>
         <strong>Route:</strong> ${ticket.rout || 'N/A'}<br>
         <strong>I/O:</strong> ${ticket.io || 'N/A'}<br>
-        <strong>Parts:</strong> ${ticket.part_1||''} (x${ticket.qty_1||0}), ${ticket.part_2||''} (x${ticket.qty_2||0})<br>
+        
+        <!-- NEW: Replaced the old parts format -->
+        ${viewPartsHtml}
+        
         <strong>Call Details:</strong> ${ticket.call_details || 'N/A'}
     `;
 
     // 6. Force View-Only Mode (Hide all action sections!)
     document.getElementById('techActionSection').style.display = 'none';
     document.getElementById('coordActionSection').style.display = 'none';
-    document.getElementById('coordHistorySection').style.display = 'none'; 
+    fetchAndRenderTicketHistory(ticket.so);
     
     // Hide Confirm buttons, leaving only the "Cancel / X" button active
     document.getElementById('confirmTechBtn').style.display = 'none';

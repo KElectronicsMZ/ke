@@ -132,8 +132,14 @@
             
             <div class="monitor-sidebar">
                 <div class="date-filter-group" style="padding-bottom: 15px; border-bottom: 2px solid var(--border-color); margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px;">
-                    <label style="font-size: 14px; font-weight: bold;">Date Range:</label>
-                    
+                        <label style="font-size: 14px; font-weight: bold;">Date Range:</label>
+                        
+                    <!-- NEW: Fast Date Buttons -->
+                    <div style="display: flex; gap: 5px;">
+                        <button id="btnMonitorToday" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 5px; flex-grow: 1; font-size: 12px;">Today</button>
+                        <button id="btnMonitorThisMonth" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 5px; flex-grow: 1; font-size: 12px;">This Month</button>
+                    </div>
+
                     <div style="display: flex; flex-direction: column; gap: 4px;">
                         <label for="monitorStartDate" style="font-size: 12px; opacity: 0.8;">Start Date:</label>
                         <input type="date" id="monitorStartDate" style="padding: 8px; border: 1px solid var(--border-color); background: transparent; color: var(--text-color); border-radius: 4px;">
@@ -147,22 +153,32 @@
                     <button id="monitorFilterDateBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px;">Apply Filter</button>
                     <button id="monitorClearDateBtn" style="background: transparent; color: #d32f2f; border: 1px solid #d32f2f; padding: 5px; cursor: pointer;">Clear Filter</button>
                     <button id="monitorDownloadCsvBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px; background: #1976d2; color: white; margin-top: 10px;">Download CSV</button>
+                    </div>
+                    
+                    <button id="monitorHubBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 10px; width: 100%; font-size: 14px;">Back to HUB</button>
                 </div>
-                
-                <h3>Order Statuses</h3>
-                <ul id="statusMetricsList"></ul>
-
-                <h3 style="margin-top: 20px;">By Technician</h3>
-                <ul id="technicianMetricsList"></ul>
-
-                <hr style="border-color: var(--border-color); margin: 20px 0;">
-                <button id="monitorHubBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 10px; width: 100%; font-size: 14px;">Back to HUB</button>
-            </div>
 
             <div class="monitor-main">
-                <div class="system-header">
-                    <h2 id="activeMonitorStatusHeader">Select a Status or Technician from the Left</h2>
+                <div class="system-header" style="flex-direction: column; align-items: flex-start; gap: 15px;">
+                    <h2 id="activeMonitorStatusHeader" style="margin: 0;">Monitor Dashboard</h2>
+                    
+                    <!-- NEW: Dropdown Controls (Uses Theme Variables) -->
+                    <div id="monitorDropdownControls" style="display: flex; gap: 15px; width: 100%; background: var(--card-bg); padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box;">
+                            <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 5px;">
+                                <label style="font-size: 12px; font-weight: bold; opacity: 0.8;">Filter by Status:</label>
+                                <select id="monitorStatusSelect" style="padding: 8px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px; font-size: 14px;">
+                                    <option value="">-- Select Status --</option>
+                                </select>
+                            </div>
+                        
+                            <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 5px;">
+                                <label style="font-size: 12px; font-weight: bold; opacity: 0.8;">Filter by Technician:</label>
+                                <select id="monitorTechSelect" style="padding: 8px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px; font-size: 14px;">
+                                    <option value="">-- Select Technician --</option>
+                                </select>
+                            </div>
                     </div>
+                </div>
 
                 <div id="monitorTableArea" style="display: none; width: 100%;">
                     <div class="table-container" style="height: 50vh; overflow-x: auto;">
@@ -193,7 +209,7 @@
         </div>
 
         <div style="margin-bottom: 20px; width: 100%; display: flex; gap: 10px; align-items: flex-start;">
-            <textarea id="batchSoInput" placeholder="Paste list of SOs here (one per line or comma separated)..." rows="4" style="flex-grow: 1; padding: 10px;"></textarea>
+            <textarea id="batchSoInput" placeholder="Paste list of SOs here (one per line or comma separated)..." rows="4" style="flex-grow: 250; padding: 10px;"></textarea>
             <button id="btnFetchBatchSo" style="height: 100%;">New Assignation (Fetch)</button>
         </div>
         <div id="assignMasterEditContainer" style="padding: 10px; font-weight: bold; font-size: 14px; min-height: 35px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start;">
@@ -298,7 +314,10 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 id="modalSoHeader">Order Details</h3>
-                    <button id="closeModalBtn" class="close-btn">X</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="modalCopyBtn" style="background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 5px 10px; cursor: pointer; border-radius: 4px; font-weight: bold;">📋 Copy Details</button>
+                        <button id="closeModalBtn" class="close-btn">X</button>
+                    </div>
                 </div>
                 
                 <div class="modal-body">
@@ -344,10 +363,15 @@
                             <label>Reason نوع الصيانة</label>
                             <select id="reasonSelect">
                                 <option value="">-- Select Reason --</option>
-                                <option value="زيارة">زيارة</option>
-                                <option value="صيانة">صيانة</option>
-                                <option value="شحن او كبس">شحن او كبس</option>
-                                <option value="اوبن سيل او ليدات">اوبن سيل او ليدات</option>
+                                <!-- The value="" is exactly what gets saved to the database -->
+                                <option value="01 - زيارة">01 - زيارة</option>
+                                <option value="02 - صيانة">02 - صيانة</option>
+                                <option value="03 - اوبن سيل/ليدات">03 - اوبن سيل/ليدات</option>
+                                <option value="04 - كبس">04 - كبس</option>
+                                <option value="05 - شحن">05 - شحن</option>
+                                <option value="06- صيانة تكييف">06- صيانة تكييف</option>
+                                <option value="07 - شحن /تركيب تكييف">07 - شحن /تركيب تكييف</option>
+
                             </select>
                         </div>
 

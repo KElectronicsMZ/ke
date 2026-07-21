@@ -24,6 +24,19 @@ dbRequest.onupgradeneeded = function(event) {
     }
 };
 
+// --- LOADER CONTROLS ---
+function showGlobalLoader(text = "Loading Data...") {
+    const loader = document.getElementById('globalLoader');
+    const loaderText = document.getElementById('loaderText');
+    if (loaderText) loaderText.textContent = text;
+    if (loader) loader.style.display = 'flex';
+}
+
+function hideGlobalLoader() {
+    const loader = document.getElementById('globalLoader');
+    if (loader) loader.style.display = 'none';
+}
+
 // This runs every time the app opens successfully
 dbRequest.onsuccess = function(event) {
     localDB = event.target.result;
@@ -293,6 +306,31 @@ document.getElementById('loginCancelBtn').addEventListener('click', () => {
     document.getElementById('passwordInput').value = '';
 });
 
+// ---ALLOW 'ENTER' KEY TO LOGIN ---
+
+// Listen to the username input box for any key presses
+document.getElementById('usernameInput').addEventListener('keydown', (e) => {
+    // If the key pressed was exactly 'Enter'
+    if (e.key === 'Enter') {
+        // Prevent default browser behaviors just to be safe
+        e.preventDefault();
+        // Force the code to "click" the Login OK button automatically
+        document.getElementById('loginOkBtn').click();
+    }
+});
+
+// Do the exact same thing for the password input box
+document.getElementById('passwordInput').addEventListener('keydown', (e) => {
+    // If the key pressed was exactly 'Enter'
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        // Force the code to "click" the Login OK button automatically
+        document.getElementById('loginOkBtn').click();
+    }
+});
+// -------------------------------------- ---
+
+
 document.getElementById('menuCancelBtn').addEventListener('click', () => {
     document.getElementById('globalUserBanner').style.display = 'none'; //hide the banner on logout
     // --- DESTROY SESSION TICKET ---
@@ -502,10 +540,13 @@ document.getElementById('techHubBtn').addEventListener('click', () => {
 
 // --- 6. DATA VISUALIZATION ENGINE (DYNAMIC TABLE) ---
 async function loadDatabaseData() {
+    showGlobalLoader("Fetching System Records..."); // Trigger Loader
+    
     // Replaced the simple select('*') with our powerful pagination engine
     const data = await fetchAllRecords('orders');
     
     if (!data) {
+        hideGlobalLoader(); // Hide if it fails
         alert("Error loading data from database. Please check your connection.");
         return;
     }
@@ -513,6 +554,8 @@ async function loadDatabaseData() {
     databaseOrders = data || [];
     editedOrders = {};
     renderTableStructure();
+    
+    hideGlobalLoader(); // Hide when finished rendering
 }
 
 function renderTableStructure() {
@@ -1214,6 +1257,7 @@ document.getElementById('masterValueInput').addEventListener('input', (e) => {
 
 // --- 12. MONITOR ENGINE AND DATA INTERSECTION LOGIC ---
 async function loadMonitorDataEngine() {
+    
     const headerEl = document.getElementById('activeMonitorStatusHeader');
     if (headerEl) headerEl.textContent = 'Fetching specific date records... Please wait.';
 
@@ -1226,6 +1270,7 @@ async function loadMonitorDataEngine() {
         if (headerEl) headerEl.textContent = 'Select a Status or Technician from the Left';
         return;
     }
+    showGlobalLoader("Analyzing Monitor Logs..."); // Trigger Loader
 
     // 2. Generate the exact list of DD-MM-YYYY text strings to look for
     const start = new Date(startDateVal);
@@ -1259,13 +1304,29 @@ async function loadMonitorDataEngine() {
     monitorTrackingRows = trackRows || [];
     currentFilteredMonitorRows = monitorTrackingRows; 
 
-    calculateStatusMetrics();
+    // --- NEW: FETCH ROLES TO SPLIT THE LEADERBOARD ---
+    // If we haven't loaded the roles yet, ask the profiles table
+    if (Object.keys(globalUserProfiles).length === 0) {
+        const { data: profs } = await supabaseClient.from('profiles').select('username, role');
+        if (profs) {
+            profs.forEach(p => globalUserProfiles[p.username.trim()] = p.role.toLowerCase());
+        }
+    }
+
     
-    // NEW: Default to the Leaderboard when dates are applied!
+    calculateStatusMetrics();
     renderMonitorLeaderboard(currentFilteredMonitorRows); 
+    
+    hideGlobalLoader(); // Hide when finished rendering
 }
 
 let currentFilteredMonitorRows = [];
+
+// --- NEW: LEADERBOARD & SORTING MEMORY ---
+let globalUserProfiles = {}; // Caches roles so we know who is a tech vs coord
+let techLeaderboardData = []; // Holds the active tech data for sorting
+let coordLeaderboardData = []; // Holds the active coord data for sorting
+let monitorSortConfig = { table: '', col: '', dir: 'desc' }; // Remembers what column you clicked
 
 // --- FAST DATE BUTTONS ---
 const formatHtmlDate = (dateObj) => {
@@ -1375,24 +1436,25 @@ document.getElementById('monitorTechSelect').addEventListener('change', (e) => {
     }
 });
 
-// ---PERFORMANCE LEADERBOARD ENGINE ---
+// --- UPGRADED PERFORMANCE LEADERBOARD ENGINE ---
 function renderMonitorLeaderboard(dataPool = currentFilteredMonitorRows) {
     const headerEl = document.getElementById('activeMonitorStatusHeader');
     const tableArea = document.getElementById('monitorTableArea');
     const badgesArea = document.getElementById('technicianBadges');
-    const tbody = document.getElementById('monitorTableBody');
-    const theadRow = document.getElementById('monitorHeaderRow');
     
-    if (headerEl) headerEl.textContent = 'Performance Leaderboard (All Technicians)';
+    // Manage Screen Visibility
+    if (headerEl) headerEl.textContent = 'Performance Leaderboard (Split by Role)';
     tableArea.style.display = 'block';
-    badgesArea.style.display = 'none'; // Hide individual badges
-    tbody.innerHTML = '';
-    theadRow.innerHTML = '';
+    document.getElementById('techTableTitle').style.display = 'block';
+    document.getElementById('coordTableContainer').style.display = 'block';
+    if(badgesArea) badgesArea.style.display = 'none';
 
     let techStats = {};
+    let coordStats = {};
     
-    // Tally the stats for everyone simultaneously
+    // --- A. TALLY ALL DATA FROM REPAIR LOGS ---
     dataPool.forEach(row => {
+        // 1. Tech Variables
         let assignedTech = (row.assigned_tech || '').trim();
         let actedTech = (row.assigned_by || '').trim();
         let endTech = (row.end_tech || '').trim();
@@ -1401,7 +1463,7 @@ function renderMonitorLeaderboard(dataPool = currentFilteredMonitorRows) {
 
         const initTech = (name) => {
             if (name && !techStats[name]) {
-                techStats[name] = { assigned: new Set(), acted: new Set(), finished: 0, collected: 0 };
+                techStats[name] = { name: name, assigned: new Set(), acted: new Set(), finished: 0, collected: 0 };
             }
         };
 
@@ -1412,43 +1474,163 @@ function renderMonitorLeaderboard(dataPool = currentFilteredMonitorRows) {
         if (assignedTech) techStats[assignedTech].assigned.add(so);
         if (actedTech) {
             techStats[actedTech].acted.add(so);
-            techStats[actedTech].collected += collected; // Credit money strictly to the submitter
+            techStats[actedTech].collected += collected; 
         }
         if (endTech) techStats[endTech].finished++;
+
+        // 2. Coordinator Variables (Tracking exactly what you requested)
+        let agreeCoord = (row.agree_coord || '').trim();
+        let completeCoord = (row.complete_coord || '').trim();
+
+        if (agreeCoord) {
+            if (!coordStats[agreeCoord]) coordStats[agreeCoord] = { name: agreeCoord, agree: 0, complete: 0 };
+            coordStats[agreeCoord].agree++;
+        }
+        if (completeCoord) {
+            if (!coordStats[completeCoord]) coordStats[completeCoord] = { name: completeCoord, agree: 0, complete: 0 };
+            coordStats[completeCoord].complete++;
+        }
     });
 
-    // Build Static Headers
-    const cols = ['Technician', 'Assigned Orders', 'Actions Submitted', 'Pending (Left Out)', 'Finished', 'Total Collected'];
+    // --- B. FILTER ROLES AND PREPARE FOR SORTING ---
+    techLeaderboardData = [];
+    coordLeaderboardData = Object.values(coordStats); // Coords are simple, just use the built objects
+
+    Object.values(techStats).forEach(stats => {
+        let role = globalUserProfiles[stats.name] || 'technician';
+        // Only push to the Tech table if their role does NOT contain 'coordinator'
+        if (!role.includes('coordinator')) {
+            let overlapCount = 0;
+            stats.assigned.forEach(so => { if (stats.acted.has(so)) overlapCount++; });
+            
+            techLeaderboardData.push({
+                name: stats.name,
+                assigned: stats.assigned.size,
+                acted: stats.acted.size,
+                pending: stats.assigned.size - overlapCount,
+                finished: stats.finished,
+                collected: stats.collected
+            });
+        }
+    });
+
+    // Default Sort (Highest Finished first for Techs, Highest Agree for Coords)
+    monitorSortConfig = { table: '', col: '', dir: 'desc' }; 
+
+    // --- C. DRAW THE TABLES ---
+    drawTechLeaderboard();
+    drawCoordLeaderboard();
+}
+
+// --- NEW: TABLE DRAWING FUNCTIONS WITH CLICKABLE HEADERS ---
+function drawTechLeaderboard() {
+    const tbody = document.getElementById('monitorTableBody');
+    const theadRow = document.getElementById('monitorHeaderRow');
+    tbody.innerHTML = '';
+    theadRow.innerHTML = '';
+
+    const cols = [
+        { label: 'Technician', key: 'name' },
+        { label: 'Assigned Orders', key: 'assigned' },
+        { label: 'Actions Submitted', key: 'acted' },
+        { label: 'Pending (Left Out)', key: 'pending' },
+        { label: 'Finished', key: 'finished' },
+        { label: 'Total Collected', key: 'collected' }
+    ];
+
+    // Build Sorting Headers
     cols.forEach(col => {
         const th = document.createElement('th');
-        th.innerHTML = `<div style="padding: 5px;">${col}</div>`;
+        // Add tiny arrows to show which way it's sorting!
+        let arrow = monitorSortConfig.col === col.key ? (monitorSortConfig.dir === 'asc' ? ' 🔼' : ' 🔽') : '';
+        
+        // UPDATE: Removed underline, added bold, and set color to var(--text-color) to match the theme
+        th.innerHTML = `<div style="padding: 5px; cursor: pointer;" title="Click to sort">
+            <span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">${col.label}</span>${arrow}
+        </div>`;
+        
+        th.addEventListener('click', () => triggerMonitorSort('tech', col.key));
         theadRow.appendChild(th);
     });
 
-    // Build the Leaderboard Rows
-    Object.keys(techStats).sort().forEach(tech => {
-        const stats = techStats[tech];
-        const assignedCount = stats.assigned.size;
-        const actedCount = stats.acted.size; // Total actions they submitted
-        
-        // Calculate pending (assigned but not acted on)
-        let overlapCount = 0;
-        stats.assigned.forEach(so => {
-            if (stats.acted.has(so)) overlapCount++;
-        });
-        const pendingCount = assignedCount - overlapCount;
-
+    // Inject Rows
+    techLeaderboardData.forEach(stats => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td style="padding: 10px; font-weight: bold;">${tech}</td>
-            <td style="padding: 10px;">${assignedCount}</td>
-            <td style="padding: 10px; color: #2e7d32; font-weight: bold;">${actedCount}</td>
-            <td style="padding: 10px; color: #d32f2f;">${pendingCount}</td>
+            <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
+            <td style="padding: 10px;">${stats.assigned}</td>
+            <td style="padding: 10px; color: #2e7d32; font-weight: bold;">${stats.acted}</td>
+            <td style="padding: 10px; color: #d32f2f;">${stats.pending}</td>
             <td style="padding: 10px;">${stats.finished}</td>
             <td style="padding: 10px; font-weight: bold; color: #1976d2;">${stats.collected}</td>
         `;
         tbody.appendChild(tr);
     });
+}
+
+function drawCoordLeaderboard() {
+    const tbody = document.getElementById('coordTableBody');
+    const theadRow = document.getElementById('coordHeaderRow');
+    tbody.innerHTML = '';
+    theadRow.innerHTML = '';
+
+    const cols = [
+        { label: 'Coordinator', key: 'name' },
+        { label: 'Agreed Orders', key: 'agree' },
+        { label: 'Completed Orders', key: 'complete' }
+    ];
+
+    cols.forEach(col => {
+        const th = document.createElement('th');
+        let arrow = monitorSortConfig.col === col.key ? (monitorSortConfig.dir === 'asc' ? ' 🔼' : ' 🔽') : '';
+        
+        // UPDATE: Removed underline, added bold, and set color to var(--text-color) to match the theme
+        th.innerHTML = `<div style="padding: 5px; cursor: pointer;" title="Click to sort">
+            <span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">${col.label}</span>${arrow}
+        </div>`;
+        
+        th.addEventListener('click', () => triggerMonitorSort('coord', col.key));
+        theadRow.appendChild(th);
+    });
+
+    coordLeaderboardData.forEach(stats => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
+            <td style="padding: 10px; color: #f57c00; font-weight: bold;">${stats.agree}</td>
+            <td style="padding: 10px; color: #2e7d32; font-weight: bold;">${stats.complete}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// --- NEW: THE ACTUAL SORTING LOGIC ---
+function triggerMonitorSort(tableType, colKey) {
+    // Determine sort direction (flip if clicking the same column twice)
+    if (monitorSortConfig.col === colKey) {
+        monitorSortConfig.dir = monitorSortConfig.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        monitorSortConfig.col = colKey;
+        monitorSortConfig.dir = 'desc'; // Default to highest numbers first
+    }
+
+    const dataArray = tableType === 'tech' ? techLeaderboardData : coordLeaderboardData;
+
+    dataArray.sort((a, b) => {
+        let valA = a[colKey];
+        let valB = b[colKey];
+        
+        // Alphabetical sort for names
+        if (typeof valA === 'string') {
+            return monitorSortConfig.dir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        // Numerical sort for everything else
+        return monitorSortConfig.dir === 'asc' ? valA - valB : valB - valA;
+    });
+
+    // Redraw only the table that was clicked
+    if (tableType === 'tech') drawTechLeaderboard();
+    if (tableType === 'coord') drawCoordLeaderboard();
 }
 // -----------------------------------------------
 
@@ -1461,6 +1643,10 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
     const theadRow = document.getElementById('monitorHeaderRow');
     
     tableArea.style.display = 'block';
+    // --- ADD THESE TWO LINES TO HIDE THE LEADERBOARD ELEMENTS ---
+    document.getElementById('techTableTitle').style.display = 'none';
+    document.getElementById('coordTableContainer').style.display = 'none';
+    // ------------------------------------------------------------
     badgesArea.style.display = 'none'; 
     tbody.innerHTML = '';
     theadRow.innerHTML = '';
@@ -1651,7 +1837,18 @@ document.getElementById('btnFetchBatchSo').addEventListener('click', () => {
     fetchOrdersForAssignation(soList);
 });
 
+// --- ALLOW 'ENTER' KEY TO FETCH ORDERS and Shift+Enter = new line---
 
+// Listen to the large text area box for key presses
+document.getElementById('batchSoInput').addEventListener('keydown', (e) => {
+    // Check if the key pressed is 'Enter' AND they are NOT holding the 'Shift' key
+    if (e.key === 'Enter' && !e.shiftKey) {
+        // Stop the text box from creating a normal new line
+        e.preventDefault(); 
+        // Force the code to "click" the Fetch button automatically
+        document.getElementById('btnFetchBatchSo').click();
+    }
+});
 
 async function fetchOrdersForAssignation(soArray) {
     if (soArray.length === 0) return;
@@ -2222,9 +2419,59 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
     const min = String(now.getMinutes()).padStart(2, '0');
     const targetDate = `${dd}-${mm}-${yyyy}`;
     const targetTime = `${hh}:${min}`;
+    // ---STATUS CHECKER FOR BACK_OFFICE ---
     
-    // 3. Safely update the main 'orders' table using strict .update() loops
-    const updatePromises = stagedOrders.map(record => {
+    // 1. Extract just the SO numbers from the orders we want to push
+    const stagedSoNumbers = stagedOrders.map(record => record.so);
+
+    // 2. Ask the main 'orders' database table what the current status is for these SOs
+    const { data: currentOrdersDb, error: currentDbErr } = await supabaseClient
+        .from('orders')
+        .select('so, status')
+        .in('so', stagedSoNumbers);
+
+    if (currentDbErr) {
+        alert("Failed to verify current order statuses: " + currentDbErr.message);
+        pushBtn.disabled = false;
+        pushBtn.textContent = '🚀 Push Live Now';
+        return; // Stop the push if the check fails
+    }
+
+    // 3. Create two empty lists to sort the orders into
+    const allowedToPush = [];
+    const blockedBackOfficeSOs = []; // Tracks only the SO numbers that get blocked
+
+    // 4. Sort the orders
+    stagedOrders.forEach(stagedOrder => {
+        // Find the matching current record from the database list we just downloaded
+        const match = currentOrdersDb.find(o => String(o.so) === String(stagedOrder.so));
+        
+        // If it exists in the database AND its status is exactly 'back_office'
+        if (match && match.status === 'back_office') {
+            // Add it to the blocked list (we will skip pushing this)
+            blockedBackOfficeSOs.push(stagedOrder.so);
+        } else {
+            // Otherwise, it is safe to push to the technicians!
+            allowedToPush.push(stagedOrder);
+        }
+    });
+
+    // If absolutely ALL orders were blocked, stop here
+    if (allowedToPush.length === 0) {
+        alert(`Process stopped. All ${blockedBackOfficeSOs.length} staged order(s) are currently in 'back_office' status and cannot be pushed.`);
+        // Clean up the staging table anyway since these are dead orders
+        await supabaseClient.from('tomorrow_schedule').delete().neq('so', '0');
+        updateStagingCount();
+        pushBtn.disabled = false;
+        pushBtn.textContent = '🚀 Push Live Now';
+        return;
+    }
+    // --- END NEW STATUS CHECKER ---
+
+
+    // 5. Safely update the main 'orders' table using ONLY the allowed orders
+    // NOTICE: We changed stagedOrders to allowedToPush here!
+    const updatePromises = allowedToPush.map(record => {
         let orderUpdate = {
             assigned_tech: record.assigned_tech || '',
             rout: record.rout || ''
@@ -2235,15 +2482,12 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
             orderUpdate.status = 'Technician';
         }
         
-        // Use .update() instead of .upsert() so we don't trigger the NOT NULL constraint
         return supabaseClient.from('orders').update(orderUpdate).eq('so', record.so);
     });
 
-    // Run all the updates at the exact same time
     const updateResults = await Promise.all(updatePromises);
-    
-    // Check if any of them failed
     const failedUpdate = updateResults.find(res => res.error);
+    
     if (failedUpdate) {
         alert("Failed to update live orders: " + failedUpdate.error.message);
         pushBtn.disabled = false;
@@ -2251,8 +2495,8 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
         return;
     }
 
-   // 4. Prepare payload for the 'repair_log' table
-    const repairLogPayload = stagedOrders.map(record => ({
+   // 6. Prepare payload for the 'repair_log' table using ONLY allowed orders
+    const repairLogPayload = allowedToPush.map(record => ({
         so: record.so,
         assigned_tech: record.assigned_tech || '',
         assigned_by: currentUser ? currentUser.username : 'Unknown',
@@ -2261,7 +2505,7 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
         status: "Technician" 
     }));
 
-    // 5. Execute Log Updates
+    // 7. Execute Log Updates
     const { error: logErr } = await supabaseClient.from('repair_log').insert(repairLogPayload);
 
     if (logErr) {
@@ -2271,13 +2515,23 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
         return;
     }
 
-    // 6. Final Cleanup: Wipe the staging table completely clean
+    // 8. Final Cleanup: Wipe the entire staging table completely clean
     const { error: deleteErr } = await supabaseClient.from('tomorrow_schedule').delete().neq('so', '0');
 
+    // 9. NEW: Custom Alert Message showing successes and skips
+    let finalMessage = `🚀 Success! ${allowedToPush.length} order(s) successfully pushed to technicians.`;
+    
+    // If any orders were skipped because they were back_office, add them to the message
+    if (blockedBackOfficeSOs.length > 0) {
+        finalMessage += `\n\n⚠️ ${blockedBackOfficeSOs.length} order(s) were skipped because they are in 'back_office' status:\n`;
+        // Join the skipped SOs together with commas
+        finalMessage += blockedBackOfficeSOs.join(', ');
+    }
+
     if (deleteErr) {
-        alert("Live push successful, but failed to clear the staging table. Please manually clear it.");
+        alert(finalMessage + "\n\n(Note: Failed to clear the staging table. Please manually clear it.)");
     } else {
-        alert("🚀 Success! Tomorrow's schedule is now LIVE on the technicians' phones!");
+        alert(finalMessage);
     }
     
     updateStagingCount();

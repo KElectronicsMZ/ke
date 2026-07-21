@@ -18,6 +18,11 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 </head>
 <body data-theme="greenish">
+    <!-- GLOBAL LOADING OVERLAY -->
+    <div id="globalLoader" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center; flex-direction: column; color: white;">
+        <div class="spinner"></div>
+        <h3 id="loaderText" style="margin-top: 15px; letter-spacing: 1px;">Loading Data...</h3>
+    </div>
     <div id="globalUserBanner" style="display: none; background: #1976d2; color: white; padding: 5px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid #115293; z-index: 9999; position: sticky; top: 0;">
         User: <span id="bannerUsername"></span> - <span id="bannerRole"></span>
     </div>
@@ -181,7 +186,10 @@
                 </div>
 
                 <div id="monitorTableArea" style="display: none; width: 100%;">
-                    <div class="table-container" style="height: 50vh; overflow-x: auto;">
+                    
+                    <!-- NEW: Specific Title for Techs -->
+                    <h3 id="techTableTitle" style="margin: 0 0 10px 0;">Technician Leaderboard</h3>
+                    <div class="table-container" style="max-height: 40vh; overflow-y: auto; margin-bottom: 20px;">
                         <table id="monitorDataTable">
                             <thead>
                                 <tr id="monitorHeaderRow"></tr>
@@ -189,6 +197,21 @@
                             <tbody id="monitorTableBody"></tbody>
                         </table>
                     </div>
+                    
+                    <!-- NEW: Dedicated Coordinator Table -->
+                    <div id="coordTableContainer" style="display: none;">
+                        <h3 style="margin: 0 0 10px 0;">Coordinator Leaderboard</h3>
+                        <div class="table-container" style="max-height: 30vh; overflow-y: auto;">
+                            <table id="coordDataTable">
+                                <thead>
+                                    <tr id="coordHeaderRow"></tr>
+                                </thead>
+                                <tbody id="coordTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div id="technicianBadges" style="display: none; gap: 15px; margin-top: 20px; flex-wrap: wrap;"></div>
                     
                     <div id="technicianBadges" style="display: none; gap: 15px; margin-top: 20px; flex-wrap: wrap;"></div>
 

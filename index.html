@@ -237,14 +237,36 @@
         <div class="button-group table-controls">
             <button id="assignClearFiltersBtn">Clear Filters/Sort</button>
             <button id="assignResetLayoutBtn" style="background-color: #d32f2f; color: white; border-color: #b71c1c; margin-left: 5px;">Reset Layout</button>
-            
             <button id="assignRemoveSelectedBtn" style="background-color: #f57c00; color: white; border-color: #e65100;">Remove Selected (From View)</button>
-            <button id="assignDownloadSelectedBtn" style="background-color: #1976d2; color: white; border-color: #1565c0;">Download Selected Data</button>
-            <button id="assignDownloadVisibleBtn" style="background-color: #2e7d32; color: white; border: 1px solid #1b5e20; font-weight: bold; margin-left: 10px;">Download Visible (Grouped)</button>
             
-            <button id="assignSubmitBtn">Submit Assignations</button>
-            <button id="assignHubBtn">HUB</button>
+            <!-- We kept your download buttons here for safety -->
+            <button id="assignDownloadSelectedBtn" style="background-color: #757575; color: white; border-color: #616161; margin-left: 10px;">Download Selected Data</button>
+            <button id="assignDownloadVisibleBtn" style="background-color: #2e7d32; color: white; border: 1px solid #1b5e20; font-weight: bold; margin-left: 10px;">Download Visible (Grouped)</button>
         </div>
+
+        <!-- NEW: Dedicated Staging Area for Tomorrow's Orders -->
+        <div class="button-group table-controls" style="margin-top: 15px; padding-top: 15px; border-top: 2px dashed var(--border-color); display: flex; flex-wrap: wrap; align-items: center; gap: 15px;">
+            
+            <button id="stageTomorrowBtn" style="background-color: #1976d2; color: white; border-color: #1565c0; font-weight: bold; font-size: 15px; padding: 10px 20px;">
+                📅 Stage Tomorrow's Orders
+            </button>
+            
+            <!-- NEW INSTANT DISPATCH BUTTON -->
+            <button id="assignNowInstantBtn" style="background-color: #d32f2f; color: white; border-color: #b71c1c; font-weight: bold; font-size: 15px; padding: 10px 20px;">
+                ⚡ Assign Now (Instant)
+            </button>
+            
+            <div style="background: var(--card-bg); padding: 10px 15px; border: 1px solid var(--border-color); border-radius: 4px; display: flex; align-items: center; gap: 10px;">
+                <span style="font-weight: bold; font-size: 14px;">Pending in Staging:</span>
+                <span id="pendingTomorrowCount" style="background: #f57c00; color: white; padding: 2px 10px; border-radius: 10px; font-weight: bold;">0</span>
+                <button id="pushLiveBtn" style="background-color: #2e7d32; color: white; border: none; padding: 8px 15px; font-weight: bold; border-radius: 4px; cursor: pointer;">
+                    🚀 Push Live Now
+                </button>
+            </div>
+            
+            <button id="assignHubBtn" style="margin-left: auto;">HUB</button>
+        </div>
+    
     </div>
 
     <div id="techPage" class="page">

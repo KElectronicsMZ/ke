@@ -40,17 +40,23 @@ dbRequest.onerror = function(event) {
 
 // --- UNIVERSAL PAGINATION ENGINE ---
 // This safely downloads entire tables by looping in chunks of 1,000 rows to bypass server limits.
-async function fetchAllRecords(tableName) {
+// --- UNIVERSAL PAGINATION ENGINE ---
+// This safely downloads tables in chunks of 1,000, and now supports targeted filtering!
+async function fetchAllRecords(tableName, filterColumn = null, filterValues = null) {
     let allData = [];
     let from = 0;
     const step = 999; 
     let keepFetching = true;
 
     while (keepFetching) {
-        const { data, error } = await supabaseClient
-            .from(tableName)
-            .select('*')
-            .range(from, from + step);
+        let query = supabaseClient.from(tableName).select('*');
+        
+        // NEW: If we provided a specific list to look for, apply it before downloading!
+        if (filterColumn && filterValues && filterValues.length > 0) {
+            query = query.in(filterColumn, filterValues);
+        }
+
+        const { data, error } = await query.range(from, from + step);
 
         if (error) {
             console.error("Error fetching " + tableName + ": " + error.message);
@@ -354,11 +360,8 @@ document.getElementById('btnMonitor').addEventListener('click', () => {
     document.getElementById('monitorEndDate').value = formatInputDate(now);
     // -----------------------------------------------
 
-    // Wait for the data engine to finish downloading the records, 
-    // then automatically apply the filter for the current month!
-    loadMonitorDataEngine().then(() => {
-        document.getElementById('monitorFilterDateBtn').click();
-    }); 
+    // Call the engine once. It will automatically read the default "This Month" dates we just set!
+    loadMonitorDataEngine();
 });
 
 
@@ -401,6 +404,23 @@ document.getElementById('systemHubBtn').addEventListener('click', () => {
 });
 
 const assignationPage = document.getElementById('assignationPage');
+
+
+// --- NEW: TOMORROW'S SCHEDULE STAGING COUNTER ---
+async function updateStagingCount() {
+    const countBadge = document.getElementById('pendingTomorrowCount');
+    if (!countBadge) return;
+    
+    // We ask Supabase just to count the rows, which is extremely fast and lightweight
+    const { count, error } = await supabaseClient
+        .from('tomorrow_schedule')
+        .select('*', { count: 'exact', head: true });
+        
+    if (!error) {
+        countBadge.textContent = count || 0;
+    }
+}
+
 
 document.getElementById('btnAssignation').addEventListener('click', async () => {
     menuPage.classList.remove('active');
@@ -448,6 +468,9 @@ document.getElementById('btnAssignation').addEventListener('click', async () => 
     // --- FORCE THE SCREEN TO CLEAR OLD DATA : without the follwing 2 lines the assignation page will keep showing the last Fetched orders even you left the page ---
     renderAssignationTable(); 
     document.getElementById('batchSoInput').value = '';
+    
+    // Update the orange staging badge when the page opens!
+    updateStagingCount();
 });
 
 document.getElementById('assignHubBtn').addEventListener('click', () => {
@@ -1192,25 +1215,59 @@ document.getElementById('masterValueInput').addEventListener('input', (e) => {
 // --- 12. MONITOR ENGINE AND DATA INTERSECTION LOGIC ---
 async function loadMonitorDataEngine() {
     const headerEl = document.getElementById('activeMonitorStatusHeader');
-    if (headerEl) headerEl.textContent = 'Fetching all database records... Please wait.';
+    if (headerEl) headerEl.textContent = 'Fetching specific date records... Please wait.';
 
-    // 1. Fetch ALL main rows from the orders table using our global engine
-    const mainOrders = await fetchAllRecords('orders');
+    // 1. Get the dates from the screen first
+    const startDateVal = document.getElementById('monitorStartDate').value;
+    const endDateVal = document.getElementById('monitorEndDate').value;
+
+    if (!startDateVal || !endDateVal) {
+        alert("Please select both a start and end date.");
+        if (headerEl) headerEl.textContent = 'Select a Status or Technician from the Left';
+        return;
+    }
+
+    // 2. Generate the exact list of DD-MM-YYYY text strings to look for
+    const start = new Date(startDateVal);
+    const end = new Date(endDateVal);
+    let dateStringsToFetch = [];
     
-    // 2. Fetch ALL logistical columns from tracking table using our global engine
-    const trackRows = await fetchAllRecords(MONITOR_TABLE_NAME);
+    let currentDay = new Date(start);
+    while (currentDay <= end) {
+        const dd = String(currentDay.getDate()).padStart(2, '0');
+        const mm = String(currentDay.getMonth() + 1).padStart(2, '0');
+        const yyyy = currentDay.getFullYear();
+        dateStringsToFetch.push(`${dd}-${mm}-${yyyy}`);
+        currentDay.setDate(currentDay.getDate() + 1); // Move loop to the next day
+    }
+
+    // 3. SERVER-SIDE FILTER: Only download logs that occurred on these specific dates
+    const trackRows = await fetchAllRecords(MONITOR_TABLE_NAME, 'assign_date', dateStringsToFetch);
     
+    // 4. Extract the unique SO numbers from the logs we just downloaded
+    const uniqueSOs = [...new Set(trackRows.map(log => log.so))];
+
+    // 5. SERVER-SIDE FILTER: Only download the specific orders tied to those SO numbers
+    let mainOrders = [];
+    if (uniqueSOs.length > 0) {
+        mainOrders = await fetchAllRecords('orders', 'so', uniqueSOs);
+    }
+    
+    // (Inside loadMonitorDataEngine)
+    // Store in our master variables
     databaseOrders = mainOrders || [];
     monitorTrackingRows = trackRows || [];
-
-    if (headerEl) headerEl.textContent = 'Select a Status or Technician from the Left';
+    currentFilteredMonitorRows = monitorTrackingRows; 
 
     calculateStatusMetrics();
+    
+    // NEW: Default to the Leaderboard when dates are applied!
+    renderMonitorLeaderboard(currentFilteredMonitorRows); 
 }
 
 let currentFilteredMonitorRows = [];
-// --- NEW: FAST DATE BUTTONS ---
-// Helper to format JavaScript dates into the YYYY-MM-DD format HTML requires
+
+// --- FAST DATE BUTTONS ---
 const formatHtmlDate = (dateObj) => {
     const y = dateObj.getFullYear();
     const m = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -1232,38 +1289,11 @@ document.getElementById('btnMonitorThisMonth').addEventListener('click', () => {
 });
 
 document.getElementById('monitorFilterDateBtn').addEventListener('click', () => {
-    const startDateVal = document.getElementById('monitorStartDate').value;
-    const endDateVal = document.getElementById('monitorEndDate').value;
-
-    if (!startDateVal || !endDateVal) {
-        alert("Please select both a start and end date.");
-        return;
-    }
-
-    const start = new Date(startDateVal);
-    const end = new Date(endDateVal);
-    end.setHours(23, 59, 59, 999); 
-    
-    currentFilteredMonitorRows = monitorTrackingRows.filter(row => {
-        if (!row.assign_date) return false;
-        const parts = row.assign_date.split('-');
-        if (parts.length !== 3) return false;
-        
-        const rowDate = new Date(parts[2], parts[1] - 1, parts[0]);
-        return rowDate >= start && rowDate <= end;
-    });
-
-    calculateStatusMetrics(currentFilteredMonitorRows);
-    document.getElementById('monitorTableArea').style.display = 'none';
+    // Only run the engine. The engine now triggers the leaderboard automatically!
+    loadMonitorDataEngine();
 });
 
-document.getElementById('monitorClearDateBtn').addEventListener('click', () => {
-    document.getElementById('monitorStartDate').value = '';
-    document.getElementById('monitorEndDate').value = '';
-    currentFilteredMonitorRows = [...monitorTrackingRows];
-    calculateStatusMetrics(currentFilteredMonitorRows);
-    document.getElementById('monitorTableArea').style.display = 'none';
-});
+
 
 // UPDATED: Calculates counts and populates the Top Dropdowns
 function calculateStatusMetrics(dataToProcess = monitorTrackingRows) {
@@ -1277,16 +1307,29 @@ function calculateStatusMetrics(dataToProcess = monitorTrackingRows) {
     let statusCounts = { "All Tracking Logs": dataToProcess.length };
     let techCounts = {};
 
-    // Tally the data
+   // Tally the data
     dataToProcess.forEach(row => {
+        // 1. Tally Statuses
         let statusName = row.status ? row.status.trim() : 'Unknown';
         if (statusName === '') statusName = 'Unknown';
         statusCounts[statusName] = (statusCounts[statusName] || 0) + 1;
 
-        let techName = row.assigned_tech ? row.assigned_tech.trim() : '';
-        if (techName) {
-            techCounts[techName] = (techCounts[techName] || 0) + 1;
+        // 2. Tally Technicians (Checking BOTH columns, STRICT CASE)
+        let namesForThisRow = new Set(); 
+        
+        if (row.assigned_tech && row.assigned_tech.trim()) {
+            // We removed .toLowerCase() so it keeps the exact capitalization
+            namesForThisRow.add(row.assigned_tech.trim());
         }
+        if (row.assigned_by && row.assigned_by.trim()) {
+            // We removed .toLowerCase() so it keeps the exact capitalization
+            namesForThisRow.add(row.assigned_by.trim());
+        }
+
+        // Add +1 to each unique person associated with this row
+        namesForThisRow.forEach(name => {
+            techCounts[name] = (techCounts[name] || 0) + 1;
+        });
     });
 
     // Populate Status Dropdown
@@ -1308,34 +1351,108 @@ function calculateStatusMetrics(dataToProcess = monitorTrackingRows) {
 }
 
 // --- MUTUALLY EXCLUSIVE DROPDOWN LISTENERS ---
-// When Status changes, clear Technician, and show table
 document.getElementById('monitorStatusSelect').addEventListener('change', (e) => {
     const selectedVal = e.target.value;
-    document.getElementById('monitorTechSelect').value = ''; // Reset the other dropdown
+    document.getElementById('monitorTechSelect').value = ''; 
     
+    const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
     if (selectedVal) {
-        // Use currentFilteredMonitorRows if a date filter is active, otherwise use all data
-        const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
         renderMonitorTable('status', selectedVal, poolToUse);
     } else {
-        document.getElementById('monitorTableArea').style.display = 'none';
+        renderMonitorLeaderboard(poolToUse); // Go back to leaderboard
     }
 });
 
-// When Technician changes, clear Status, and show table
 document.getElementById('monitorTechSelect').addEventListener('change', (e) => {
     const selectedVal = e.target.value;
-    document.getElementById('monitorStatusSelect').value = ''; // Reset the other dropdown
+    document.getElementById('monitorStatusSelect').value = ''; 
     
+    const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
     if (selectedVal) {
-        const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
         renderMonitorTable('technician', selectedVal, poolToUse);
     } else {
-        document.getElementById('monitorTableArea').style.display = 'none';
+        renderMonitorLeaderboard(poolToUse); // Go back to leaderboard
     }
 });
 
-// NEW UNIFIED RENDERER: Handles both Status and Technician views in strictly Read-Only mode
+// ---PERFORMANCE LEADERBOARD ENGINE ---
+function renderMonitorLeaderboard(dataPool = currentFilteredMonitorRows) {
+    const headerEl = document.getElementById('activeMonitorStatusHeader');
+    const tableArea = document.getElementById('monitorTableArea');
+    const badgesArea = document.getElementById('technicianBadges');
+    const tbody = document.getElementById('monitorTableBody');
+    const theadRow = document.getElementById('monitorHeaderRow');
+    
+    if (headerEl) headerEl.textContent = 'Performance Leaderboard (All Technicians)';
+    tableArea.style.display = 'block';
+    badgesArea.style.display = 'none'; // Hide individual badges
+    tbody.innerHTML = '';
+    theadRow.innerHTML = '';
+
+    let techStats = {};
+    
+    // Tally the stats for everyone simultaneously
+    dataPool.forEach(row => {
+        let assignedTech = (row.assigned_tech || '').trim();
+        let actedTech = (row.assigned_by || '').trim();
+        let endTech = (row.end_tech || '').trim();
+        let collected = Number(row.collected) || 0;
+        let so = row.so;
+
+        const initTech = (name) => {
+            if (name && !techStats[name]) {
+                techStats[name] = { assigned: new Set(), acted: new Set(), finished: 0, collected: 0 };
+            }
+        };
+
+        initTech(assignedTech);
+        initTech(actedTech);
+        initTech(endTech);
+
+        if (assignedTech) techStats[assignedTech].assigned.add(so);
+        if (actedTech) {
+            techStats[actedTech].acted.add(so);
+            techStats[actedTech].collected += collected; // Credit money strictly to the submitter
+        }
+        if (endTech) techStats[endTech].finished++;
+    });
+
+    // Build Static Headers
+    const cols = ['Technician', 'Assigned Orders', 'Actions Submitted', 'Pending (Left Out)', 'Finished', 'Total Collected'];
+    cols.forEach(col => {
+        const th = document.createElement('th');
+        th.innerHTML = `<div style="padding: 5px;">${col}</div>`;
+        theadRow.appendChild(th);
+    });
+
+    // Build the Leaderboard Rows
+    Object.keys(techStats).sort().forEach(tech => {
+        const stats = techStats[tech];
+        const assignedCount = stats.assigned.size;
+        const actedCount = stats.acted.size; // Total actions they submitted
+        
+        // Calculate pending (assigned but not acted on)
+        let overlapCount = 0;
+        stats.assigned.forEach(so => {
+            if (stats.acted.has(so)) overlapCount++;
+        });
+        const pendingCount = assignedCount - overlapCount;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding: 10px; font-weight: bold;">${tech}</td>
+            <td style="padding: 10px;">${assignedCount}</td>
+            <td style="padding: 10px; color: #2e7d32; font-weight: bold;">${actedCount}</td>
+            <td style="padding: 10px; color: #d32f2f;">${pendingCount}</td>
+            <td style="padding: 10px;">${stats.finished}</td>
+            <td style="padding: 10px; font-weight: bold; color: #1976d2;">${stats.collected}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+// -----------------------------------------------
+
+// NEW UNIFIED RENDERER: Handles Filters, Strict Case Math, and Performance Metrics
 function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRows) {
     const headerEl = document.getElementById('activeMonitorStatusHeader');
     const tableArea = document.getElementById('monitorTableArea');
@@ -1344,28 +1461,27 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
     const theadRow = document.getElementById('monitorHeaderRow');
     
     tableArea.style.display = 'block';
-    badgesArea.style.display = 'none'; // Hidden by default
+    badgesArea.style.display = 'none'; 
     tbody.innerHTML = '';
     theadRow.innerHTML = '';
 
     let rowsToRender = [];
 
-    // 1. FILTER DATA BASED ON VIEW TYPE
     if (viewType === 'status') {
         headerEl.textContent = `Status View: ${targetValue}`;
         rowsToRender = targetValue === "All Tracking Logs" 
             ? dataPool 
             : dataPool.filter(r => (r.status || 'Unknown').trim() === targetValue || (targetValue === 'Unknown' && !r.status));
+            
     } else if (viewType === 'technician') {
         headerEl.textContent = `Technician View: ${targetValue}`;
-        // Filters based on your rule: matches assigned_by OR assigned_tech
         rowsToRender = dataPool.filter(r => 
             (r.assigned_by && r.assigned_by.trim() === targetValue) || 
             (r.assigned_tech && r.assigned_tech.trim() === targetValue)
         );
     }
 
-    // 2. DEFINE COLUMNS (Added 'assigned_by' to table to help trace origin)
+    // 2. DEFINE COLUMNS (NEW: Added collected_reason)
     const columnsConfig = [
         { key: 'so', label: 'SO', source: 'main' },
         { key: 'assign_date', label: 'Assign Date', source: 'track' },
@@ -1378,28 +1494,48 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
         { key: 'end_tech', label: 'End Tech', source: 'track' },
         { key: 'end_coord', label: 'End Coord', source: 'track' },
         { key: 'collected', label: 'Collected', source: 'track' },
+        { key: 'collected_reason', label: 'Reason', source: 'track' }, // <-- BRAND NEW COLUMN
         { key: 'comment', label: 'Comment', source: 'track' }
     ];
 
-    // 3. BUILD HEADERS DYNAMICALLY
-    columnsConfig.forEach(cfg => {
+    // 3. BUILD HEADERS WITH EXCEL-STYLE SEARCH BOXES
+    columnsConfig.forEach((cfg) => {
         const th = document.createElement('th');
-        th.textContent = cfg.label;
+        
+        const labelDiv = document.createElement('div');
+        labelDiv.textContent = cfg.label;
+        th.appendChild(labelDiv);
+        
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search...';
+        searchInput.style.width = '100%';
+        searchInput.style.boxSizing = 'border-box';
+        searchInput.style.marginTop = '5px';
+        searchInput.style.padding = '4px';
+        searchInput.style.fontSize = '11px';
+        searchInput.style.border = '1px solid var(--border-color)';
+        searchInput.style.borderRadius = '3px';
+        searchInput.style.background = 'var(--bg-color)';
+        searchInput.style.color = 'var(--text-color)';
+        
+        searchInput.addEventListener('keyup', filterMonitorTable);
+        
+        th.appendChild(searchInput);
         theadRow.appendChild(th);
     });
 
-    // Tracking Variables for Technician Badges
     let totalCollected = 0;
     let countHass = 0;
     let countSmartThings = 0;
     let countFinished = 0;
-    
-    // --- NEW: REASON TRACKING VARIABLES ---
-    let totalAssignedOrders = rowsToRender.length; 
     let totalWithReason = 0;
     let reasonBreakdown = {};
 
-    // 4. BUILD ROWS (Strictly Read-Only)
+    let assignedSOs = new Set();
+    let actedSOs = new Set();
+
+    // 4. BUILD ROWS
     rowsToRender.forEach(trackingMatch => {
         const tr = document.createElement('tr');
         const currentSO = trackingMatch.so;
@@ -1415,31 +1551,46 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
         });
         tbody.appendChild(tr);
 
-        // 5. CALCULATE BADGES (Only matters if viewType is technician)
+        // 5. CALCULATE BADGES & METRICS
         if (viewType === 'technician') {
-            totalCollected += (Number(trackingMatch.collected) || 0);
+            
+            if (trackingMatch.assigned_tech && trackingMatch.assigned_tech.trim() === targetValue) {
+                assignedSOs.add(currentSO);
+            }
+            
+            if (trackingMatch.assigned_by && trackingMatch.assigned_by.trim() === targetValue) {
+                actedSOs.add(currentSO);
+                totalCollected += (Number(trackingMatch.collected) || 0);
+                
+                const reason = (trackingMatch.collected_reason || '').trim();
+                if (reason) {
+                    totalWithReason++;
+                    reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
+                }
+            }
+
             if (trackingMatch.hass && String(trackingMatch.hass).trim() !== '') countHass++;
             if (trackingMatch.smart_things && String(trackingMatch.smart_things).toLowerCase() === 'yes') countSmartThings++;
             if (trackingMatch.end_tech && trackingMatch.end_tech.trim() === targetValue) countFinished++;
-            
-            // --- NEW: REASON COUNTING LOGIC ---
-            const reason = (trackingMatch.collected_reason || '').trim();
-            if (reason) {
-                totalWithReason++;
-                // Add 1 to this specific reason's tally, or start it at 1 if we haven't seen it yet
-                reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
-            }
         }
     });
 
-    // 6. RENDER BADGES (If Technician View)
+    // 6. RENDER BADGES
     if (viewType === 'technician') {
         badgesArea.style.display = 'flex';
         
-        // Build the HTML loop for the individual reasons
+        const totalAssignedOrders = assignedSOs.size;
+        const totalActionsSubmitted = actedSOs.size; // Math Fixed!
+        
+        // Calculate pending (assigned but not acted on)
+        let overlapCount = 0;
+        assignedSOs.forEach(so => {
+            if (actedSOs.has(so)) overlapCount++;
+        });
+        const leftOutCount = totalAssignedOrders - overlapCount;
+
         let reasonsHtml = '';
         if (totalWithReason > 0) {
-            // Sort the reasons alphabetically so 01, 02, 03 display in perfect order
             Object.keys(reasonBreakdown).sort().forEach(reason => {
                 reasonsHtml += `<div style="margin-top: 5px; font-size: 12px; color: var(--text-color); border-bottom: 1px dashed var(--border-color); padding-bottom: 3px;">
                     ${reason}: <strong>${reasonBreakdown[reason]}</strong>
@@ -1449,10 +1600,14 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
             reasonsHtml = '<div style="margin-top: 5px; font-size: 12px; opacity: 0.6;">No reasons logged.</div>';
         }
 
-        // We use flexbox and theme variables to create a responsive, theme-matching grid of stats
         badgesArea.innerHTML = `
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold; flex: 1; min-width: 200px;">
-                📌 Total Assigned Orders: <span style="font-size: 1.2em; color: var(--text-color);">${totalAssignedOrders}</span>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold; flex: 1; min-width: 250px;">
+                📌 Unique Assigned Orders: <span style="font-size: 1.2em; color: var(--text-color);">${totalAssignedOrders}</span>
+                
+                <div style="margin-top: 10px; background: var(--bg-color); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 13px;">
+                    ▶ Actions Submitted: <span style="color: #2e7d32; font-size: 1.1em;">${totalActionsSubmitted}</span><br>
+                    ▶ Left Out (Pending): <span style="color: #d32f2f; font-size: 1.1em;">${leftOutCount}</span><br>
+                </div>
             </div>
             <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold; flex: 1; min-width: 250px;">
                 📋 Total Logged w/ Reason: <span style="font-size: 1.2em; color: var(--text-color);">${totalWithReason}</span>
@@ -1916,73 +2071,218 @@ function sortAssignationColumn(colKey) {
 
 
 // --- ASSIGNATION SUBMISSION LOGIC ---
-document.getElementById('assignSubmitBtn').addEventListener('click', async () => {
+
+// --- STEP 1: STAGE TOMORROW'S ORDERS ---
+document.getElementById('stageTomorrowBtn').addEventListener('click', async () => {
     const recordsToProcess = Object.values(editedAssignations);
     if (recordsToProcess.length === 0) {
-        alert("No assignations to submit.");
+        alert("No assignations to stage. Please edit some orders first.");
         return;
     }
 
-    // Grab the exact current moment
-    const now = new Date();
+    // Prepare payload matching the 3 exact columns in your new table
+    const stagingPayload = recordsToProcess.map(record => ({
+        so: record.so,
+        assigned_tech: record.assigned_tech || '',
+        rout: record.rout || ''
+    }));
 
-    // 1. Calculate Today's Date (DD-MM-YYYY)
+    // Upsert into tomorrow_schedule (Safely overwrites if the SO is already staged)
+    const { error } = await supabaseClient
+        .from('tomorrow_schedule')
+        .upsert(stagingPayload, { onConflict: 'so' });
+
+    if (error) {
+        alert("Failed to stage orders: " + error.message);
+    } else {
+        alert("Orders successfully staged for tomorrow!");
+        // Clear the screen so it's ready for the next batch
+        assignationOrders = [];
+        editedAssignations = {};
+        renderAssignationTable(); 
+        updateStagingCount(); 
+    }
+});
+
+// --- STEP 3: ASSIGN NOW (INSTANT LIVE PUSH) ---
+document.getElementById('assignNowInstantBtn').addEventListener('click', async () => {
+    const recordsToProcess = Object.values(editedAssignations);
+    
+    if (recordsToProcess.length === 0) {
+        alert("No assignations to push. Please edit some orders first.");
+        return;
+    }
+
+    if (!confirm(`⚡ WARNING: You are about to instantly push ${recordsToProcess.length} order(s) live to the technicians' phones right now. Proceed?`)) {
+        return;
+    }
+
+    const instantBtn = document.getElementById('assignNowInstantBtn');
+    instantBtn.disabled = true;
+    instantBtn.textContent = 'Pushing...';
+
+    // Grab current time for the history log
+    const now = new Date();
     const dd = String(now.getDate()).padStart(2, '0');
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const yyyy = now.getFullYear();
-    const targetDate = `${dd}-${mm}-${yyyy}`;
-
-    // 2. Calculate Current Time (HH:MM)
     const hh = String(now.getHours()).padStart(2, '0');
     const min = String(now.getMinutes()).padStart(2, '0');
+    const targetDate = `${dd}-${mm}-${yyyy}`;
     const targetTime = `${hh}:${min}`;
-    
-    // 1. Prepare payload for 'orders' table
-    const ordersPayload = recordsToProcess.map(record => {
-        let orderUpdate = {};
-        for (let key in record) {
-            if (ALL_COLUMNS.includes(key)) {
-                orderUpdate[key] = record[key];
-            }
+
+    // 1. Safely update the main 'orders' table directly
+    const updatePromises = recordsToProcess.map(record => {
+        let orderUpdate = {
+            assigned_tech: record.assigned_tech || '',
+            rout: record.rout || ''
+        };
+        
+        // Force the ticket to hit their active queue
+        if (record.assigned_tech && record.assigned_tech.trim() !== '') {
+            orderUpdate.status = 'Technician';
         }
-        return orderUpdate;
+        
+        return supabaseClient.from('orders').update(orderUpdate).eq('so', record.so);
     });
 
-   // Prepare payload for 'repair_log' table
+    const updateResults = await Promise.all(updatePromises);
+    const failedUpdate = updateResults.find(res => res.error);
+    
+    if (failedUpdate) {
+        alert("Failed to instantly assign orders: " + failedUpdate.error.message);
+        instantBtn.disabled = false;
+        instantBtn.textContent = '⚡ Assign Now (Instant)';
+        return;
+    }
+
+    // 2. Prepare payload for the 'repair_log' table
     const repairLogPayload = recordsToProcess.map(record => ({
         so: record.so,
         assigned_tech: record.assigned_tech || '',
         assigned_by: currentUser ? currentUser.username : 'Unknown',
         assign_date: targetDate,
         assign_time: targetTime,
-        status: "Technician" // <--- ADD THIS LINE HERE
+        status: "Technician" 
     }));
 
-    // Execute Orders Update
-    const { error: orderErr } = await supabaseClient
-        .from('orders')
-        .upsert(ordersPayload, { onConflict: 'so' });
+    // 3. Execute Log Updates
+    const { error: logErr } = await supabaseClient.from('repair_log').insert(repairLogPayload);
 
-    if (orderErr) {
-        alert("Failed to update orders: " + orderErr.message);
+    if (logErr) {
+        alert("Orders assigned, but failed to log history: " + logErr.message);
+    } else {
+        alert("⚡ Success! Orders instantly dispatched to the technicians!");
+        
+        // Clear the screen ready for the next batch
+        assignationOrders = [];
+        editedAssignations = {};
+        renderAssignationTable();
+    }
+
+    instantBtn.disabled = false;
+    instantBtn.textContent = '⚡ Assign Now (Instant)';
+});
+
+
+// --- STEP 2: PUSH STAGED ORDERS LIVE ---
+document.getElementById('pushLiveBtn').addEventListener('click', async () => {
+    
+    // 1. Fetch all staged orders from the holding area
+    const { data: stagedOrders, error: fetchErr } = await supabaseClient
+        .from('tomorrow_schedule')
+        .select('*');
+        
+    if (fetchErr) {
+        alert("Error checking staging area: " + fetchErr.message);
+        return;
+    }
+    
+    if (!stagedOrders || stagedOrders.length === 0) {
+        alert("There are no orders in the staging area to push live.");
         return;
     }
 
-    // Execute Repair Log Update
-    // Changed to .insert() so it creates a new log entry every time, 
-    // allowing multiple assignments for the same SO on the same day.
-    const { error: logErr } = await supabaseClient
-        .from('repair_log')
-        .insert(repairLogPayload);
+    // 2. Strict Confirmation
+    if (!confirm(`Are you sure you want to push ${stagedOrders.length} staged orders live to the technicians now?`)) {
+        return;
+    }
+
+    // Lock the button to prevent double clicks
+    const pushBtn = document.getElementById('pushLiveBtn');
+    pushBtn.disabled = true;
+    pushBtn.textContent = 'Processing...';
+
+    // Grab the exact current moment
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const targetDate = `${dd}-${mm}-${yyyy}`;
+    const targetTime = `${hh}:${min}`;
+    
+    // 3. Safely update the main 'orders' table using strict .update() loops
+    const updatePromises = stagedOrders.map(record => {
+        let orderUpdate = {
+            assigned_tech: record.assigned_tech || '',
+            rout: record.rout || ''
+        };
+        
+        // Auto-update status so it hits the technicians' screens
+        if (record.assigned_tech && record.assigned_tech.trim() !== '') {
+            orderUpdate.status = 'Technician';
+        }
+        
+        // Use .update() instead of .upsert() so we don't trigger the NOT NULL constraint
+        return supabaseClient.from('orders').update(orderUpdate).eq('so', record.so);
+    });
+
+    // Run all the updates at the exact same time
+    const updateResults = await Promise.all(updatePromises);
+    
+    // Check if any of them failed
+    const failedUpdate = updateResults.find(res => res.error);
+    if (failedUpdate) {
+        alert("Failed to update live orders: " + failedUpdate.error.message);
+        pushBtn.disabled = false;
+        pushBtn.textContent = '🚀 Push Live Now';
+        return;
+    }
+
+   // 4. Prepare payload for the 'repair_log' table
+    const repairLogPayload = stagedOrders.map(record => ({
+        so: record.so,
+        assigned_tech: record.assigned_tech || '',
+        assigned_by: currentUser ? currentUser.username : 'Unknown',
+        assign_date: targetDate,
+        assign_time: targetTime,
+        status: "Technician" 
+    }));
+
+    // 5. Execute Log Updates
+    const { error: logErr } = await supabaseClient.from('repair_log').insert(repairLogPayload);
 
     if (logErr) {
         alert("Orders updated, but failed to sync repair log: " + logErr.message);
-    } else {
-        alert("Assignations successfully submitted to your technicians!");
-        assignationOrders = [];
-        editedAssignations = {};
-        renderAssignationTable(); // Clear view
+        pushBtn.disabled = false;
+        pushBtn.textContent = '🚀 Push Live Now';
+        return;
     }
+
+    // 6. Final Cleanup: Wipe the staging table completely clean
+    const { error: deleteErr } = await supabaseClient.from('tomorrow_schedule').delete().neq('so', '0');
+
+    if (deleteErr) {
+        alert("Live push successful, but failed to clear the staging table. Please manually clear it.");
+    } else {
+        alert("🚀 Success! Tomorrow's schedule is now LIVE on the technicians' phones!");
+    }
+    
+    updateStagingCount();
+    pushBtn.disabled = false;
+    pushBtn.textContent = '🚀 Push Live Now';
 });
 
 // --- ASSIGNATION PAGE: MASTER EDIT ENGINE ---
@@ -3804,3 +4104,30 @@ function openViewOnlyModal(ticket) {
     // 7. Show the Modal
     modal.style.display = 'flex';
 }
+
+// ---LIGHTWEIGHT EXCEL-STYLE MONITOR FILTER ---
+function filterMonitorTable() {
+    const trs = document.getElementById('monitorTableBody').getElementsByTagName('tr');
+    const inputs = document.getElementById('monitorHeaderRow').getElementsByTagName('input');
+    
+    for (let i = 0; i < trs.length; i++) {
+        let showRow = true;
+        const tds = trs[i].getElementsByTagName('td');
+        
+        for (let j = 0; j < inputs.length; j++) {
+            const filterText = inputs[j].value.toLowerCase();
+            
+            if (filterText !== '') {
+                if (tds[j]) {
+                    const cellText = tds[j].textContent.toLowerCase();
+                    if (cellText.indexOf(filterText) === -1) {
+                        showRow = false; 
+                        break; 
+                    }
+                }
+            }
+        }
+        trs[i].style.display = showRow ? '' : 'none';
+    }
+}
+// -------------------------------------------

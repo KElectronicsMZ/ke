@@ -23,15 +23,21 @@
         <div class="spinner"></div>
         <h3 id="loaderText" style="margin-top: 15px; letter-spacing: 1px;">Loading Data...</h3>
     </div>
-    <div id="globalUserBanner" style="display: none; background: #1976d2; color: white; padding: 5px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid #115293; z-index: 9999; position: sticky; top: 0;">
+    <div id="globalUserBanner" style="display: none; background: var(--btn-bg); color: var(--text-color); padding: 5px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid var(--border-color); z-index: 9999; position: sticky; top: 0;">
         User: <span id="bannerUsername"></span> - <span id="bannerRole"></span>
     </div>
     <div class="theme-container">
-        <label for="themeSelect">Theme: </label>
+    <label for="themeSelect">Theme: </label>
         <select id="themeSelect">
             <option value="dark">Dark Clean</option>
             <option value="greenish" selected>Greenish</option>
             <option value="blueish">Blueish Bright</option>
+            <!-- NEW THEME OPTIONS -->
+            <option value="warm-brown">Warm Brown</option>
+            <option value="royal-gold">Royal Gold</option>
+            <option value="gold-black">Gold & Black</option>
+            <option value="deep-crimson">Deep Crimson</option>
+            <option value="sun-flower">Sun Flower</option>
         </select>
     </div>
 
@@ -49,6 +55,26 @@
             <div class="button-group">
                 <button id="loginOkBtn">OK</button>
                 <button id="loginCancelBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add this directly below the closing </div> of loginPage -->
+    <div id="newPasswordPage" class="page">
+        <div class="login-box">
+            <h2>Account Setup</h2>
+            <p style="font-size: 14px; opacity: 0.8; margin-bottom: 20px;">Welcome! Please secure your account with a new password.</p>
+            <div class="input-group">
+                <label>New Password</label>
+                <input type="password" id="newPassInput">
+            </div>
+            <div class="input-group">
+                <label>Confirm Password</label>
+                <input type="password" id="confirmPassInput">
+            </div>
+            <div class="button-group">
+                <button id="saveNewPassBtn">Save & Login</button>
+                <button id="cancelNewPassBtn">Cancel</button>
             </div>
         </div>
     </div>
@@ -262,6 +288,10 @@
             <button id="assignResetLayoutBtn" style="background-color: #d32f2f; color: white; border-color: #b71c1c; margin-left: 5px;">Reset Layout</button>
             <button id="assignRemoveSelectedBtn" style="background-color: #f57c00; color: white; border-color: #e65100;">Remove Selected (From View)</button>
             
+            <!-- NEW SAVE AND RESTORE BUTTONS -->
+            <button id="assignSaveLocalBtn" style="background-color: #fbc02d; color: black; border-color: #f9a825; font-weight: bold; margin-left: 10px;">💾 Save Progress</button>
+            <button id="assignRestoreLocalBtn" style="background-color: #8e24aa; color: white; border-color: #6a1b9a; font-weight: bold; margin-left: 10px; display: none;">🔄 Restore Work</button>
+
             <!-- We kept your download buttons here for safety -->
             <button id="assignDownloadSelectedBtn" style="background-color: #757575; color: white; border-color: #616161; margin-left: 10px;">Download Selected Data</button>
             <button id="assignDownloadVisibleBtn" style="background-color: #2e7d32; color: white; border: 1px solid #1b5e20; font-weight: bold; margin-left: 10px;">Download Visible (Grouped)</button>
@@ -311,41 +341,33 @@
                 <h2>My Bonuses & Work Summary</h2>
                 </div>
 
-            <div class="date-filter-group" style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; background: var(--card-bg); padding: 15px; border-radius: 5px; border: 1px solid var(--border-color);">
-                <label style="font-weight: bold;">Start Date:</label>
-                <input type="date" id="bonusesStartDate" style="padding: 5px; background: transparent; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 3px;">
+            <!-- UPDATED: Date Filter Group with Fast Buttons -->
+            <div class="date-filter-group" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; background: var(--card-bg); padding: 15px; border-radius: 5px; border: 1px solid var(--border-color);">
+                <div style="display: flex; gap: 5px; width: 100%;">
+                    <button id="btnBonusesToday" class="menu-btn" style="flex: 1; height: auto; aspect-ratio: auto; padding: 6px 15px; font-size: 13px;">Today</button>
+                    <button id="btnBonusesThisMonth" class="menu-btn" style="flex: 1; height: auto; aspect-ratio: auto; padding: 6px 15px; font-size: 13px;">This Month</button>
+                </div>
                 
-                <label style="font-weight: bold;">End Date:</label>
-                <input type="date" id="bonusesEndDate" style="padding: 5px; background: transparent; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 3px;">
-                
-                <button id="btnFetchBonuses" style="padding: 6px 15px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); font-weight: bold;">Load Data</button>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <label style="font-weight: bold;">Start Date:</label>
+                    <input type="date" id="bonusesStartDate" style="padding: 5px; background: transparent; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 3px;">
+                    
+                    <label style="font-weight: bold;">End Date:</label>
+                    <input type="date" id="bonusesEndDate" style="padding: 5px; background: transparent; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 3px;">
+                    
+                    <button id="btnFetchBonuses" style="padding: 6px 15px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); font-weight: bold;">Load Data</button>
+                </div>
             </div>
 
             <div id="bonusesSummaryBox" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 5px;">
                 <h3 style="margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">Work Summary (My Entries)</h3>
-                <div id="bonusesSummaryContent" style="display: flex; gap: 15px; flex-wrap: wrap;">
-                    </div>
+                <div id="bonusesSummaryContent" style="display: flex; gap: 15px; flex-wrap: wrap;"></div>
             </div>
 
             <div class="table-container">
                 <table id="bonusesTable">
-                    <thead>
-                        <tr>
-                            <th>SO</th>
-                            <th>Assign Date</th>
-                            <th>Assign Time</th>
-                            <th>Status</th>
-                            <th>Assigned By</th>
-                            <th>Agree Coord</th>
-                            <th>Complete Coord</th>
-                            <th>Assigned Tech</th>
-                            <th>End Tech</th>
-                            <th>Hass</th>
-                            <th>Smart Things</th>
-                            <th>Comment</th>
-                            <th>Collected</th>
-                        </tr>
-                    </thead>
+                    <!-- UPDATED: Empty Header ready for JavaScript sorting & search boxes -->
+                    <thead id="bonusesHeaderRow"></thead>
                     <tbody id="bonusesTableBody"></tbody>
                 </table>
             </div>
@@ -448,6 +470,7 @@
                                 <option value="">-- Select Action --</option>
                                 <option value="Pending">Pending</option>
                                 <option value="Complete">Complete</option>
+                                <option value="Cancel">Cancel</option>
                             </select>
                         </div>
                     </div>

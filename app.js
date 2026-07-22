@@ -241,64 +241,119 @@ function checkExistingSession() {
 window.addEventListener('DOMContentLoaded', checkExistingSession);
 
 // --- 5. AUTHENTICATION & NAVIGATION FLOW ---
+let tempUserSetup = null; // Remembers who is setting their password
+
 document.getElementById('loginOkBtn').addEventListener('click', async () => {
     const userIn = document.getElementById('usernameInput').value.trim();
     const passIn = document.getElementById('passwordInput').value.trim();
 
-    if (!userIn || !passIn) {
-        alert("Please fill in both fields.");
+    if (!userIn) {
+        alert("Please enter a username.");
         return;
     }
 
+    // 1. Fetch user by username ONLY
     const { data, error } = await supabaseClient
         .from('profiles')
         .select('*')
         .eq('username', userIn)
-        .eq('password', passIn)
         .single();
 
     if (error || !data) {
-        alert("Invalid username or password.");
+        alert("User not found.");
         return;
     }
 
-    currentUser = data;
+    // 2. Check if account has no password yet
+    if (!data.password || data.password.trim() === '') {
+        tempUserSetup = data;
+        document.getElementById('loginPage').classList.remove('active');
+        document.getElementById('newPasswordPage').classList.add('active');
+        return;
+    }
 
-    // Show top banner
+    // 3. Normal login check for existing users
+    if (!passIn) {
+        alert("Please enter your password.");
+        return;
+    }
+    if (data.password !== passIn) {
+        alert("Incorrect password.");
+        return;
+    }
+
+    // If correct, run the login sequence
+    executeLoginSequence(data);
+});
+
+// We bundle the login success actions into a reusable function
+function executeLoginSequence(userData) {
+    currentUser = userData;
+
     document.getElementById('bannerUsername').textContent = currentUser.username;
     document.getElementById('bannerRole').textContent = currentUser.role;
     document.getElementById('globalUserBanner').style.display = 'block';
     
-    // --- NEW: SAVE SESSION TICKET TO PHONE ---
-    const sessionPayload = {
-        user: currentUser,
-        timestamp: Date.now() // Record the exact millisecond they logged in
-    };
+    const sessionPayload = { user: currentUser, timestamp: Date.now() };
     localStorage.setItem('ke_user_session', JSON.stringify(sessionPayload));
-    // -----------------------------------------
 
-    // --- UPDATED LOGIN COLUMN LOGIC ---
-    // First, check if they have a saved custom column order
     const savedOrder = localStorage.getItem('sys_order_' + currentUser.username);
-    if (savedOrder) {
-        activeColumns = JSON.parse(savedOrder);
-    } else {
-        // If no custom order, load your preferred defaults instead of ALL_COLUMNS
-        activeColumns = [...DEFAULT_SYSTEM_COLUMNS]; 
-    }
+    if (savedOrder) activeColumns = JSON.parse(savedOrder);
+    else activeColumns = [...DEFAULT_SYSTEM_COLUMNS]; 
 
-    // Then, apply any hidden columns they saved
     const savedHidden = localStorage.getItem('hiddenColumns_' + currentUser.username);
     if (savedHidden) {
         hiddenColumns = JSON.parse(savedHidden);
-        // Filter out the hidden columns from whatever the activeColumns list currently is
         activeColumns = activeColumns.filter(col => !hiddenColumns.includes(col));
-    } else {
-        hiddenColumns = [];
+    } else hiddenColumns = [];
+
+    applyRoleBasedMenuVisibility();
+    
+    document.getElementById('loginPage').classList.remove('active');
+    document.getElementById('newPasswordPage').classList.remove('active');
+    document.getElementById('menuPage').classList.add('active');
+}
+
+// --- NEW PASSWORD SUBMISSION LOGIC ---
+document.getElementById('saveNewPassBtn').addEventListener('click', async () => {
+    const pass1 = document.getElementById('newPassInput').value.trim();
+    const pass2 = document.getElementById('confirmPassInput').value.trim();
+
+    if (!pass1 || !pass2) {
+        alert("Please fill out both fields.");
+        return;
     }
-    // ----------------------------------
-    loginPage.classList.remove('active');
-    menuPage.classList.add('active');
+    if (pass1 !== pass2) {
+        alert("Passwords do not match!");
+        return;
+    }
+
+    // Push the new password to Supabase
+    const { error } = await supabaseClient
+        .from('profiles')
+        .update({ password: pass1 })
+        .eq('username', tempUserSetup.username);
+
+    if (error) {
+        alert("Failed to save password: " + error.message);
+        return;
+    }
+
+    alert("Password set successfully! Logging you in...");
+    
+    // Update the temporary memory and push them to the HUB
+    tempUserSetup.password = pass1;
+    document.getElementById('newPassInput').value = '';
+    document.getElementById('confirmPassInput').value = '';
+    
+    executeLoginSequence(tempUserSetup);
+});
+
+document.getElementById('cancelNewPassBtn').addEventListener('click', () => {
+    document.getElementById('newPassInput').value = '';
+    document.getElementById('confirmPassInput').value = '';
+    document.getElementById('newPasswordPage').classList.remove('active');
+    document.getElementById('loginPage').classList.add('active');
 });
 
 document.getElementById('loginCancelBtn').addEventListener('click', () => {
@@ -345,20 +400,45 @@ document.getElementById('menuCancelBtn').addEventListener('click', () => {
     document.getElementById('passwordInput').value = '';
 });
 
-document.getElementById('btnSystem').addEventListener('click', () => {
-    // Exactly matches the lowercase database roles
-    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
+// --- ROLE-BASED MENU VISIBILITY ENGINE ---
+function applyRoleBasedMenuVisibility() {
+    if (!currentUser) return;
     
-    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
-        alert("Access Denied: Your account role does not have permission to view the System page.");
-        return;
-    }
+    const role = currentUser.role ? currentUser.role.toLowerCase() : '';
+    
+    // Grab all menu buttons by their IDs
+    const btnSystem = document.getElementById('btnSystem');
+    const btnMonitor = document.getElementById('btnMonitor');
+    const btnAssignation = document.getElementById('btnAssignation');
+    const btnMyOrders = document.getElementById('btnMyOrders');
+    const btnBonuses = document.getElementById('btnBonuses');
+    const btnCollectMoney = document.getElementById('btnCollectMoney'); // Added this one too!
 
+    // 1. Visible to EVERYONE
+    if (btnMyOrders) btnMyOrders.style.display = 'block';
+    if (btnBonuses) btnBonuses.style.display = 'block';
+
+    // 2. Hide restricted buttons by default
+    if (btnSystem) btnSystem.style.display = 'none';
+    if (btnMonitor) btnMonitor.style.display = 'none';
+    if (btnAssignation) btnAssignation.style.display = 'none';
+    if (btnCollectMoney) btnCollectMoney.style.display = 'none';
+
+    // 3. Show restricted buttons ONLY if they are NOT a technician
+    if (!role.includes('technician')) {
+        if (btnSystem) btnSystem.style.display = 'block';
+        if (btnMonitor) btnMonitor.style.display = 'block';
+        if (btnAssignation) btnAssignation.style.display = 'block';
+        if (btnCollectMoney) btnCollectMoney.style.display = 'block';
+    }
+}
+// ---------------------------------------------------
+document.getElementById('btnSystem').addEventListener('click', () => {
+    // Restrictions removed! If they can see the button, they can click it.
     menuPage.classList.remove('active');
     systemPage.classList.add('active');
     loadDatabaseData(); 
 });
-
 document.getElementById('systemCancelBtn').addEventListener('click', () => {
     if (Object.keys(editedOrders).length > 0) {
         if (!confirm("You have unsaved inline changes. Are you sure you want to discard them?")) {
@@ -372,20 +452,14 @@ document.getElementById('systemCancelBtn').addEventListener('click', () => {
 
 // Open Monitor Page from HUB Menu
 document.getElementById('btnMonitor').addEventListener('click', () => {
-    // Changed to match the exact lowercase roles in your database
-    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
-    
-    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
-        alert("Access Denied: Your account role does not have permission to view the Monitor page.");
-        return;
-    }
-
     menuPage.classList.remove('active');
     monitorPage.classList.add('active');
     
     // --- NEW: SET DEFAULT DATES TO CURRENT MONTH ---
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+
     
     const formatInputDate = (dateObj) => {
         const y = dateObj.getFullYear();
@@ -491,25 +565,72 @@ document.getElementById('btnAssignation').addEventListener('click', async () => 
     
     assignationOrders = [];
     editedAssignations = {};
-    
-    // --- LAYOUT FIX: LOAD SAVED COLUMN ORDER ---
+
+    // --- 1. SET UP USER KEYS FIRST ---
     const userKey = currentUser ? currentUser.username : 'guest';
     const savedAssignOrder = localStorage.getItem('assign_order_' + userKey);
-    
+    const backupRaw = localStorage.getItem('assign_backup_' + userKey); // <-- Re-added this!
+
+    // --- 2. LAYOUT FIX: LOAD SAVED COLUMN ORDER ---
     if (savedAssignOrder) {
         // Empty the default array and fill it with their saved custom order
         const parsedOrder = JSON.parse(savedAssignOrder);
         ASSIGN_COLUMNS.length = 0;
         ASSIGN_COLUMNS.push(...parsedOrder);
     }
-    // -------------------------------------------
-    // --- FORCE THE SCREEN TO CLEAR OLD DATA : without the follwing 2 lines the assignation page will keep showing the last Fetched orders even you left the page ---
+
+    // --- 3. FORCE THE SCREEN TO CLEAR OLD DATA ---
     renderAssignationTable(); 
     document.getElementById('batchSoInput').value = '';
     
-    // Update the orange staging badge when the page opens!
+    // --- 4. UPDATE STAGING BADGE ---
     updateStagingCount();
+
+    // --- 5. CHECK FOR SAVED TABLE LOCAL PROGRESS ---
+    const restoreBtn = document.getElementById('assignRestoreLocalBtn');
+
+    if (backupRaw) {
+        restoreBtn.style.display = 'inline-block'; // Show the button if data exists
+    } else {
+        restoreBtn.style.display = 'none';
+    }
 });
+// --- LOCAL PROGRESS SAVING ENGINE in the daily assignation page  ---
+
+document.getElementById('assignSaveLocalBtn').addEventListener('click', () => {
+    if (assignationOrders.length === 0 && Object.keys(editedAssignations).length === 0) {
+        alert("No orders to save!");
+        return;
+    }
+
+    const userKey = currentUser ? currentUser.username : 'guest';
+    const backupData = {
+        orders: assignationOrders,
+        edits: editedAssignations
+    };
+
+    // Save to browser memory
+    localStorage.setItem('assign_backup_' + userKey, JSON.stringify(backupData));
+    alert("💾 Progress saved locally! If the power cuts, click 'Restore Work' when you return.");
+    
+    // Show the restore button instantly
+    document.getElementById('assignRestoreLocalBtn').style.display = 'inline-block';
+});
+
+document.getElementById('assignRestoreLocalBtn').addEventListener('click', () => {
+    const userKey = currentUser ? currentUser.username : 'guest';
+    const backupRaw = localStorage.getItem('assign_backup_' + userKey);
+
+    if (backupRaw) {
+        const backup = JSON.parse(backupRaw);
+        assignationOrders = backup.orders || [];
+        editedAssignations = backup.edits || {};
+
+        renderAssignationTable();
+        alert("🔄 Progress successfully restored!");
+    }
+});
+
 
 document.getElementById('assignHubBtn').addEventListener('click', () => {
     if (Object.keys(editedAssignations).length > 0) {
@@ -2294,6 +2415,8 @@ document.getElementById('stageTomorrowBtn').addEventListener('click', async () =
     } else {
         alert("Orders successfully staged for tomorrow!");
         // Clear the screen so it's ready for the next batch
+        localStorage.removeItem('assign_backup_' + (currentUser ? currentUser.username : 'guest'));
+        document.getElementById('assignRestoreLocalBtn').style.display = 'none';
         assignationOrders = [];
         editedAssignations = {};
         renderAssignationTable(); 
@@ -2372,6 +2495,8 @@ document.getElementById('assignNowInstantBtn').addEventListener('click', async (
         alert("⚡ Success! Orders instantly dispatched to the technicians!");
         
         // Clear the screen ready for the next batch
+        localStorage.removeItem('assign_backup_' + (currentUser ? currentUser.username : 'guest'));
+        document.getElementById('assignRestoreLocalBtn').style.display = 'none';
         assignationOrders = [];
         editedAssignations = {};
         renderAssignationTable();
@@ -2782,23 +2907,48 @@ document.getElementById('btnSubmitTechAssign').addEventListener('click', async (
 // --- BONUSES / PERFORMANCE TRACKING PAGE ---
 // ==========================================
 
+// ==========================================
+// --- BONUSES / PERFORMANCE TRACKING PAGE ---
+// ==========================================
+
 const bonusesPage = document.getElementById('bonusesPage');
 
-// Set dates to First of Current Month and Today
+// Global Tracking Variables for Sorting & Filtering
+let bonusesTrackingRows = [];
+let bonusesSortDir = {};
+
+// NEW: Defined Columns (Now including Reason!)
+const BONUSES_COLUMNS = [
+    { key: 'so', label: 'SO' },
+    { key: 'assign_date', label: 'Assign Date' },
+    { key: 'assign_time', label: 'Assign Time' },
+    { key: 'status', label: 'Status' },
+    { key: 'assigned_by', label: 'Assigned By' },
+    { key: 'agree_coord', label: 'Agree Coord' },
+    { key: 'complete_coord', label: 'Complete Coord' },
+    { key: 'assigned_tech', label: 'Assigned Tech' },
+    { key: 'end_tech', label: 'End Tech' },
+    { key: 'hass', label: 'Hass' },
+    { key: 'smart_things', label: 'Smart Things' },
+    { key: 'comment', label: 'Comment' },
+    { key: 'collected_reason', label: 'Reason' }, // Added to table!
+    { key: 'collected', label: 'Collected' }
+];
+
+// Helper to format HTML Dates
+const formatBonusesHtmlDate = (dateObj) => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+// Set Default Dates to First of Current Month and Today
 function setBonusesDefaultDates() {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    // Format to YYYY-MM-DD for standard HTML date inputs
-    const formatInputDate = (dateObj) => {
-        const y = dateObj.getFullYear();
-        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-        const d = String(dateObj.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
-    };
-
-    document.getElementById('bonusesStartDate').value = formatInputDate(firstDay);
-    document.getElementById('bonusesEndDate').value = formatInputDate(now);
+    document.getElementById('bonusesStartDate').value = formatBonusesHtmlDate(firstDay);
+    document.getElementById('bonusesEndDate').value = formatBonusesHtmlDate(now);
 }
 
 // Navigation Listeners
@@ -2806,7 +2956,7 @@ document.getElementById('btnBonuses').addEventListener('click', () => {
     menuPage.classList.remove('active');
     bonusesPage.classList.add('active');
     setBonusesDefaultDates();
-    loadBonusesData(); // Auto-load data for the current month when opened
+    loadBonusesData(); 
 });
 
 document.getElementById('bonusesHubBtn').addEventListener('click', () => {
@@ -2814,9 +2964,22 @@ document.getElementById('bonusesHubBtn').addEventListener('click', () => {
     menuPage.classList.add('active');
 });
 
+// Fast Date Buttons
+document.getElementById('btnBonusesToday').addEventListener('click', () => {
+    const now = new Date();
+    document.getElementById('bonusesStartDate').value = formatBonusesHtmlDate(now);
+    document.getElementById('bonusesEndDate').value = formatBonusesHtmlDate(now);
+    loadBonusesData();
+});
+
+document.getElementById('btnBonusesThisMonth').addEventListener('click', () => {
+    setBonusesDefaultDates();
+    loadBonusesData();
+});
+
 document.getElementById('btnFetchBonuses').addEventListener('click', loadBonusesData);
 
-// Main Fetch and Filter Engine
+// Main Fetch and Filter Engine (Upgraded with Pagination and Strict-Case Bypass)
 async function loadBonusesData() {
     const startDateVal = document.getElementById('bonusesStartDate').value;
     const endDateVal = document.getElementById('bonusesEndDate').value;
@@ -2831,26 +2994,29 @@ async function loadBonusesData() {
     const endLimit = new Date(endDateVal);
     endLimit.setHours(23, 59, 59, 999); 
 
-    const { data, error } = await supabaseClient.from(MONITOR_TABLE_NAME).select('*');
+    // BUG FIX 1: Use the pagination engine to safely download unlimited rows!
+    const data = await fetchAllRecords(MONITOR_TABLE_NAME);
     
-    if (error) {
-        alert("Error loading bonuses data: " + error.message);
+    if (!data) {
+        alert("Error loading bonuses data. Please check your connection.");
         return;
     }
 
-    const currentName = currentUser ? currentUser.username : '';
+    // BUG FIX 2: Convert the logged-in username to pure lowercase to prevent case-mismatch errors
+   const safeCurrentName = currentUser && currentUser.username ? currentUser.username.trim().toLowerCase() : '';
     
-    // 1. DYNAMIC COLUMN TRACKING
-    // Every column in the table that could potentially hold a staff member's name
-    const nameColumns = [
-        'assigned_by', 'agree_coord', 'complete_coord', 
-        'assigned_tech', 'end_tech', 'hass', 'smart_things'
-    ];
-    
-    let summaryCounts = {};
-    nameColumns.forEach(col => summaryCounts[col] = 0);
+    let badgeCounts = {
+        assigned_by: 0,
+        agree_coord: 0,
+        complete_coord: 0,
+        end_tech: 0,
+        hass_done: 0,
+        smart_things: 0,
+        total_collected: 0,   // NEW: Tracks money
+        reasonBreakdown: {}   // NEW: Tracks reasons
+    };
 
-    // 2. FILTER & COUNT ENGINE
+
     const filteredRows = data.filter(row => {
         if (!row.assign_date) return false;
         const parts = row.assign_date.split('-');
@@ -2861,18 +3027,198 @@ async function loadBonusesData() {
 
         let userWasInvolved = false;
         
-        nameColumns.forEach(colKey => {
-            if (row[colKey] && String(row[colKey]).trim() === currentName) {
-                userWasInvolved = true;
-                summaryCounts[colKey]++; 
-            }
-        });
+        // STRICT RULE: Only collect the row if the user's name is in 'assigned_by'
+        if (row.assigned_by && String(row.assigned_by).trim().toLowerCase() === safeCurrentName) {
+            userWasInvolved = true;
+        }
 
-        // The row is kept if their name appeared in AT LEAST one of those columns
+        // TALLY METRICS (Calculates normally based on this restricted table)
+        if (userWasInvolved) {
+            if (String(row.assigned_by || '').trim().toLowerCase() === safeCurrentName) badgeCounts.assigned_by++;
+            if (String(row.agree_coord || '').trim().toLowerCase() === safeCurrentName) badgeCounts.agree_coord++;
+            if (String(row.complete_coord || '').trim().toLowerCase() === safeCurrentName) badgeCounts.complete_coord++;
+            if (String(row.end_tech || '').trim().toLowerCase() === safeCurrentName) badgeCounts.end_tech++;
+            
+            if (String(row.hass || '').trim().toLowerCase() === 'yes') badgeCounts.hass_done++;
+            if (String(row.smart_things || '').trim().toLowerCase() === 'yes') badgeCounts.smart_things++;
+
+            // NEW: Add up the collected money securely
+            badgeCounts.total_collected += (Number(row.collected) || 0);
+
+            // NEW: Tally the specific reasons
+            const reason = (row.collected_reason || '').trim();
+            if (reason) {
+                badgeCounts.reasonBreakdown[reason] = (badgeCounts.reasonBreakdown[reason] || 0) + 1;
+            }
+        }
+
         return userWasInvolved; 
     });
 
-    renderBonusesData(filteredRows, summaryCounts);
+    // Generate the Badge HTML
+    let summaryHTML = '';
+    const addMetric = (label, count) => {
+        if (count > 0) { 
+            summaryHTML += `
+            <div style="background: var(--btn-bg); padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; min-width: 130px; flex-grow: 1;">
+                <span style="font-size: 11px; color: var(--text-color); margin-bottom: 5px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">${label}</span>
+                <span style="font-size: 24px; font-weight: 900; color: var(--text-color);">${count}</span>
+            </div>`;
+        }
+    };
+
+    addMetric('Assigned order', badgeCounts.assigned_by);
+    addMetric('Agree customers', badgeCounts.agree_coord);
+    addMetric('Completed Orders', badgeCounts.complete_coord);
+    addMetric('Ended Orders', badgeCounts.end_tech);
+    addMetric('Hass Done', badgeCounts.hass_done);
+    addMetric('Smart Things', badgeCounts.smart_things);
+    addMetric('Total Collected', badgeCounts.total_collected); // NEW: Renders Money Badge
+
+    // NEW: Renders Reason Breakdown Badge if reasons exist
+    if (Object.keys(badgeCounts.reasonBreakdown).length > 0) {
+        let reasonsHtml = '';
+        Object.keys(badgeCounts.reasonBreakdown).sort().forEach(r => {
+            reasonsHtml += `<div style="margin-top: 5px; font-size: 13px; color: var(--text-color); border-bottom: 1px dashed var(--border-color); padding-bottom: 3px; width: 100%; text-align: left;">
+                ${r}: <strong>${badgeCounts.reasonBreakdown[r]}</strong>
+            </div>`;
+        });
+        
+        summaryHTML += `
+        <div style="background: var(--btn-bg); padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; min-width: 180px; flex-grow: 1;">
+            <span style="font-size: 11px; color: var(--text-color); margin-bottom: 5px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">Reason Breakdown</span>
+            <div style="width: 100%; margin-top: 5px;">${reasonsHtml}</div>
+        </div>`;
+    }
+
+    const summaryContent = document.getElementById('bonusesSummaryContent');
+    if (summaryHTML === '') {
+         summaryContent.innerHTML = '<div style="padding: 10px; opacity: 0.7;">No tracked actions found for the selected dates.</div>';
+    } else {
+         summaryContent.innerHTML = summaryHTML;
+    }
+
+    bonusesTrackingRows = filteredRows;
+    renderBonusesTable();
+}
+
+// RENDER & SORT ENGINE
+function renderBonusesTable(dataToRender = bonusesTrackingRows) {
+    const thead = document.getElementById('bonusesHeaderRow');
+    const tbody = document.getElementById('bonusesTableBody');
+    
+    // Build Headers & Search Boxes once
+    if (thead.children.length === 0) {
+        const tr = document.createElement('tr');
+        BONUSES_COLUMNS.forEach(col => {
+            const th = document.createElement('th');
+            
+            // Header Text with Sorting
+            th.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <span class="sort-header" style="cursor:pointer; font-weight:bold;">${col.label}</span>
+                </div>
+            `;
+            th.querySelector('.sort-header').addEventListener('click', () => sortBonusesColumn(col.key));
+            
+            // Excel-style Search Box
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = 'Search...';
+            searchInput.style.width = '100%';
+            searchInput.style.boxSizing = 'border-box';
+            searchInput.style.marginTop = '5px';
+            searchInput.style.padding = '4px';
+            searchInput.style.fontSize = '11px';
+            searchInput.style.border = '1px solid var(--border-color)';
+            searchInput.style.borderRadius = '3px';
+            searchInput.style.background = 'var(--bg-color)';
+            searchInput.style.color = 'var(--text-color)';
+            
+            searchInput.addEventListener('keyup', filterBonusesTable);
+            
+            th.appendChild(searchInput);
+            tr.appendChild(th);
+        });
+        thead.appendChild(tr);
+    }
+
+    tbody.innerHTML = '';
+    
+    dataToRender.forEach(row => {
+        const tr = document.createElement('tr');
+        
+        BONUSES_COLUMNS.forEach(col => {
+            const td = document.createElement('td');
+            const cellValue = row[col.key] ? String(row[col.key]) : '';
+            td.textContent = cellValue;
+            
+            // Highlight current user's name
+            if (cellValue.trim() === (currentUser ? currentUser.username : '')) {
+                td.style.fontWeight = "bold";
+                td.style.color = "#4caf50"; 
+            }
+            
+            tr.appendChild(td);
+        });
+        
+        tbody.appendChild(tr);
+    });
+}
+
+// LIGHTWEIGHT DOM FILTER
+function filterBonusesTable() {
+    const trs = document.getElementById('bonusesTableBody').getElementsByTagName('tr');
+    const inputs = document.getElementById('bonusesHeaderRow').getElementsByTagName('input');
+    
+    for (let i = 0; i < trs.length; i++) {
+        let showRow = true;
+        const tds = trs[i].getElementsByTagName('td');
+        
+        for (let j = 0; j < inputs.length; j++) {
+            const filterText = inputs[j].value.toLowerCase();
+            if (filterText !== '') {
+                if (tds[j]) {
+                    const cellText = tds[j].textContent.toLowerCase();
+                    if (cellText.indexOf(filterText) === -1) {
+                        showRow = false; 
+                        break; 
+                    }
+                }
+            }
+        }
+        trs[i].style.display = showRow ? '' : 'none';
+    }
+}
+
+// COLUMN SORTING
+function sortBonusesColumn(colKey) {
+    const currentDir = bonusesSortDir[colKey] === 'asc' ? 'desc' : 'asc';
+    bonusesSortDir = { [colKey]: currentDir }; 
+
+    bonusesTrackingRows.sort((a, b) => {
+        let valA = a[colKey] || '';
+        let valB = b[colKey] || '';
+
+        // Safely sort date columns
+        if ((colKey === 'assign_date' || colKey === 'date') && valA && valB) {
+            const partsA = valA.split('-');
+            const partsB = valB.split('-');
+            if(partsA.length === 3 && partsB.length === 3) {
+                const dateA = new Date(partsA[2], partsA[1] - 1, partsA[0]);
+                const dateB = new Date(partsB[2], partsB[1] - 1, partsB[0]);
+                return currentDir === 'asc' ? dateA - dateB : dateB - dateA;
+            }
+        }
+
+        // Standard string sorting
+        return currentDir === 'asc' 
+            ? String(valA).localeCompare(String(valB)) 
+            : String(valB).localeCompare(String(valA));
+    });
+
+    renderBonusesTable(bonusesTrackingRows);
+    filterBonusesTable(); // Re-apply filters so hidden items stay hidden!
 }
 
 // Render the UI
@@ -3052,7 +3398,8 @@ function renderTickets(tickets) {
 
                 <!-- NEW: Added the Status Comment line here so it shows on the outside ticket -->
                 <div class="ticket-row" style="margin-top: 5px;"><strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}</div>
-
+                <!-- NEW: Assigned Tech on outer card -->
+                <div class="ticket-row" style="margin-top: 5px;"><strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${ticket.assigned_tech || 'N/A'}</span></div>
                 ${partsHtml}
                 <button class="details-btn">Details & Action</button>
             `;
@@ -3212,6 +3559,7 @@ function openDetailsModal(ticket) {
         <hr style="border-color: var(--border-color); margin: 12px 0;">
         <strong>Remark:</strong> ${ticket.remark || 'N/A'}<br>
         <strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}<br>
+        <strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${ticket.assigned_tech || 'N/A'}</span><br>
         <strong>Route:</strong> ${ticket.rout || 'N/A'}<br>
         <strong>I/O:</strong> ${ticket.io || 'N/A'}<br>
         
@@ -3355,7 +3703,18 @@ document.getElementById('warrantyCheck').addEventListener('change', validateTech
 // Submit Button Action
 confirmTechBtn.addEventListener('click', async () => {
     if (!activeTechTicket) return;
-
+    // --- NEW: STRICT NUMBER VALIDATION ---
+    const rawMoneyString = collectedInput.value.trim();
+    
+    // Check if they typed something, but it is NOT a valid number
+    if (rawMoneyString !== '' && isNaN(Number(rawMoneyString))) {
+        alert("SECURITY BLOCK: The 'Collected' amount must be a valid number. Please remove any letters or symbols.");
+        return; 
+    }
+    
+    // Safely convert to a true Number (defaults to 0 if left blank)
+    const validatedMoney = rawMoneyString !== '' ? Number(rawMoneyString) : 0;
+    // -------------------------------------
     // Lock button to prevent double-clicks and update text to show progress
     confirmTechBtn.disabled = true;
     confirmTechBtn.textContent = 'Uploading Media...';
@@ -3407,7 +3766,7 @@ confirmTechBtn.addEventListener('click', async () => {
             assign_time: `${hh}:${min}`,
             smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
             hass: document.getElementById('hassCheck').checked ? 'yes' : '',
-            collected: collectedInput.value || '0',
+            collected: validatedMoney,
             collected_reason: reasonSelect.value || '',
             comment: commentInput.value.trim()
         };
@@ -3506,7 +3865,7 @@ confirmTechBtn.addEventListener('click', async () => {
         assign_time: `${hh}:${min}`,
         smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
         hass: document.getElementById('hassCheck').checked ? 'yes' : '',
-        collected: collectedInput.value || '0',
+        collected: validatedMoney,
         collected_reason: reasonSelect.value || '',
         comment: commentInput.value.trim(),
         
@@ -3596,9 +3955,16 @@ confirmCoordBtn.addEventListener('click', async () => {
     }
 
     // 2. Update the main orders table
+    let orderUpdatePayload = { status: newStatus };
+    
+    // NEW: If the ticket is completed or cancelled, wipe the assigned tech clean!
+    if (newStatus === 'Complete' || newStatus === 'Cancel') {
+        orderUpdatePayload.assigned_tech = '';
+    }
+
     const { error: orderErr } = await supabaseClient
         .from('orders')
-        .update({ status: newStatus })
+        .update(orderUpdatePayload)
         .eq('so', activeTechTicket.so);
 
     if (orderErr) {
@@ -4270,6 +4636,7 @@ document.getElementById('modalCopyBtn').addEventListener('click', () => {
     SN: ${t.serial || 'N/A'}
     Remark: ${t.remark || 'N/A'}
     Status Comment: ${t.status_comment || 'N/A'}
+    Assigned Tech: ${t.assigned_tech || 'N/A'}
     Route: ${t.rout || 'N/A'}
     I/O: ${t.io || 'N/A'}
     Parts: ${partsStr || 'N/A'}
@@ -4337,6 +4704,7 @@ function openViewOnlyModal(ticket) {
         <hr style="border-color: var(--border-color); margin: 12px 0;">
         <strong>Remark:</strong> ${ticket.remark || 'N/A'}<br>
         <strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}<br>
+        <strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${ticket.assigned_tech || 'N/A'}</span><br>
         <strong>Route:</strong> ${ticket.rout || 'N/A'}<br>
         <strong>I/O:</strong> ${ticket.io || 'N/A'}<br>
         

@@ -26,6 +26,52 @@ body[data-theme="blueish"] {
     --btn-hover: #42a5f5;
 }
 
+/* --- NEW CUSTOM THEMES --- */
+body[data-theme="warm-brown"] {
+    --bg-color: #efebe9;
+    --card-bg: #ffffff;
+    --text-color: #4e342e;
+    --border-color: #d7ccc8;
+    --btn-bg: #8d6e63;
+    --btn-hover: #6d4c41;
+}
+
+body[data-theme="royal-gold"] {
+    --bg-color: #fffde7;
+    --card-bg: #ffffff;
+    --text-color: #5d4037;
+    --border-color: #fff59d;
+    --btn-bg: #ffd54f;
+    --btn-hover: #ffca28;
+}
+
+body[data-theme="gold-black"] {
+    --bg-color: #121212;
+    --card-bg: #1e1e1e;
+    --text-color: #ffd700;
+    --border-color: #333333;
+    --btn-bg: #2d2d2d;
+    --btn-hover: #404040;
+}
+
+body[data-theme="deep-crimson"] {
+    --bg-color: #ffebee;
+    --card-bg: #ffffff;
+    --text-color: #b71c1c;
+    --border-color: #ffcdd2;
+    --btn-bg: #ef5350;
+    --btn-hover: #e53935;
+}
+
+body[data-theme="sun-flower"] {
+    --bg-color: #fffde7;
+    --card-bg: #ffffff;
+    --text-color: #f57f17;
+    --border-color: #ffee58;
+    --btn-bg: #ffee58;
+    --btn-hover: #fdd835;
+}
+
 /* --- GENERAL RE-SETS --- */
 body {
     margin: 0;

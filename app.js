@@ -4000,15 +4000,16 @@ confirmCoordBtn.addEventListener('click', async () => {
  * @param {string} fileTypeLabel - E.g., 'img1' or 'vid1' to keep names unique.
  * @param {number} retries - How many times to attempt the upload before failing.
  */
+/**
+ * Uploads a file to Supabase Storage with a LIVE Visual Progress Bar & Retry Mechanic.
+ */
 async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retries = 3) {
-    console.log(`Preparing to upload ${fileTypeLabel}... Does the file exist?`, fileObject);
-
     // 1. Safety check
     if (!fileObject) return '';
 
     const fileExtension = fileObject.name.split('.').pop();
 
-    // 2. Build the exact Date & Time strings
+    // 2. Build Date & Time strings
     const now = new Date();
     const dd = String(now.getDate()).padStart(2, '0');
     const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -4016,39 +4017,91 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retrie
     const hh = String(now.getHours()).padStart(2, '0');
     const min = String(now.getMinutes()).padStart(2, '0');
 
-    // Using a dash (-) instead of a colon (:) so Windows computers don't crash
     const formattedDate = `${dd}-${mm}-${yyyy}`;
     const formattedTime = `${hh}-${min}`;
 
-    // 3. Create the requested file name: e.g., "4258163256img1_07-07-2026_04-18.jpg"
+    // 3. Create the requested file name
     const uniqueFileName = `${soNumber}${fileTypeLabel}_${formattedDate}_${formattedTime}.${fileExtension}`;
+    
     // Grab the specific line of text on the screen so we can update it
     const progressLine = document.getElementById(`step-${fileTypeLabel}`);
+
     // 4. Retry Loop Mechanic
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-            // If it's retrying, update the screen to show it's trying again
             if (attempt > 1 && progressLine) {
-                progressLine.innerHTML = `⚠️ Retrying upload... (Attempt ${attempt} of ${retries})`;
+                progressLine.innerHTML = `⚠️ Retrying network connection... (Attempt ${attempt} of ${retries})`;
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
             }
 
-            const { data, error } = await supabaseClient
-                .storage
-                .from('repair_media')
-                .upload(uniqueFileName, fileObject);
+            // --- THE NEW "SPEEDOMETER" UPLOAD ENGINE ---
+            // We use a Promise so it waits to finish before moving to the next video
+            await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                
+                // We construct the direct Supabase API URL using your global variables
+                const url = `${SUPABASE_URL}/storage/v1/object/repair_media/${uniqueFileName}`;
 
-            if (error) {
-                console.warn(`Upload failed for ${fileTypeLabel} (Attempt ${attempt}/${retries}):`, error);
+                // This event fires constantly as data is pushed through the network!
+                xhr.upload.addEventListener("progress", (event) => {
+                    // DEBUG: Print exactly what the browser sees to the F12 Console
+                    console.log("Upload Progress Fired ->", "Loaded:", event.loaded, "Total:", event.total, "Computable:", event.lengthComputable);
+
+                    if (progressLine) {
+                        // If the browser knows the total file size, do the math
+                        if (event.lengthComputable && event.total > 0) {
+                            const percent = Math.round((event.loaded / event.total) * 100);
+                            const loadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
+                            const totalMB = (event.total / (1024 * 1024)).toFixed(1);
+                            
+                            progressLine.innerHTML = `
+                                <div style="margin-bottom: 4px; font-size: 13px;">
+                                    ⏳ Uploading ${fileTypeLabel}... <strong style="color: #2e7d32;">${percent}%</strong> 
+                                    <span style="opacity: 0.7; font-size: 11px;">(${loadedMB} MB / ${totalMB} MB)</span>
+                                </div>
+                                <div style="width: 100%; background: var(--border-color); border-radius: 4px; overflow: hidden; height: 12px;">
+                                    <div style="width: ${percent}%; background: #2e7d32; height: 100%; transition: width 0.2s;"></div>
+                                </div>
+                            `;
+                        } else {
+                            // FALLBACK: If the browser is struggling to do the math, just show the MBs moving
+                            const loadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
+                            progressLine.innerHTML = `
+                                <div style="margin-bottom: 4px; font-size: 13px;">
+                                    ⏳ Uploading ${fileTypeLabel}... <strong style="color: #f57c00;">Streaming data...</strong> 
+                                    <span style="opacity: 0.7; font-size: 11px;">(${loadedMB} MB pushed)</span>
+                                </div>
+                            `;
+                        }
+                    }
+                });
+
+                // When the upload finishes successfully
+                xhr.addEventListener("load", () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(); // Tell the code to continue!
+                    } else {
+                        reject(new Error(`Server rejected the file: ${xhr.responseText}`));
+                    }
+                });
+
+                // If the internet completely drops
+                xhr.addEventListener("error", () => {
+                    reject(new Error("Network connection dropped."));
+                });
+
+                // Open the connection and attach your specific Supabase Keys
+                xhr.open("POST", url, true);
+                xhr.setRequestHeader("Authorization", `Bearer ${SUPABASE_KEY}`);
+                xhr.setRequestHeader("apikey", SUPABASE_KEY);
+                xhr.setRequestHeader("Content-Type", fileObject.type);
+                //(This follwing line tells Supabase: "If this file already exists from a broken previous attempt, just overwrite it instead of throwing an error.")
+                xhr.setRequestHeader("x-upsert", "true"); 
                 
-                if (attempt === retries) {
-                    alert(`Upload completely failed for ${fileTypeLabel} after ${retries} attempts: ` + error.message);
-                    return ''; 
-                }
-                
-                // Wait for 2 seconds before trying again
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                continue; 
-            }
+                // Send the file!
+                xhr.send(fileObject);
+            });
+            // --- END NEW ENGINE ---
 
             // 5. If upload succeeds, ask Supabase for the direct public web link
             const { data: publicUrlData } = supabaseClient
@@ -4059,15 +4112,15 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retrie
             return publicUrlData.publicUrl;
 
         } catch (err) {
-            console.error(`Unexpected network error during upload (Attempt ${attempt}/${retries}):`, err);
-            
-            if (attempt === retries) {
-                alert(`Network error blocked upload for ${fileTypeLabel} after ${retries} attempts.`);
-                return '';
+            console.warn(`Upload failed for ${fileTypeLabel} (Attempt ${attempt}/${retries}):`, err);
+            if (progressLine) {
+                progressLine.innerHTML = `<span style="color: #d32f2f; font-size: 13px;">⚠️ Attempt ${attempt} failed: ${err.message}. Retrying...</span>`;
             }
             
-            // Wait for 2 seconds before trying again
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            if (attempt === retries) {
+                alert(`Upload completely failed for ${fileTypeLabel} after ${retries} attempts: ` + err.message);
+                return ''; 
+            }
         }
     }
 }

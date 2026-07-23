@@ -4020,12 +4020,18 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retrie
     const formattedDate = `${dd}-${mm}-${yyyy}`;
     const formattedTime = `${hh}-${min}`;
 
-    // 3. Create the requested file name
+    // 3. Create the requested file name: e.g., "4258163256img1_07-07-2026_04-18.jpg"
     const uniqueFileName = `${soNumber}${fileTypeLabel}_${formattedDate}_${formattedTime}.${fileExtension}`;
-
+    // Grab the specific line of text on the screen so we can update it
+    const progressLine = document.getElementById(`step-${fileTypeLabel}`);
     // 4. Retry Loop Mechanic
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
+            // If it's retrying, update the screen to show it's trying again
+            if (attempt > 1 && progressLine) {
+                progressLine.innerHTML = `⚠️ Retrying upload... (Attempt ${attempt} of ${retries})`;
+            }
+
             const { data, error } = await supabaseClient
                 .storage
                 .from('repair_media')
@@ -4034,7 +4040,6 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retrie
             if (error) {
                 console.warn(`Upload failed for ${fileTypeLabel} (Attempt ${attempt}/${retries}):`, error);
                 
-                // If we've reached our maximum retries, stop and alert the user
                 if (attempt === retries) {
                     alert(`Upload completely failed for ${fileTypeLabel} after ${retries} attempts: ` + error.message);
                     return ''; 
@@ -4060,6 +4065,7 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retrie
                 alert(`Network error blocked upload for ${fileTypeLabel} after ${retries} attempts.`);
                 return '';
             }
+            
             // Wait for 2 seconds before trying again
             await new Promise(resolve => setTimeout(resolve, 2000));
         }

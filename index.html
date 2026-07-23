@@ -9,20 +9,7 @@
         // Register the Service Worker if the browser supports it
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                // 1. Add a timestamp to the URL to force the phone to check GitHub for a new sw.js file
-                navigator.serviceWorker.register('sw.js?v=' + new Date().getTime()).then(reg => {
-                    // Force the browser to evaluate the update immediately
-                    reg.update();
-                });
-
-                // 2. The Auto-Refresh Trigger: When a new version is detected and takes over, refresh the page!
-                let refreshing = false;
-                navigator.serviceWorker.addEventListener('controllerchange', () => {
-                    if (!refreshing) {
-                        window.location.reload(); 
-                        refreshing = true;
-                    }
-                });
+                navigator.serviceWorker.register('/sw.js');
             });
         }
     </script>

@@ -3835,6 +3835,14 @@ confirmTechBtn.addEventListener('click', async () => {
     if (fileVid1) {
         setProgressLine('step-vid1', 'Uploading Vid 1 (This may take a moment)');
         urlVid1 = await uploadMediaToSupabase(fileVid1, activeTechTicket.so, 'vid1');
+        
+        if (urlVid1 === '') {
+            setProgressLine('step-vid1', 'Vid 1 FAILED to Upload', false);
+            confirmTechBtn.disabled = false;
+            confirmTechBtn.textContent = 'Confirm ✅';
+            return; // Stops the rest of the ticket from submitting!
+        }
+        
         setProgressLine('step-vid1', 'Vid 1 Complete', true);
     }
     if (fileVid2) {
@@ -3986,12 +3994,13 @@ confirmCoordBtn.addEventListener('click', async () => {
 // --- MEDIA UPLOAD ENGINE ---
 
 /**
- * Uploads a file to Supabase Storage and returns the public URL.
+ * Uploads a file to Supabase Storage and returns the public URL with a retry mechanic.
  * @param {File} fileObject - The actual image or video file from the input.
  * @param {string} soNumber - The Service Order number (used to organize files).
  * @param {string} fileTypeLabel - E.g., 'img1' or 'vid1' to keep names unique.
+ * @param {number} retries - How many times to attempt the upload before failing.
  */
-async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel) {
+async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retries = 3) {
     console.log(`Preparing to upload ${fileTypeLabel}... Does the file exist?`, fileObject);
 
     // 1. Safety check
@@ -4007,37 +4016,53 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel) {
     const hh = String(now.getHours()).padStart(2, '0');
     const min = String(now.getMinutes()).padStart(2, '0');
 
-    // Using a dash (-) instead of a colon (:) so Windows computers don't crash if you download the file later!
+    // Using a dash (-) instead of a colon (:) so Windows computers don't crash
     const formattedDate = `${dd}-${mm}-${yyyy}`;
     const formattedTime = `${hh}-${min}`;
 
-    // 3. Create the requested file name: e.g., "4258163256img1_07-07-2026_04-18.jpg"
+    // 3. Create the requested file name
     const uniqueFileName = `${soNumber}${fileTypeLabel}_${formattedDate}_${formattedTime}.${fileExtension}`;
 
-    try {
-        // 4. Send the file to the 'repair_media' bucket in Supabase
-        const { data, error } = await supabaseClient
-            .storage
-            .from('repair_media')
-            .upload(uniqueFileName, fileObject);
+    // 4. Retry Loop Mechanic
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const { data, error } = await supabaseClient
+                .storage
+                .from('repair_media')
+                .upload(uniqueFileName, fileObject);
 
-        if (error) {
-            console.error(`Upload failed for ${fileTypeLabel}:`, error);
-            alert(`Upload blocked by Supabase for ${fileTypeLabel}: ` + error.message);
-            return '';
+            if (error) {
+                console.warn(`Upload failed for ${fileTypeLabel} (Attempt ${attempt}/${retries}):`, error);
+                
+                // If we've reached our maximum retries, stop and alert the user
+                if (attempt === retries) {
+                    alert(`Upload completely failed for ${fileTypeLabel} after ${retries} attempts: ` + error.message);
+                    return ''; 
+                }
+                
+                // Wait for 2 seconds before trying again
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                continue; 
+            }
+
+            // 5. If upload succeeds, ask Supabase for the direct public web link
+            const { data: publicUrlData } = supabaseClient
+                .storage
+                .from('repair_media')
+                .getPublicUrl(uniqueFileName);
+
+            return publicUrlData.publicUrl;
+
+        } catch (err) {
+            console.error(`Unexpected network error during upload (Attempt ${attempt}/${retries}):`, err);
+            
+            if (attempt === retries) {
+                alert(`Network error blocked upload for ${fileTypeLabel} after ${retries} attempts.`);
+                return '';
+            }
+            // Wait for 2 seconds before trying again
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
-
-        // 5. If upload succeeds, ask Supabase for the direct public web link
-        const { data: publicUrlData } = supabaseClient
-            .storage
-            .from('repair_media')
-            .getPublicUrl(uniqueFileName);
-
-        return publicUrlData.publicUrl;
-
-    } catch (err) {
-        console.error("Unexpected error during upload:", err);
-        return '';
     }
 }
 

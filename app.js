@@ -4021,7 +4021,7 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retrie
     const formattedTime = `${hh}-${min}`;
 
     // 3. Create the requested file name
-    const uniqueFileName = `${soNumber}${fileTypeLabel}_${formattedDate}_${formattedTime}.${fileExtension}`;
+    const uniqueFileName = `${soNumber}_${fileTypeLabel}_${formattedDate}_${formattedTime}.${fileExtension}`;
     
     // Grab the specific line of text on the screen so we can update it
     const progressLine = document.getElementById(`step-${fileTypeLabel}`);
@@ -4226,67 +4226,140 @@ offlineSyncBanner.addEventListener('click', async () => {
 });
 
 
-// --- DOWNLOAD SELECTED BUTTON LOGIC ---
-document.getElementById('btnDownloadSelected').addEventListener('click', () => {
-    if (selectedSystemOrders.size === 0) {
-        alert("Please select at least one order to download.");
+// --- WIPE ALL MEDIA BUTTON LOGIC ---
+document.getElementById('btnWipeMedia').addEventListener('click', async () => {
+    // 1. Strict confirmation to prevent accidents
+    if (!confirm("⚠️ WARNING: This will permanently delete ALL media (images and videos) from the database bucket. This cannot be undone. Proceed?")) {
         return;
     }
 
-    let fileContent = "";
-
-    selectedSystemOrders.forEach(so => {
-        // Find the most up-to-date version of this row (checking edits first)
-        const activeRow = editedOrders[so] || databaseOrders.find(o => String(o.so) === String(so));
-        
-        if (activeRow) {
-            // Map the active columns to their values, joined by a tab space
-            const rowString = activeColumns.map(col => activeRow[col] || '').join('\t');
-            fileContent += rowString + "\n===========================\n";
-        }
-    });
-
-    // Create a downloadable text file inside the browser
-    const blob = new Blob([fileContent], { type: "text/plain" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Orders_Export_${new Date().getTime()}.txt`;
+    showGlobalLoader("Wiping all media...");
     
-    // Simulate a click to force the download, then clean up
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // 2. Fetch the list of all files in the repair_media bucket
+    // We set a high limit to ensure it grabs everything
+    const { data: files, error: listError } = await supabaseClient
+        .storage
+        .from('repair_media')
+        .list('', { limit: 5000 });
+    
+    if (listError) {
+        hideGlobalLoader();
+        alert("Error finding files: " + listError.message);
+        return;
+    }
+
+    if (!files || files.length === 0) {
+        hideGlobalLoader();
+        alert("The media bucket is already empty.");
+        return;
+    }
+
+    // 3. Extract just the file names and delete them
+    const fileNames = files.map(file => file.name);
+    const { error: deleteError } = await supabaseClient.storage.from('repair_media').remove(fileNames);
+
+    hideGlobalLoader();
+
+    if (deleteError) {
+        alert("Failed to delete media: " + deleteError.message);
+    } else {
+        alert(`Successfully deleted ${fileNames.length} media files.`);
+    }
 });
 
-// --- DELETE SELECTED BUTTON LOGIC ---
-document.getElementById('btnDeleteSelected').addEventListener('click', async () => {
-    if (selectedSystemOrders.size === 0) {
-        alert("Please select at least one order to delete.");
+// --- DOWNLOAD ALL MEDIA BUTTON LOGIC (ZIP BUNDLE WITH PROGRESS BAR) ---
+document.getElementById('btnDownloadMedia').addEventListener('click', async () => {
+    // 1. Confirm with the user
+    if (!confirm("This will securely package all media into a single Zip file. Continue?")) {
         return;
     }
 
-    if (!confirm(`Are you sure you want to permanently delete ${selectedSystemOrders.size} selected order(s)?`)) {
+    // 2. Trigger the global loader overlay but inject custom Progress Bar HTML
+    showGlobalLoader(""); // Opens the black overlay
+    const loaderText = document.getElementById('loaderText');
+    
+    // Build the visual progress bar right inside the loading screen
+    loaderText.innerHTML = `
+        <div id="zipPhaseText" style="margin-bottom: 10px; font-size: 16px;">Preparing to download...</div>
+        <div style="width: 300px; background: rgba(255, 255, 255, 0.2); border-radius: 4px; overflow: hidden; height: 18px; margin: 0 auto; border: 1px solid rgba(255,255,255,0.4);">
+            <div id="zipProgressBar" style="width: 0%; background: #4caf50; height: 100%; transition: width 0.2s;"></div>
+        </div>
+        <div id="zipPercentText" style="margin-top: 8px; font-size: 14px; font-weight: normal;">0%</div>
+    `;
+
+    const phaseText = document.getElementById('zipPhaseText');
+    const progressBar = document.getElementById('zipProgressBar');
+    const percentText = document.getElementById('zipPercentText');
+
+    // 3. Fetch the list of all files in the bucket
+    const { data: files, error: listError } = await supabaseClient
+        .storage
+        .from('repair_media')
+        .list('', { limit: 5000 });
+
+    if (listError || !files || files.length === 0) {
+        hideGlobalLoader();
+        alert(listError ? "Error finding files: " + listError.message : "No media found to download.");
         return;
     }
 
-    const soArray = Array.from(selectedSystemOrders);
+    // Filter out the background placeholder file
+    const validFiles = files.filter(f => f.name !== '.emptyFolderPlaceholder');
+    const totalFiles = validFiles.length;
 
-    // Delete from Supabase
-    const { error } = await supabaseClient
-        .from('orders')
-        .delete()
-        .in('so', soArray);
+    const zip = new JSZip();
+    const folder = zip.folder("KE_Media_Backup");
 
-    if (error) {
-        alert("Failed to delete orders: " + error.message);
-    } else {
-        alert("Successfully deleted selected orders.");
+    // 4. PHASE 1: Download files from Supabase into memory
+    phaseText.textContent = `Step 1 of 2: Downloading files from server...`;
+    
+    for (let i = 0; i < totalFiles; i++) {
+        const file = validFiles[i];
+        const { data: fileBlob, error: downloadErr } = await supabaseClient
+            .storage
+            .from('repair_media')
+            .download(file.name);
         
-        // Wipe the memory and refresh the table
-        selectedSystemOrders.clear();
-        editedOrders = {}; // Clear pending edits so deleted items don't resurrect
-        loadDatabaseData(); 
+        if (!downloadErr && fileBlob) {
+            folder.file(file.name, fileBlob);
+        }
+
+        // Math: Make the downloading phase represent the first 50% of the bar
+        const phasePercent = Math.round(((i + 1) / totalFiles) * 50);
+        progressBar.style.width = phasePercent + '%';
+        percentText.textContent = `Downloaded ${i + 1} of ${totalFiles}`;
     }
+
+    // 5. PHASE 2: Generate the final Zip file and track compression progress
+    phaseText.textContent = `Step 2 of 2: Compressing files into Zip...`;
+    
+    // JSZip has a built-in progress tracker we can listen to
+    zip.generateAsync({ type: "blob" }, function updateCallback(metadata) {
+        
+        // metadata.percent tracks from 0 to 100 for the zip process. 
+        // We divide by 2 and add 50 so it fills the second half of our progress bar.
+        const totalPercent = 50 + Math.round(metadata.percent / 2);
+        
+        progressBar.style.width = totalPercent + '%';
+        percentText.textContent = `Zipping: ${Math.round(metadata.percent)}%`;
+        
+    }).then(function(zipContent) {
+        
+        // 6. Finish up and trigger browser download
+        hideGlobalLoader();
+        
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(zipContent);
+        link.download = `Media_Backup_${new Date().getTime()}.zip`; 
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+    }).catch(function(err) {
+        hideGlobalLoader();
+        alert("An error occurred while zipping the files: " + err.message);
+    });
 });
 
 // --- REMOVE SELECTED FROM ASSIGNATION VIEW ---
@@ -4837,3 +4910,104 @@ function filterMonitorTable() {
     }
 }
 // -------------------------------------------
+
+// --- TICKET MODAL: DOWNLOAD TICKET MEDIA BUTTON ---
+document.getElementById('modalDownloadMediaBtn').addEventListener('click', async () => {
+    // 1. Safety check to ensure a ticket is actually open
+    if (!currentlyViewedTicket) return;
+    
+    const targetSO = String(currentlyViewedTicket.so);
+
+    // 2. Setup Progress UI in the Loader
+    showGlobalLoader("Finding media for SO: " + targetSO + "...");
+    const loaderText = document.getElementById('loaderText');
+    
+    loaderText.innerHTML = `
+        <div id="modalZipPhaseText" style="margin-bottom: 10px; font-size: 16px;">Scanning bucket...</div>
+        <div style="width: 300px; background: rgba(255, 255, 255, 0.2); border-radius: 4px; overflow: hidden; height: 18px; margin: 0 auto; border: 1px solid rgba(255,255,255,0.4);">
+            <div id="modalZipProgressBar" style="width: 0%; background: #4caf50; height: 100%; transition: width 0.2s;"></div>
+        </div>
+        <div id="modalZipPercentText" style="margin-top: 8px; font-size: 14px; font-weight: normal;">0%</div>
+    `;
+
+    const phaseText = document.getElementById('modalZipPhaseText');
+    const progressBar = document.getElementById('modalZipProgressBar');
+    const percentText = document.getElementById('modalZipPercentText');
+
+    // 3. Fetch all files from the bucket
+    const { data: files, error: listError } = await supabaseClient
+        .storage
+        .from('repair_media')
+        .list('', { limit: 5000 });
+
+    if (listError || !files || files.length === 0) {
+        hideGlobalLoader();
+        alert(listError ? "Error finding files: " + listError.message : "No media found in the database bucket.");
+        return;
+    }
+
+    // 4. Filter the files to strictly match THIS ticket's SO number
+    const ticketFiles = files.filter(f => {
+        if (f.name === '.emptyFolderPlaceholder') return false;
+        
+        // Split the file name by the underscore and check if the first piece is the SO number
+        const prefix = f.name.split('_')[0];
+        
+        // Fallback for older files that don't have the underscore yet
+        const isOldFormat = f.name.startsWith(targetSO + 'img') || f.name.startsWith(targetSO + 'vid');
+        
+        return prefix === targetSO || isOldFormat;
+    });
+
+    // If no matches were found, stop the process
+    if (ticketFiles.length === 0) {
+        hideGlobalLoader();
+        alert("No media files found in the database for this specific ticket (SO: " + targetSO + ").");
+        return;
+    }
+
+    // 5. Download and Zip
+    const zip = new JSZip();
+    const folder = zip.folder(`SO_${targetSO}_Media`);
+    
+    phaseText.textContent = `Step 1 of 2: Downloading ${ticketFiles.length} files...`;
+
+    // A. Download files from server
+    for (let i = 0; i < ticketFiles.length; i++) {
+        const file = ticketFiles[i];
+        const { data: fileBlob, error: downloadErr } = await supabaseClient
+            .storage
+            .from('repair_media')
+            .download(file.name);
+        
+        if (!downloadErr && fileBlob) {
+            folder.file(file.name, fileBlob);
+        }
+
+        const phasePercent = Math.round(((i + 1) / ticketFiles.length) * 50);
+        progressBar.style.width = phasePercent + '%';
+        percentText.textContent = `Downloaded ${i + 1} of ${ticketFiles.length}`;
+    }
+
+    phaseText.textContent = `Step 2 of 2: Compressing files...`;
+
+    // B. Compress and export
+    zip.generateAsync({ type: "blob" }, function updateCallback(metadata) {
+        const totalPercent = 50 + Math.round(metadata.percent / 2);
+        progressBar.style.width = totalPercent + '%';
+        percentText.textContent = `Zipping: ${Math.round(metadata.percent)}%`;
+    }).then(function(zipContent) {
+        hideGlobalLoader();
+        
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(zipContent);
+        link.download = `SO_${targetSO}_Media.zip`; 
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }).catch(function(err) {
+        hideGlobalLoader();
+        alert("An error occurred while zipping: " + err.message);
+    });
+});

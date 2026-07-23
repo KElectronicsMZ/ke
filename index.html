@@ -16,6 +16,8 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Add this new line for the Zip functionality -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body data-theme="greenish">
     <!-- GLOBAL LOADING OVERLAY -->
@@ -96,13 +98,15 @@
         </div>
     </div>
 
+
+    <!-- systemPage -->
     <div id="systemPage" class="page">
         
         <div class="system-header">
             <h2>System</h2>
             <div class="system-actions">
-                <button id="btnDeleteSelected" style="background-color: #d32f2f; color: white; border: 1px solid #b71c1c; font-weight: bold; margin-right: 5px;">Delete Selected</button>
-                <button id="btnDownloadSelected" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; font-weight: bold; margin-right: 15px;">Download Selected</button>
+               <button id="btnWipeMedia" style="background-color: #d32f2f; color: white; border: 1px solid #b71c1c; font-weight: bold; margin-right: 5px;">Wipe All Media</button>
+                <button id="btnDownloadMedia" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; font-weight: bold; margin-right: 15px;">Download All Media</button>
                 <button id="btnDownloadVisibleSystem" style="background-color: #2e7d32; color: white; border: 1px solid #1b5e20; font-weight: bold; margin-right: 15px;">Download Visible (Grouped)</button>
 
                 <button id="btnWipeSystem" style="background-color: #d32f2f; color: white; border: 1px solid #b71c1c; margin-right: 15px; font-weight: bold;">Wipe System Data</button>
@@ -382,6 +386,8 @@
                 <div class="modal-header">
                     <h3 id="modalSoHeader">Order Details</h3>
                     <div style="display: flex; gap: 10px;">
+                        <!-- Ticket Media DOWNLOAD BUTTON -->
+                        <button id="modalDownloadMediaBtn" style="background: #1976d2; color: white; border: 1px solid #1565c0; padding: 5px 10px; cursor: pointer; border-radius: 4px; font-weight: bold;">📥 Download Media</button>
                         <button id="modalCopyBtn" style="background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 5px 10px; cursor: pointer; border-radius: 4px; font-weight: bold;">📋 Copy Details</button>
                         <button id="closeModalBtn" class="close-btn">X</button>
                     </div>

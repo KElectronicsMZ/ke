@@ -224,7 +224,7 @@ function checkExistingSession() {
                 hiddenColumns = [];
             }
             // ------------------------------------------------
-
+            applyRoleBasedMenuVisibility(); //This lines make the buttons invisible for the user if they aren't allowed to see them when they refresh the page
             // Hide the login screen and show the HUB menu
             loginPage.classList.remove('active');
             menuPage.classList.add('active');
@@ -1192,6 +1192,28 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
 
                     // Ensure the row has an 'so' before adding it to memory
                     if (rowObj.so) {
+                        // --- NEW STATUS & ROUTE PROTECTION ---
+                        // 1. Look up if this order already exists in the live table or pending edits
+                        const existingDbOrder = databaseOrders.find(o => String(o.so) === String(rowObj.so)) || {};
+                        const existingEdit = editedOrders[rowObj.so] || {};
+                        
+                        const orderAlreadyExists = Object.keys(existingDbOrder).length > 0 || Object.keys(existingEdit).length > 0;
+                        
+                        if (orderAlreadyExists) {
+                            // Find the true current values
+                            const currentStatus = existingEdit.status !== undefined ? existingEdit.status : existingDbOrder.status;
+                            const currentRout = existingEdit.rout !== undefined ? existingEdit.rout : existingDbOrder.rout;
+                            
+                            // If they contain data, delete them from the incoming upload to block the overwrite
+                            if (currentStatus && String(currentStatus).trim() !== '') {
+                                delete rowObj.status;
+                            }
+                            if (currentRout && String(currentRout).trim() !== '') {
+                                delete rowObj.rout;
+                            }
+                        }
+                        // -------------------------------------
+
                         if (!editedOrders[rowObj.so]) {
                             editedOrders[rowObj.so] = {};
                         }

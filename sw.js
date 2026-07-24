@@ -2,11 +2,11 @@ const CACHE_NAME = 'ke-tech-cache-v2.5'; // We bumped the version up!
 
 // The essential files the app needs to load visually
 const ASSETS_TO_CACHE = [
-    '/',
-    '/index.html',
-    '/style.css',
-    '/app.js',
-    '/manifest.json' // Added this so the app installs correctly on phones
+    './',
+    './index.html',
+    './style.css',
+    './app.js',
+    './manifest.json' // Added this so the app installs correctly on phones
 ];
 
 // 1. Install the Service Worker and save the files to the phone's cache

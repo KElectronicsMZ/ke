@@ -1679,11 +1679,11 @@ function drawTechLeaderboard() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
-            <td style="padding: 10px;">${stats.assigned}</td>
-            <td style="padding: 10px; color: #2e7d32; font-weight: bold;">${stats.acted}</td>
-            <td style="padding: 10px; color: #d32f2f;">${stats.pending}</td>
-            <td style="padding: 10px;">${stats.finished}</td>
-            <td style="padding: 10px; font-weight: bold; color: #1976d2;">${stats.collected}</td>
+            <td style="padding: 10px;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'assigned')">${stats.assigned}</span></td>
+            <td style="padding: 10px; color: #2e7d32;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'acted')">${stats.acted}</span></td>
+            <td style="padding: 10px; color: #d32f2f;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'pending')">${stats.pending}</span></td>
+            <td style="padding: 10px;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'finished')">${stats.finished}</span></td>
+            <td style="padding: 10px; color: #1976d2;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'collected')">${stats.collected}</span></td>
         `;
         tbody.appendChild(tr);
     });
@@ -1718,8 +1718,8 @@ function drawCoordLeaderboard() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
-            <td style="padding: 10px; color: #f57c00; font-weight: bold;">${stats.agree}</td>
-            <td style="padding: 10px; color: #2e7d32; font-weight: bold;">${stats.complete}</td>
+            <td style="padding: 10px; color: #f57c00;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'agreed')">${stats.agree}</span></td>
+            <td style="padding: 10px; color: #2e7d32;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'completed')">${stats.complete}</span></td>
         `;
         tbody.appendChild(tr);
     });
@@ -1908,24 +1908,22 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
         }
 
         badgesArea.innerHTML = `
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold; flex: 1; min-width: 250px;">
-                📌 Unique Assigned Orders: <span style="font-size: 1.2em; color: var(--text-color);">${totalAssignedOrders}</span>
-                
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); flex: 1; min-width: 250px;">
+                📌 Unique Assigned: <span class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'assigned')">${totalAssignedOrders}</span>
                 <div style="margin-top: 10px; background: var(--bg-color); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 13px;">
-                    ▶ Actions Submitted: <span style="color: #2e7d32; font-size: 1.1em;">${totalActionsSubmitted}</span><br>
-                    ▶ Left Out (Pending): <span style="color: #d32f2f; font-size: 1.1em;">${leftOutCount}</span><br>
+                    ▶ Actions: <span style="color: #2e7d32;" class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'acted')">${totalActionsSubmitted}</span><br>
+                    ▶ Pending: <span style="color: #d32f2f;" class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'pending')">${leftOutCount}</span><br>
                 </div>
             </div>
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold; flex: 1; min-width: 250px;">
-                📋 Total Logged w/ Reason: <span style="font-size: 1.2em; color: var(--text-color);">${totalWithReason}</span>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); flex: 1; min-width: 250px;">
+                📋 Logged w/ Reason: <span style="font-weight: 900;">${totalWithReason}</span>
                 <div style="margin-top: 10px; background: var(--bg-color); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                    <div style="font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px;">Reason Breakdown:</div>
-                    ${reasonsHtml}
+                    ${Object.keys(reasonBreakdown).sort().map(r => `<div style="margin-top: 5px; font-size: 12px; border-bottom: 1px dashed var(--border-color); padding-bottom: 3px;">${r}: <strong class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'reason', '${r}')">${reasonBreakdown[r]}</strong></div>`).join('')}
                 </div>
             </div>
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); font-weight: bold; flex: 1; min-width: 150px;">
-                ✅ Finished: <span style="font-size: 1.2em; color: var(--text-color);">${countFinished}</span><br><br>
-                💰 Collected: <span style="font-size: 1.2em; color: var(--text-color);">${totalCollected}</span>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); flex: 1; min-width: 150px;">
+                ✅ Finished: <span class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'finished')">${countFinished}</span><br><br>
+                💰 Collected: <span class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'collected')">${totalCollected}</span>
             </div>
         `;
     }
@@ -3057,30 +3055,30 @@ async function loadBonusesData() {
 
     // Generate the Badge HTML
     let summaryHTML = '';
-    const addMetric = (label, count) => {
+    const addMetric = (label, count, type) => {
         if (count > 0) { 
             summaryHTML += `
-            <div style="background: var(--btn-bg); padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; min-width: 130px; flex-grow: 1;">
+            <div class="metric-clickable" onclick="openMetricDetails('bonuses', '${safeCurrentName}', '${type}')" style="background: var(--btn-bg); padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; min-width: 130px; flex-grow: 1;">
                 <span style="font-size: 11px; color: var(--text-color); margin-bottom: 5px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">${label}</span>
                 <span style="font-size: 24px; font-weight: 900; color: var(--text-color);">${count}</span>
             </div>`;
         }
     };
 
-    addMetric('Assigned order', badgeCounts.assigned_by);
-    addMetric('Agree customers', badgeCounts.agree_coord);
-    addMetric('Completed Orders', badgeCounts.complete_coord);
-    addMetric('Ended Orders', badgeCounts.end_tech);
-    addMetric('Hass Done', badgeCounts.hass_done);
-    addMetric('Smart Things', badgeCounts.smart_things);
-    addMetric('Total Collected', badgeCounts.total_collected); // NEW: Renders Money Badge
+    addMetric('Assigned order', badgeCounts.assigned_by, 'acted'); // Assigned by YOU = acted
+    addMetric('Agree customers', badgeCounts.agree_coord, 'agreed');
+    addMetric('Completed Orders', badgeCounts.complete_coord, 'completed');
+    addMetric('Ended Orders', badgeCounts.end_tech, 'finished');
+    addMetric('Hass Done', badgeCounts.hass_done, 'hass');
+    addMetric('Smart Things', badgeCounts.smart_things, 'smart_things');
+    addMetric('Total Collected', badgeCounts.total_collected, 'collected');
 
     // NEW: Renders Reason Breakdown Badge if reasons exist
     if (Object.keys(badgeCounts.reasonBreakdown).length > 0) {
         let reasonsHtml = '';
         Object.keys(badgeCounts.reasonBreakdown).sort().forEach(r => {
             reasonsHtml += `<div style="margin-top: 5px; font-size: 13px; color: var(--text-color); border-bottom: 1px dashed var(--border-color); padding-bottom: 3px; width: 100%; text-align: left;">
-                ${r}: <strong>${badgeCounts.reasonBreakdown[r]}</strong>
+                ${r}: <strong class="metric-clickable" onclick="openMetricDetails('bonuses', '${safeCurrentName}', 'reason', '${r}')">${badgeCounts.reasonBreakdown[r]}</strong>
             </div>`;
         });
         
@@ -5011,3 +5009,109 @@ document.getElementById('modalDownloadMediaBtn').addEventListener('click', async
         alert("An error occurred while zipping: " + err.message);
     });
 });
+
+// --- METRIC LIST MODAL ENGINE ---
+window.openMetricDetails = function(context, user, type, extraArg = null) {
+    const dataPool = context === 'monitor' ? currentFilteredMonitorRows : bonusesTrackingRows;
+    const safeUser = user.trim().toLowerCase();
+    
+    // We use Maps to keep SO numbers unique based on the latest log entry
+    let assignedMap = new Map();
+    let actedMap = new Map();
+    let finalResults = new Map();
+
+    // 1. Data Aggregation
+    dataPool.forEach(row => {
+        const so = row.so;
+        const assignedTech = (row.assigned_tech || '').trim().toLowerCase();
+        const assignedBy = (row.assigned_by || '').trim().toLowerCase();
+        const endTech = (row.end_tech || '').trim().toLowerCase();
+        const agreeCoord = (row.agree_coord || '').trim().toLowerCase();
+        const completeCoord = (row.complete_coord || '').trim().toLowerCase();
+
+        // Baseline mapping for Left Out math
+        if (assignedTech === safeUser) assignedMap.set(so, row);
+        if (assignedBy === safeUser) actedMap.set(so, row);
+
+        let isMatch = false;
+        
+        if (context === 'bonuses') {
+            // Bonuses logic (you are the acting user)
+            if (type === 'acted' && assignedBy === safeUser) isMatch = true;
+            if (type === 'agreed' && agreeCoord === safeUser) isMatch = true;
+            if (type === 'completed' && completeCoord === safeUser) isMatch = true;
+            if (type === 'finished' && endTech === safeUser) isMatch = true;
+            if (type === 'hass' && String(row.hass || '').trim().toLowerCase() === 'yes') isMatch = true;
+            if (type === 'smart_things' && String(row.smart_things || '').trim().toLowerCase() === 'yes') isMatch = true;
+            if (type === 'collected' && assignedBy === safeUser && Number(row.collected) > 0) isMatch = true;
+            if (type === 'reason' && assignedBy === safeUser && (row.collected_reason || '').trim() === extraArg) isMatch = true;
+        } else {
+            // Monitor logic
+            if (type === 'assigned' && assignedTech === safeUser) isMatch = true;
+            if (type === 'acted' && assignedBy === safeUser) isMatch = true;
+            if (type === 'finished' && endTech === safeUser) isMatch = true;
+            if (type === 'collected' && assignedBy === safeUser && Number(row.collected) > 0) isMatch = true;
+            if (type === 'agreed' && agreeCoord === safeUser) isMatch = true;
+            if (type === 'completed' && completeCoord === safeUser) isMatch = true;
+            if (type === 'reason' && assignedBy === safeUser && (row.collected_reason || '').trim() === extraArg) isMatch = true;
+        }
+
+        if (isMatch) finalResults.set(so, row);
+    });
+
+    // 2. Left Out Math (Assigned minus Acted)
+    if (type === 'pending') {
+        finalResults.clear();
+        assignedMap.forEach((row, so) => {
+            if (!actedMap.has(so)) finalResults.set(so, row);
+        });
+    }
+
+    // 3. UI Generation
+    const listContainer = document.getElementById('metricModalList');
+    listContainer.innerHTML = '';
+    
+    document.getElementById('metricModalTitle').textContent = `Details: ${type.toUpperCase()}`;
+    
+    const subtitle = context === 'bonuses' ? "Showing your personal entries for the selected date range." : `Displaying records for: ${user}`;
+    document.getElementById('metricModalSubtitle').textContent = subtitle;
+
+    if (finalResults.size === 0) {
+        listContainer.innerHTML = '<p style="opacity: 0.7;">No details found for this record.</p>';
+    } else {
+        finalResults.forEach((row, so) => {
+            let detailString = '';
+            
+            // Format specifics based on your exact requests
+            if (type === 'assigned' || type === 'pending') {
+                detailString = `Assigned Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'}`;
+            } else if (type === 'acted') {
+                detailString = `Action Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'} <br><strong>Comment:</strong> ${row.comment || 'None'}`;
+            } else if (type === 'finished') {
+                detailString = `Completed Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'} <br><strong>End Coord:</strong> ${row.complete_coord || 'N/A'}`;
+            } else if (type === 'collected') {
+                detailString = `Collection Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'} <br><strong>Amount:</strong> ${row.collected || 0}`;
+            } else {
+                detailString = `Recorded Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'}`;
+            }
+
+            const card = document.createElement('div');
+            card.className = 'metric-card';
+            card.innerHTML = `
+                <div class="metric-so-link">SO: ${so}</div>
+                <div>${detailString}</div>
+            `;
+            
+            // Attach view ticket function safely
+            card.querySelector('.metric-so-link').addEventListener('click', () => {
+                // Find the main order data to populate the ticket accurately
+                const mainOrder = databaseOrders.find(o => String(o.so) === String(so)) || row;
+                openViewOnlyModal(mainOrder);
+            });
+
+            listContainer.appendChild(card);
+        });
+    }
+
+    document.getElementById('metricDetailsModal').style.display = 'flex';
+};

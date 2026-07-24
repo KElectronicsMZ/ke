@@ -492,6 +492,19 @@
             </div> 
         </div>
 
+        <!-- METRIC DETAILS POPUP MODAL -->
+    <div id="metricDetailsModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 id="metricModalTitle">Details</h3>
+                <button onclick="document.getElementById('metricDetailsModal').style.display='none'" class="close-btn">X</button>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                <p id="metricModalSubtitle" style="font-size: 13px; opacity: 0.8; margin-top: 0; margin-bottom: 15px;"></p>
+                <div id="metricModalList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+            </div>
+        </div>
+    </div>
 
     <script src="app.js"></script>
 </body>

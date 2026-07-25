@@ -154,6 +154,9 @@ let activeColumns = [...DEFAULT_SYSTEM_COLUMNS];
 let assignationOrders = [];
 let availableTechnicians = [];
 let editedAssignations = {};
+let stagedOrders = [];
+let editedStagedOrders = {};
+const STAGED_COLUMNS = ["so", "assigned_tech", "rout"];
 const ASSIGN_COLUMNS = [
     "so", "date", "days", "status", "service_type", "address", "rout", 
     "assigned_tech", "model", "remark", "status_comment", 
@@ -521,18 +524,27 @@ const assignationPage = document.getElementById('assignationPage');
 // --- NEW: TOMORROW'S SCHEDULE STAGING COUNTER ---
 async function updateStagingCount() {
     const countBadge = document.getElementById('pendingTomorrowCount');
+    const stagedSection = document.getElementById('stagedOrdersSection');
     if (!countBadge) return;
     
-    // We ask Supabase just to count the rows, which is extremely fast and lightweight
-    const { count, error } = await supabaseClient
+    // Upgrade: Fetch the actual data instead of just the count
+    const { data, error } = await supabaseClient
         .from('tomorrow_schedule')
-        .select('*', { count: 'exact', head: true });
+        .select('*');
         
-    if (!error) {
-        countBadge.textContent = count || 0;
+    if (!error && data) {
+        countBadge.textContent = data.length || 0;
+        
+        if (data.length > 0) {
+            stagedSection.style.display = 'block';
+            stagedOrders = data;
+            editedStagedOrders = {}; // clear old edits
+            renderStagedTable();
+        } else {
+            stagedSection.style.display = 'none';
+        }
     }
 }
-
 
 document.getElementById('btnAssignation').addEventListener('click', async () => {
     menuPage.classList.remove('active');
@@ -2373,6 +2385,122 @@ function runAssignationFilters() {
     renderAssignationTable(filteredData);
 }
 
+function renderStagedTable(dataToRender = stagedOrders) {
+    const headerRow = document.getElementById('stagedHeaderRow');
+    const filterRow = document.getElementById('stagedFilterRow');
+    const tbody = document.getElementById('stagedTableBody');
+
+    // Build headers and filters if empty
+    if (headerRow.children.length === 0) {
+        STAGED_COLUMNS.forEach(colKey => {
+            const th = document.createElement('th');
+            th.innerHTML = `<span style="font-weight:bold;">${colKey === 'so' ? 'SO' : colKey}</span>`;
+            headerRow.appendChild(th);
+
+            const filterTd = document.createElement('th');
+            const filterSelect = document.createElement('select');
+            filterSelect.dataset.column = colKey;
+            filterSelect.style.width = '100%';
+            filterSelect.style.boxSizing = 'border-box';
+            filterSelect.addEventListener('change', runStagedFilters);
+            filterTd.appendChild(filterSelect);
+            filterRow.appendChild(filterTd);
+        });
+    }
+
+    // Refresh dropdown options
+    document.querySelectorAll('#stagedFilterRow select').forEach(select => {
+        const colKey = select.dataset.column;
+        const currentSelection = select.value;
+        select.innerHTML = `<option value="">-- All --</option><option value="[BLANK]">-- Blank --</option>`;
+        
+        const uniqueValues = new Set();
+        stagedOrders.forEach(row => {
+            let val = (editedStagedOrders[row.so] && editedStagedOrders[row.so][colKey] !== undefined) 
+                ? editedStagedOrders[row.so][colKey] : row[colKey];
+            if (val && String(val).trim() !== '') uniqueValues.add(String(val).trim());
+        });
+
+        Array.from(uniqueValues).sort().forEach(val => select.appendChild(new Option(val, val)));
+        select.value = currentSelection;
+    });
+
+    tbody.innerHTML = '';
+
+    // Build Rows
+    dataToRender.forEach(row => {
+        const tr = document.createElement('tr');
+        const currentSO = row.so;
+
+        STAGED_COLUMNS.forEach(colKey => {
+            const td = document.createElement('td');
+            const input = document.createElement('input');
+            
+            let currentValue = (editedStagedOrders[currentSO] && editedStagedOrders[currentSO][colKey] !== undefined) 
+                ? editedStagedOrders[currentSO][colKey] : (row[colKey] || '');
+
+            input.value = currentValue;
+
+            if (colKey === 'so') {
+                input.readOnly = true; 
+                input.style.cursor = 'pointer';
+                input.style.color = 'var(--text-color)'; 
+                input.style.fontWeight = '900'; 
+                
+                input.addEventListener('click', async () => {
+                    // Try to find the order in memory, or fetch it live to view the ticket
+                    let fullOrder = databaseOrders.find(o => String(o.so) === String(currentSO)) || assignationOrders.find(o => String(o.so) === String(currentSO));
+                    if (!fullOrder) {
+                        const { data } = await supabaseClient.from('orders').select('*').eq('so', currentSO).single();
+                        fullOrder = data;
+                    }
+                    if (fullOrder) openViewOnlyModal(fullOrder);
+                });
+            } else if (colKey === 'assigned_tech') {
+                input.setAttribute('list', 'technicianList');
+                input.setAttribute('autocomplete', 'off'); 
+            } else if (colKey === 'rout') {
+                input.setAttribute('list', 'routList');
+                input.setAttribute('autocomplete', 'off'); 
+            }
+
+            input.addEventListener('input', (e) => {
+                if (!editedStagedOrders[currentSO]) editedStagedOrders[currentSO] = { ...row };
+                editedStagedOrders[currentSO][colKey] = e.target.value;
+            });
+
+            td.appendChild(input);
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+}
+
+function runStagedFilters() {
+    const filterSelects = document.querySelectorAll('#stagedFilterRow select');
+    let filteredData = [...stagedOrders];
+
+    filterSelects.forEach(select => {
+        const val = select.value;
+        const colKey = select.dataset.column;
+
+        if (val === "[BLANK]") {
+            filteredData = filteredData.filter(row => {
+                const cellValue = (editedStagedOrders[row.so] && editedStagedOrders[row.so][colKey] !== undefined)
+                    ? String(editedStagedOrders[row.so][colKey]).trim() : String(row[colKey] || '').trim();
+                return cellValue === '';
+            });
+        } else if (val !== "") {
+            filteredData = filteredData.filter(row => {
+                const cellValue = (editedStagedOrders[row.so] && editedStagedOrders[row.so][colKey] !== undefined)
+                    ? String(editedStagedOrders[row.so][colKey]) : String(row[colKey] || '');
+                return cellValue === val;
+            });
+        }
+    });
+    renderStagedTable(filteredData);
+}
+
 // --- SORTING FOR ASSIGNATION PAGE ---
 function sortAssignationColumn(colKey) {
     const currentDir = assignationSortDir[colKey] === 'asc' ? 'desc' : 'asc';
@@ -2682,6 +2810,28 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
     updateStagingCount();
     pushBtn.disabled = false;
     pushBtn.textContent = '🚀 Push Live Now';
+});
+
+document.getElementById('updateStagedBtn').addEventListener('click', async () => {
+    const recordsToUpdate = Object.values(editedStagedOrders);
+    
+    if (recordsToUpdate.length === 0) {
+        alert("No changes detected to update.");
+        return;
+    }
+
+    // Push changes directly to the staging table
+    const { error } = await supabaseClient
+        .from('tomorrow_schedule')
+        .upsert(recordsToUpdate, { onConflict: 'so' });
+
+    if (error) {
+        alert("Failed to update staged orders: " + error.message);
+    } else {
+        alert("Staged orders successfully updated!");
+        // Refresh the counter and redraw the table with fresh data
+        updateStagingCount(); 
+    }
 });
 
 // --- ASSIGNATION PAGE: MASTER EDIT ENGINE ---

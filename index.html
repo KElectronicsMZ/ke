@@ -323,6 +323,27 @@
             
             <button id="assignHubBtn" style="margin-left: auto;">HUB</button>
         </div>
+
+        <!-- NEW: Editable Staging Table Section -->
+        <div id="stagedOrdersSection" style="display: none; width: 100%; margin-top: 30px; border-top: 3px solid var(--border-color); padding-top: 20px;">
+            <h3 style="margin-top: 0; color: #1976d2;">📅 Staged for Tomorrow (Edit Queue)</h3>
+            
+            <div class="table-container" style="max-height: 40vh; margin-bottom: 15px;">
+                <table id="stagedTable">
+                    <thead>
+                        <tr id="stagedHeaderRow"></tr>
+                        <tr id="stagedFilterRow"></tr>
+                    </thead>
+                    <tbody id="stagedTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="button-group table-controls">
+                <button id="updateStagedBtn" style="background-color: #f57c00; color: white; border-color: #e65100; font-weight: bold; padding: 10px 20px;">
+                    💾 Save Updates to Staging
+                </button>
+            </div>
+        </div>
     
     </div>
 

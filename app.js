@@ -143,7 +143,7 @@ const ALL_COLUMNS = [
     "status_comment", "change_log", "return", "part_1", "qty_1", "part_2", 
     "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
     "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3",
-    "end_tech", "end_coord", "collected", "history", "assigned_tech"
+    "complete_tech", "complete_coord", "history", "assigned_tech"
 ];
 
 

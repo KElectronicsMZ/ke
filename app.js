@@ -5028,10 +5028,10 @@ function downloadGroupedVisibleText(tableBodyId, memoryMap, allColsArray, filena
         return;
     }
 
-    // 1. Gather visible SOs from DOM
+    // 1. Gather visible SOs from DOM (Bulletproof Method)
     const visibleSOs = Array.from(tableBody.querySelectorAll('tr')).map(tr => {
-        // Look up the row's SO based on the first active column (usually SO, but handles dynamic columns)
-        const soInput = tr.querySelector('td:nth-child(2) input'); // nth-child(2) skips the checkbox td
+        // Automatically hunt for the input field that is Read-Only and Bolded (The SO cell)
+        const soInput = Array.from(tr.querySelectorAll('input')).find(inp => inp.readOnly === true && inp.style.fontWeight === '900');
         if(soInput) return soInput.value;
         return null;
     }).filter(val => val !== null);
@@ -5132,8 +5132,8 @@ document.getElementById('monitorDownloadCsvBtn').addEventListener('click', () =>
         data: csvData
     });
 
-    // Trigger Download
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    // --- FIXED: UTF-8 BOM added safely without duplicate declarations ---
+    const blob = new Blob(['\uFEFF' + csv], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = `Monitor_Export_${new Date().getTime()}.csv`;
@@ -5142,6 +5142,61 @@ document.getElementById('monitorDownloadCsvBtn').addEventListener('click', () =>
     document.body.removeChild(link);
 });
 
+// ==========================================
+// --- FULL SYSTEM BACKUP ENGINE ---
+// ==========================================
+
+function generateSystemBackupData() {
+    // Combine the live database with any active edits on the screen
+    return databaseOrders.map(row => {
+        const activeRow = { ...row, ...(editedOrders[row.so] || {}) };
+        let cleanRow = {};
+        // Strictly force the data to map to ALL_COLUMNS to guarantee restore compatibility
+        ALL_COLUMNS.forEach(col => {
+            cleanRow[col] = activeRow[col] || '';
+        });
+        return cleanRow;
+    });
+}
+
+
+document.getElementById('btnBackupCsv').addEventListener('click', () => {
+    const data = generateSystemBackupData();
+    if (data.length === 0) return alert("No data available to backup.");
+    
+    // Generates a perfect Excel CSV with Headers
+    const csv = Papa.unparse(data);
+    
+    // --- FIXED: Added the UTF-8 BOM ('\uFEFF') so Excel reads Arabic correctly ---
+    const blob = new Blob(['\uFEFF' + csv], { type: "text/csv;charset=utf-8;" });
+    
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `System_Full_Backup_${new Date().getTime()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+});
+
+document.getElementById('btnBackupTxt').addEventListener('click', () => {
+    const data = generateSystemBackupData();
+    if (data.length === 0) return alert("No data available to backup.");
+    
+    // Generates a Tab-Separated TXT file with NO headers (Strict upload compatibility)
+    let fileContent = "";
+    data.forEach(row => {
+        const rowString = ALL_COLUMNS.map(col => row[col]).join('\t');
+        fileContent += rowString + "\n";
+    });
+
+    const blob = new Blob([fileContent], { type: "text/plain" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `System_Full_Backup_${new Date().getTime()}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+});
 
 // ==========================================
 // --- VIEW ONLY MODAL ENGINE view ticket---

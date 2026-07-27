@@ -423,15 +423,29 @@
                         <span id="linkVid1"></span> <span id="linkVid2"></span> <span id="linkVid3"></span>
                     </div>
 
+                    <div id="coordHistorySection" style="display: none; margin-bottom: 20px;">
+                        <h4>Ticket History</h4>
+                        <div style="background: var(--card-bg); padding: 15px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px;">
+                            <div style="margin-bottom: 10px; font-weight: bold; color: #1976d2; padding-bottom: 10px; border-bottom: 1px dashed var(--border-color);">
+                                Last pushed to Back Office by: <span id="lastPushedByValue" style="color: var(--text-color);">Loading...</span>
+                             </div>
+                            
+                              <div style="font-weight: bold; margin-bottom: 8px;">Previous Comments تعليقات : </div>
+                                <div id="coordCommentsList" style="max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+                                <span style="color: gray;">Loading comments...</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <div id="techActionSection">
                         <h4>Media Capture</h4>
                         <div class="media-grid">
-                            <label class="media-btn">📷 Img 1 <input type="file" id="img1Input" accept="image/*" hidden></label>
-                            <label class="media-btn">📷 Img 2 <input type="file" id="img2Input" accept="image/*" hidden></label>
-                            <label class="media-btn">📷 Img 3 <input type="file" id="img3Input" accept="image/*" hidden></label>
-                            <label class="media-btn vid-btn">📹 Vid 1 <input type="file" id="vid1Input" accept="video/*" hidden></label>
-                            <label class="media-btn vid-btn">📹 Vid 2 <input type="file" id="vid2Input" accept="video/*" hidden></label>
-                            <label class="media-btn vid-btn">📹 Vid 3 <input type="file" id="vid3Input" accept="video/*" hidden></label>
+                            <label class="media-btn">📷 Img  قبل صيانة <input type="file" id="img1Input" accept="image/*" hidden></label>
+                            <label class="media-btn">📷 Img  بعد صيانة <input type="file" id="img2Input" accept="image/*" hidden></label>
+                            <label class="media-btn">📷 Img اخرى <input type="file" id="img3Input" accept="image/*" hidden></label>
+                            <label class="media-btn vid-btn">📹 Vid قبل صيانة <input type="file" id="vid1Input" accept="video/*" hidden></label>
+                            <label class="media-btn vid-btn">📹 Vid بعد صيانة <input type="file" id="vid2Input" accept="video/*" hidden></label>
+                            <label class="media-btn vid-btn">📹 Vid أخرى <input type="file" id="vid3Input" accept="video/*" hidden></label>
                         </div>
 
                         <h4>System Config</h4>
@@ -449,7 +463,7 @@
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; margin-top: 18px;">
                                 <input type="checkbox" id="warrantyCheck" style="width: 18px; height: 18px;">
-                                <label for="warrantyCheck" style="font-weight: bold; cursor: pointer;">In Warranty ضمان</label>
+                                <label for="warrantyCheck" style="font-weight: bold; cursor: pointer;">بدون تكلفة / ضمان</label>
                             </div>
                         </div>
                         
@@ -458,6 +472,7 @@
                             <select id="reasonSelect">
                                 <option value="">-- Select Reason --</option>
                                 <!-- The value="" is exactly what gets saved to the database -->
+                                 <option value="01 - زيارة">0.1 - بدون زيارة</option>
                                 <option value="01 - زيارة">01 - زيارة</option>
                                 <option value="02 - صيانة">02 - صيانة</option>
                                 <option value="03 - اوبن سيل/ليدات">03 - اوبن سيل/ليدات</option>
@@ -469,36 +484,40 @@
                             </select>
                         </div>
 
-                        <div class="input-group" style="width: 90%;">
+                        <div class="input-group" id="techCommentGroup" style="display: none; width: 90%;">
                             <label>Tech Comment</label>
-                            <textarea id="commentInput" rows="3" placeholder="Type field notes here..." style="width: 100%;"></textarea>
+                            <!-- NEW: The faded auto-prefix display box -->
+                            <div id="autoPrefixDisplay" style="padding: 8px; background: var(--card-bg); border: 1px dashed var(--border-color); border-bottom: none; border-radius: 4px 4px 0 0; color: var(--text-color); opacity: 0.6; font-size: 13px; font-weight: bold; display: none;"></div>
+                            <!-- Updated: Attached borders to match the box above it -->
+                            <textarea id="commentInput" rows="3" placeholder="Type field notes here..." style="width: 100%; border-radius: 0 0 4px 4px; padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); box-sizing: border-box;"></textarea>
                         </div>
                     </div> 
 
-                    <div id="coordHistorySection" style="display: none; margin-bottom: 20px;">
-                        <h4>Ticket History</h4>
-                        <div style="background: var(--card-bg); padding: 15px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px;">
-                            <div style="margin-bottom: 10px; font-weight: bold; color: #1976d2; padding-bottom: 10px; border-bottom: 1px dashed var(--border-color);">
-                                Last pushed to Back Office by: <span id="lastPushedByValue" style="color: var(--text-color);">Loading...</span>
-                             </div>
-                            
-                              <div style="font-weight: bold; margin-bottom: 8px;">Technician Comments:</div>
-                                <div id="coordCommentsList" style="max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
-                                <span style="color: gray;">Loading comments...</span>
-                            </div>
-                        </div>
-                    </div>
+                    
 
                     <div id="coordActionSection" style="display: none;">
                         <h4>Coordinator Action</h4>
                         <div class="input-group" style="background: var(--card-bg); padding: 15px; border: 1px solid var(--border-color); border-radius: 4px;">
                             <label style="font-size: 16px; margin-bottom: 10px;">Update Order Status To:</label>
-                            <select id="coordStatusSelect" style="padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);">
+                            <select id="coordStatusSelect" style="padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); margin-bottom: 10px;">
                                 <option value="">-- Select Action --</option>
                                 <option value="Pending">Pending</option>
                                 <option value="Complete">Complete</option>
                                 <option value="Cancel">Cancel</option>
+                                <option value="Replacement">Replacement</option>
+                                <option value="Hotels">Hotels</option>
+                                <option value="Re-Assign">Re-Assign</option>
                             </select>
+
+                            <select id="coordTechSelect" style="display: none; padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); margin-bottom: 10px;">
+                                <option value="">-- Select Technician --</option>
+                            </select>
+
+                            <div class="input-group" style="margin-top: 10px; margin-bottom: 0;">
+                                <label style="font-size: 14px; opacity: 0.8;">Add a Comment (Optional):</label>
+                                <textarea id="coordCommentInput" rows="2" placeholder="Type back office notes here..." style="width: 100%; padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></textarea>
+                            </div>
+
                         </div>
                     </div>
                     

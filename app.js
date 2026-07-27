@@ -138,12 +138,12 @@ const MONITOR_TABLE_NAME = 'repair_log'; // Your secondary table name in Supabas
 
 // CHANGED: 'SO' is now 'so' to match the database strict case rules
 const ALL_COLUMNS = [
-    "so", "created_by", "branch", "date", "days", "status", "reason","service_type", "name", 
+    "so", "created_by", "branch", "date", "days", "status", "assigned_tech", "reason","service_type", "name", 
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", "remark", 
-    "status_comment", "change_log", "return", "part_1", "qty_1", "part_2", 
-    "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
+    "status_comment", "change_log", "return", 
+    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
     "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3",
-    "complete_tech", "complete_coord", "history", "assigned_tech"
+    "complete_tech", "complete_coord", "history"
 ];
 
 
@@ -698,6 +698,15 @@ function renderTableStructure() {
     headerRow.innerHTML = '';
     filterRow.innerHTML = '';
 
+    // --- Inject Row Number Header ---
+    const indexHeader = document.createElement('th');
+    indexHeader.textContent = "#";
+    indexHeader.style.width = "40px"; 
+    headerRow.appendChild(indexHeader);
+    
+    const indexFilter = document.createElement('th');
+    filterRow.appendChild(indexFilter);
+
     // --- Add empty header cells for the checkbox column --------------
     const checkHeader = document.createElement('th');
     checkHeader.textContent = "Select";
@@ -798,9 +807,17 @@ function populateTableRows(dataToDisplay) {
     const tbody = document.getElementById('tableBody');
     tbody.innerHTML = '';
 
-    dataToDisplay.forEach(row => {
+    dataToDisplay.forEach((row, index) => { 
         const tr = document.createElement('tr');
-        const currentSO = row.so; // CHANGED to lowercase 'so'
+        const currentSO = row.so;
+
+        // --- Inject Row Number Cell ---
+        const indexTd = document.createElement('td');
+        indexTd.textContent = index + 1; // +1 so it starts at 1 instead of 0
+        indexTd.style.textAlign = 'center';
+        indexTd.style.fontWeight = 'bold';
+        tr.appendChild(indexTd);
+
 
         // --- Inject the Checkbox Cell ---
         const checkTd = document.createElement('td');
@@ -1684,6 +1701,11 @@ function drawTechLeaderboard() {
     tbody.innerHTML = '';
     theadRow.innerHTML = '';
 
+    // --- Inject Row Number Header ---
+    const indexHeader = document.createElement('th');
+    indexHeader.innerHTML = `<div style="padding: 5px;"><span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">#</span></div>`;
+    theadRow.appendChild(indexHeader);
+
     const cols = [
         { label: 'Technician', key: 'name' },
         { label: 'Assigned Orders', key: 'assigned' },
@@ -1709,9 +1731,10 @@ function drawTechLeaderboard() {
     });
 
     // Inject Rows
-    techLeaderboardData.forEach(stats => {
+    techLeaderboardData.forEach((stats,index) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
+        <td style="padding: 10px; font-weight: bold; text-align: center;">${index + 1}</td>
             <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
             <td style="padding: 10px;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'assigned')">${stats.assigned}</span></td>
             <td style="padding: 10px; color: #2e7d32;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'acted')">${stats.acted}</span></td>
@@ -1728,6 +1751,11 @@ function drawCoordLeaderboard() {
     const theadRow = document.getElementById('coordHeaderRow');
     tbody.innerHTML = '';
     theadRow.innerHTML = '';
+
+    // --- Inject Row Number Header ---
+    const indexHeader = document.createElement('th');
+    indexHeader.innerHTML = `<div style="padding: 5px;"><span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">#</span></div>`;
+    theadRow.appendChild(indexHeader);
 
     const cols = [
         { label: 'Coordinator', key: 'name' },
@@ -1748,9 +1776,10 @@ function drawCoordLeaderboard() {
         theadRow.appendChild(th);
     });
 
-    coordLeaderboardData.forEach(stats => {
+    coordLeaderboardData.forEach((stats, index) => { // <-- Added 'index'
         const tr = document.createElement('tr');
         tr.innerHTML = `
+            <td style="padding: 10px; font-weight: bold; text-align: center;">${index + 1}</td>
             <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
             <td style="padding: 10px; color: #f57c00;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'agreed')">${stats.agree}</span></td>
             <td style="padding: 10px; color: #2e7d32;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'completed')">${stats.complete}</span></td>
@@ -1839,7 +1868,13 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
         { key: 'comment', label: 'Comment', source: 'track' }
     ];
 
-    // 3. BUILD HEADERS WITH EXCEL-STYLE SEARCH BOXES
+    // 3. BUILD HEADERS WITH EXCEL-STYLE SEARCH BOXES for Monitor Table
+
+    // --- Inject Row Number Header ---
+    const indexHeader = document.createElement('th');
+    indexHeader.innerHTML = `<div>#</div><input type="text" disabled style="width: 100%; box-sizing: border-box; margin-top: 5px; padding: 4px; border: 1px solid transparent; background: transparent; visibility: hidden;">`; 
+    theadRow.appendChild(indexHeader);
+
     columnsConfig.forEach((cfg) => {
         const th = document.createElement('th');
         
@@ -1877,10 +1912,18 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
     let actedSOs = new Set();
 
     // 4. BUILD ROWS
-    rowsToRender.forEach(trackingMatch => {
+    rowsToRender.forEach((trackingMatch, index) => { // <-- Added 'index'
         const tr = document.createElement('tr');
         const currentSO = trackingMatch.so;
         const orderMatch = databaseOrders.find(o => String(o.so) === String(currentSO)) || {};
+
+        // --- Inject Row Number Cell ---
+        const indexTd = document.createElement('td');
+        indexTd.textContent = index + 1;
+        indexTd.style.textAlign = 'center';
+        indexTd.style.fontWeight = 'bold';
+        indexTd.style.padding = "10px";
+        tr.appendChild(indexTd);
 
         columnsConfig.forEach(cfg => {
             const td = document.createElement('td');
@@ -2099,6 +2142,16 @@ function renderAssignationTable(dataToRender = assignationOrders) {
     // This stops the input box from being destroyed while you are actively typing in it.
     if (headerRow.children.length === 0) {
 
+        // --- Inject Row Number Header ---
+        const indexHeader = document.createElement('th');
+        indexHeader.textContent = "#";
+        indexHeader.style.width = "40px";
+        headerRow.appendChild(indexHeader);
+        
+        const indexFilter = document.createElement('th');
+        filterRow.appendChild(indexFilter);
+
+
         // --- Add empty header cells for the checkbox column ---
         const checkHeader = document.createElement('th');
         checkHeader.textContent = "Select";
@@ -2199,9 +2252,16 @@ function renderAssignationTable(dataToRender = assignationOrders) {
     tbody.innerHTML = '';
 
     // Build Rows
-    dataToRender.forEach(row => {
+    dataToRender.forEach((row, index) => { // <-- Added 'index' here
         const tr = document.createElement('tr');
         const currentSO = row.so;
+
+        // --- Inject Row Number Cell ---
+        const indexTd = document.createElement('td');
+        indexTd.textContent = index + 1;
+        indexTd.style.textAlign = 'center';
+        indexTd.style.fontWeight = 'bold';
+        tr.appendChild(indexTd);
 
         // --- NEW: Inject the Checkbox Cell ---
         const checkTd = document.createElement('td');
@@ -2392,6 +2452,16 @@ function renderStagedTable(dataToRender = stagedOrders) {
 
     // Build headers and filters if empty
     if (headerRow.children.length === 0) {
+
+        // --- Inject Row Number Header ---
+        const indexHeader = document.createElement('th');
+        indexHeader.textContent = "#";
+        indexHeader.style.width = "40px";
+        headerRow.appendChild(indexHeader);
+
+        const indexFilter = document.createElement('th');
+        filterRow.appendChild(indexFilter);
+
         STAGED_COLUMNS.forEach(colKey => {
             const th = document.createElement('th');
             th.innerHTML = `<span style="font-weight:bold;">${colKey === 'so' ? 'SO' : colKey}</span>`;
@@ -2428,9 +2498,16 @@ function renderStagedTable(dataToRender = stagedOrders) {
     tbody.innerHTML = '';
 
     // Build Rows
-    dataToRender.forEach(row => {
+    dataToRender.forEach((row, index) => { // <-- Added 'index' here
         const tr = document.createElement('tr');
         const currentSO = row.so;
+
+        // --- Inject Row Number Cell ---
+        const indexTd = document.createElement('td');
+        indexTd.textContent = index + 1;
+        indexTd.style.textAlign = 'center';
+        indexTd.style.fontWeight = 'bold';
+        tr.appendChild(indexTd);
 
         STAGED_COLUMNS.forEach(colKey => {
             const td = document.createElement('td');
@@ -3280,6 +3357,17 @@ function renderBonusesTable(dataToRender = bonusesTrackingRows) {
     // Build Headers & Search Boxes once
     if (thead.children.length === 0) {
         const tr = document.createElement('tr');
+        
+        // --- Inject Row Number Header ---
+        const indexHeader = document.createElement('th');
+        indexHeader.innerHTML = `
+            <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
+                <span style="font-weight:bold;">#</span>
+            </div>
+            <input type="text" disabled style="width: 100%; box-sizing: border-box; margin-top: 5px; padding: 4px; border: 1px solid transparent; background: transparent; visibility: hidden;">
+        `;
+        tr.appendChild(indexHeader);
+
         BONUSES_COLUMNS.forEach(col => {
             const th = document.createElement('th');
             
@@ -3315,9 +3403,16 @@ function renderBonusesTable(dataToRender = bonusesTrackingRows) {
 
     tbody.innerHTML = '';
     
-    dataToRender.forEach(row => {
+    dataToRender.forEach((row, index) => { // <-- Added 'index' here
         const tr = document.createElement('tr');
         
+        // --- Inject Row Number Cell ---
+        const indexTd = document.createElement('td');
+        indexTd.textContent = index + 1;
+        indexTd.style.textAlign = 'center';
+        indexTd.style.fontWeight = 'bold';
+        tr.appendChild(indexTd);
+
         BONUSES_COLUMNS.forEach(col => {
             const td = document.createElement('td');
             const cellValue = row[col.key] ? String(row[col.key]) : '';
@@ -3341,6 +3436,8 @@ function filterBonusesTable() {
     const trs = document.getElementById('bonusesTableBody').getElementsByTagName('tr');
     const inputs = document.getElementById('bonusesHeaderRow').getElementsByTagName('input');
     
+    let visibleCount = 1; // --- NEW: Start our dynamic counter
+    
     for (let i = 0; i < trs.length; i++) {
         let showRow = true;
         const tds = trs[i].getElementsByTagName('td');
@@ -3357,7 +3454,13 @@ function filterBonusesTable() {
                 }
             }
         }
+        
         trs[i].style.display = showRow ? '' : 'none';
+        
+        // --- NEW: Update the row number if the row is visible ---
+        if (showRow && tds[0]) {
+            tds[0].textContent = visibleCount++;
+        }
     }
 }
 
@@ -3740,23 +3843,28 @@ function openDetailsModal(ticket) {
     `;
 
     // 3. ROLE-BASED UI TOGGLE
+    
+    // --- NEW: Universal History ---
+    // Fetch the history for EVERYONE and make sure the box is visible
+    document.getElementById('coordHistorySection').style.display = 'block';
+    fetchAndRenderTicketHistory(ticket.so);
+    
     if (currentUser.role.includes('coordinator')) {
         // Hide Tech Zone
         document.getElementById('techActionSection').style.display = 'none';
         document.getElementById('confirmTechBtn').style.display = 'none';
         
-        // Show Coordinator Zone & History Zone
+        // Show Coordinator Zone
         document.getElementById('coordActionSection').style.display = 'block';
-        document.getElementById('coordHistorySection').style.display = 'block';
         
         const confirmCoordBtn = document.getElementById('confirmCoordBtn');
         confirmCoordBtn.style.display = 'block';
-        
-        // Call the universal history fetcher
-        fetchAndRenderTicketHistory(ticket.so);
 
         // Reset Coord Form
         document.getElementById('coordStatusSelect').value = '';
+        document.getElementById('coordTechSelect').style.display = 'none';
+        document.getElementById('coordTechSelect').value = '';
+        document.getElementById('coordCommentInput').value = '';
         confirmCoordBtn.disabled = true;
         confirmCoordBtn.textContent = 'Confirm (Coord) 🔒';
 
@@ -3765,7 +3873,7 @@ function openDetailsModal(ticket) {
         document.getElementById('techActionSection').style.display = 'block';
         document.getElementById('confirmTechBtn').style.display = 'block';
         
-        // Hide Coordinator Zone & History Zone
+        // Hide Coordinator Zone
         document.getElementById('coordActionSection').style.display = 'none';
         document.getElementById('confirmCoordBtn').style.display = 'none';
 
@@ -3774,11 +3882,12 @@ function openDetailsModal(ticket) {
         reasonSelect.value = '';
         commentInput.value = '';
         document.getElementById('smartThingsCheck').checked = false;
-        document.getElementById('hassCheck').checked = false
-        // --- Reset the Warranty Checkbox ---
+        document.getElementById('hassCheck').checked = false;
         document.getElementById('warrantyCheck').checked = false;
 
+        // Reset hidden fields
         reasonGroup.style.display = 'none';
+        document.getElementById('techCommentGroup').style.display = 'none'; // Hide comment by default!
 
         document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
             input.value = ''; 
@@ -3833,23 +3942,44 @@ function validateTechForm() {
     const reason = reasonSelect.value;
     const comment = commentInput.value.trim();
     const isWarranty = document.getElementById('warrantyCheck').checked;
+    const commentGroup = document.getElementById('techCommentGroup');
+    const prefixDisplay = document.getElementById('autoPrefixDisplay'); // NEW
 
-    // Show Reason Dropdown if money is collected OR warranty is checked
-    if (money > 0 || isWarranty) {
-        reasonGroup.style.display = 'flex';
-    } else {
-        reasonGroup.style.display = 'none';
-        reasonSelect.value = ''; // Clear it if neither is active
+    // --- NEW: Generate Auto-Prefix ---
+    let autoPrefix = '';
+    if (isWarranty) {
+        autoPrefix = `بدون تكلفة/ضمان${reason ? ' - ' + reason : ''} | `;
+    } else if (money > 0) {
+        autoPrefix = `تم تحصيل مبلغ ${money}${reason ? ' - ' + reason : ''} | `;
     }
 
-    // 1. Comment is ALWAYS the master key (must not be empty)
-    const isCommentValid = comment !== '';
+    if (autoPrefix) {
+        prefixDisplay.textContent = autoPrefix;
+        prefixDisplay.style.display = 'block';
+    } else {
+        prefixDisplay.style.display = 'none';
+    }
+    // ---------------------------------
 
-    // 2. Financial Rule: If money is greater than 0, they MUST pick a reason.
-    // If money is 0, this rule automatically passes.
+    // Show Reason Dropdown AND Comment Field if money is collected OR warranty is checked
+    if (money > 0 || isWarranty) {
+        reasonGroup.style.display = 'flex';
+        commentGroup.style.display = 'flex'; // Un-hide comment field
+    } else {
+        reasonGroup.style.display = 'none';
+        commentGroup.style.display = 'none'; // Hide comment field
+        reasonSelect.value = ''; // Clear reason if neither is active
+        commentInput.value = ''; // Clear comment if hidden
+    }
+
+    // 1. Validation Logic
+    let isCommentValid = true;
     let isFinancialValid = true;
-    if (money > 0 && reason === '') {
-        isFinancialValid = false; 
+
+    // If the fields are visible, they MUST be filled out
+    if (money > 0 || isWarranty) {
+        if (comment === '') isCommentValid = false;
+        if (reason === '') isFinancialValid = false;
     }
 
     // BOTH conditions must be met to unlock the confirm button
@@ -3862,12 +3992,23 @@ function validateTechForm() {
     }
 }
 
-// Listen for typing/changes to run the validation gate instantly
-collectedInput.addEventListener('input', validateTechForm);
+// ---  Mutual Exclusivity and Validation Listeners ---
+collectedInput.addEventListener('input', (e) => {
+    if (parseFloat(e.target.value) > 0) {
+        document.getElementById('warrantyCheck').checked = false; // Uncheck warranty if money is typed
+    }
+    validateTechForm();
+});
+
+document.getElementById('warrantyCheck').addEventListener('change', (e) => {
+    if (e.target.checked) {
+        collectedInput.value = ''; // Clear money if warranty is checked
+    }
+    validateTechForm();
+});
+
 reasonSelect.addEventListener('change', validateTechForm);
 commentInput.addEventListener('input', validateTechForm);
-// Listen for clicks on the Warranty box!
-document.getElementById('warrantyCheck').addEventListener('change', validateTechForm);
 
 
 // Submit Button Action
@@ -3884,7 +4025,19 @@ confirmTechBtn.addEventListener('click', async () => {
     
     // Safely convert to a true Number (defaults to 0 if left blank)
     const validatedMoney = rawMoneyString !== '' ? Number(rawMoneyString) : 0;
-    // -------------------------------------
+    
+    // --- COMPILE THE FINAL COMMENT ---
+    const isWarranty = document.getElementById('warrantyCheck').checked;
+    const reason = reasonSelect.value;
+    const typedComment = commentInput.value.trim();
+    
+    let finalComment = typedComment;
+    if (isWarranty) {
+        finalComment = `بدون تكلفة/ضمان - ${reason} | ${typedComment}`;
+    } else if (validatedMoney > 0) {
+        finalComment = `تم تحصيل مبلغ ${validatedMoney} - ${reason} | ${typedComment}`;
+    }
+
     // Lock button to prevent double-clicks and update text to show progress
     confirmTechBtn.disabled = true;
     confirmTechBtn.textContent = 'Uploading Media...';
@@ -3938,7 +4091,7 @@ confirmTechBtn.addEventListener('click', async () => {
             hass: document.getElementById('hassCheck').checked ? 'yes' : '',
             collected: validatedMoney,
             collected_reason: reasonSelect.value || '',
-            comment: commentInput.value.trim()
+            comment: finalComment
         };
 
         // Package the raw File objects and text into one bundle
@@ -4045,7 +4198,7 @@ confirmTechBtn.addEventListener('click', async () => {
         hass: document.getElementById('hassCheck').checked ? 'yes' : '',
         collected: validatedMoney,
         collected_reason: reasonSelect.value || '',
-        comment: commentInput.value.trim(),
+        comment: finalComment,
         
         img1: urlImg1, img2: urlImg2, img3: urlImg3,
         vid1: urlVid1, vid2: urlVid2, vid3: urlVid3
@@ -4084,17 +4237,62 @@ confirmTechBtn.addEventListener('click', async () => {
 // --- COORDINATOR MODAL LOGIC ---
 const coordStatusSelect = document.getElementById('coordStatusSelect');
 const confirmCoordBtn = document.getElementById('confirmCoordBtn');
+const coordTechSelect = document.getElementById('coordTechSelect');
 
-// Unlock button when a status is chosen
-coordStatusSelect.addEventListener('change', () => {
-    if (coordStatusSelect.value !== '') {
+// New Validation Gate
+function validateCoordForm() {
+    const status = coordStatusSelect.value;
+    const tech = coordTechSelect.value;
+    
+    let isValid = false;
+    
+    if (status === 'Re-Assign') {
+        coordTechSelect.style.display = 'block'; // Show tech list
+        if (tech !== '') isValid = true;         // Only valid if tech is chosen
+    } else if (status !== '') {
+        coordTechSelect.style.display = 'none';  // Hide tech list
+        isValid = true;
+    } else {
+        coordTechSelect.style.display = 'none';
+    }
+
+    if (isValid) {
         confirmCoordBtn.disabled = false;
         confirmCoordBtn.textContent = 'Confirm Action ✅';
     } else {
         confirmCoordBtn.disabled = true;
         confirmCoordBtn.textContent = 'Confirm (Coord) 🔒';
     }
+}
+
+// Unlock button when a status is chosen and fetch technicians if needed
+coordStatusSelect.addEventListener('change', async (e) => {
+    if (e.target.value === 'Re-Assign' && coordTechSelect.children.length <= 1) {
+        // Fetch technicians if the list hasn't been built yet
+        if (availableTechnicians.length === 0) {
+            const { data, error } = await supabaseClient
+                .from('profiles')
+                .select('username')
+                .ilike('role', '%technician%'); 
+            
+            if (data && !error) {
+                availableTechnicians = data.map(d => d.username);
+            }
+        }
+        
+        // Populate the dropdown
+        coordTechSelect.innerHTML = '<option value="">-- Select Technician --</option>';
+        availableTechnicians.forEach(tech => {
+            const opt = document.createElement('option');
+            opt.value = tech;
+            opt.textContent = tech;
+            coordTechSelect.appendChild(opt);
+        });
+    }
+    validateCoordForm();
 });
+
+coordTechSelect.addEventListener('change', validateCoordForm);
 
 // Submit Coord Changes
 confirmCoordBtn.addEventListener('click', async () => {
@@ -4104,7 +4302,11 @@ confirmCoordBtn.addEventListener('click', async () => {
     confirmCoordBtn.disabled = true;
     confirmCoordBtn.textContent = 'Processing...';
 
-    const newStatus = coordStatusSelect.value;
+    let newStatus = coordStatusSelect.value;
+    const selectedTech = coordTechSelect.value;
+    
+    // --- NEW: Grab the comment ---
+    const coordComment = document.getElementById('coordCommentInput').value.trim();
     
     // Calculate timestamp
     const now = new Date();
@@ -4114,11 +4316,25 @@ confirmCoordBtn.addEventListener('click', async () => {
     const hh = String(now.getHours()).padStart(2, '0');
     const min = String(now.getMinutes()).padStart(2, '0');
 
+    // --- NEW: RE-ASSIGN ROUTING LOGIC ---
+    // Calculate the final status and assigned tech before saving to the database
+    let finalOrderStatus = newStatus;
+    let finalAssignedTech = activeTechTicket.assigned_tech || ''; // Keep existing unless changed
+
+    if (newStatus === 'Re-Assign') {
+        finalOrderStatus = 'Technician'; // Push it live to the technician's phone
+        finalAssignedTech = selectedTech; // Assign the selected user
+    } else if (newStatus === 'Complete' || newStatus === 'Cancel') {
+        finalAssignedTech = ''; // Wipe the technician clean for completed/cancelled tickets
+    }
+
     // 1. Log the action in repair_log
     const logPayload = {
         so: activeTechTicket.so,
-        status: newStatus, // "Pending" or "Complete"
-        assigned_by: currentUser.username, // Record who made the change
+        status: finalOrderStatus, 
+        assigned_by: currentUser.username, 
+        assigned_tech: finalAssignedTech,
+        comment: coordComment, // <-- Push the Back Office comment to the history log!
         assign_date: `${dd}-${mm}-${yyyy}`,
         assign_time: `${hh}:${min}`
     };
@@ -4133,12 +4349,10 @@ confirmCoordBtn.addEventListener('click', async () => {
     }
 
     // 2. Update the main orders table
-    let orderUpdatePayload = { status: newStatus };
-    
-    // NEW: If the ticket is completed or cancelled, wipe the assigned tech clean!
-    if (newStatus === 'Complete' || newStatus === 'Cancel') {
-        orderUpdatePayload.assigned_tech = '';
-    }
+    const orderUpdatePayload = { 
+        status: finalOrderStatus,
+        assigned_tech: finalAssignedTech
+    };
 
     const { error: orderErr } = await supabaseClient
         .from('orders')
@@ -4152,13 +4366,12 @@ confirmCoordBtn.addEventListener('click', async () => {
         return;
     }
 
-    alert(`Success: Order ${activeTechTicket.so} has been moved to ${newStatus}!`);
+    alert(`Success: Order ${activeTechTicket.so} has been updated!`);
     
-    // Close modal and refresh the list (the ticket will vanish because status is no longer back_office)
+    // Close modal and refresh the list (ticket vanishes because status is no longer back_office)
     detailsModal.style.display = 'none';
     loadActiveTickets(); 
 });
-
 
 
 // --- MEDIA UPLOAD ENGINE ---
@@ -4718,13 +4931,13 @@ document.addEventListener('paste', (e) => {
 });
 
 // ==========================================
-// --- NEW PHASE 2: CLICK-TO-MOVE ARROWS ---
+// --- PHASE 2: CLICK-TO-MOVE ARROWS ---
 // ==========================================
 
 function attachClickMoveLogic(headerRowId, colArray, storageKey, renderCallback) {
     const headerRow = document.getElementById(headerRowId);
     const headers = Array.from(headerRow.querySelectorAll('th')); 
-    const skipCount = (headerRowId === 'headerRow' || headerRowId === 'assignHeaderRow') ? 1 : 0; // Skip checkbox column
+    const skipCount = (headerRowId === 'headerRow' || headerRowId === 'assignHeaderRow') ? 2 : 0; // Skip number and checkbox column
     
     headers.slice(skipCount).forEach((th, i) => {
         const index = i; // Map to the exact array index

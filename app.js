@@ -136,19 +136,28 @@ let monitorTrackingRows = [];
 let editedMonitorRows = {};   
 const MONITOR_TABLE_NAME = 'repair_log'; // Your secondary table name in Supabase
 
-// CHANGED: 'SO' is now 'so' to match the database strict case rules
+// 1. MASTER DATABASE SCHEMA (Matches your exact Supabase SQL list)
 const ALL_COLUMNS = [
-    "so", "created_by", "branch", "date", "days", "status", "assigned_tech", "reason","service_type", "name", 
-    "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", "remark", 
-    "status_comment", "change_log", "return", 
+    "so", "created_by", "branch", "date", "days", "status", "reason", "name", 
+    "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
+    "remark", "status_comment", "change_log", "return", 
     "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
-    "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3",
-    "complete_tech", "complete_coord", "history"
+    "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3", "history", 
+    "assigned_tech", "service_type", "agree_coord", "complete_coord", "complete_tech"
+];
+
+// 2. THE TRANSLATOR (Updated to match your exact .txt file layout)
+const IMPORT_COLUMNS = [
+    "so", "created_by", "branch", "date", "days", "status", "reason", "service_type", "name", 
+    "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
+    "remark", "status_comment", "change_log", "return", 
+    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
+    "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3", "history", 
+    "assigned_tech", "agree_coord", "complete_coord", "complete_tech"
 ];
 
 
-const DEFAULT_SYSTEM_COLUMNS = ['so', 'date', "days" , 'address', "rout", "assigned_tech",'status', 'reason', 'service_type', 'name', 'phone']; // edit column name as they are in the supabase tables orders table as you see fit
-let activeColumns = [...DEFAULT_SYSTEM_COLUMNS];
+let activeColumns = [...ALL_COLUMNS];
 
 // related to assignation page
 let assignationOrders = [];
@@ -216,7 +225,7 @@ function checkExistingSession() {
             if (savedOrder) {
                 activeColumns = JSON.parse(savedOrder);
             } else {
-                activeColumns = [...DEFAULT_SYSTEM_COLUMNS]; 
+                activeColumns = [...ALL_COLUMNS]; 
             }
 
             const savedHidden = localStorage.getItem('hiddenColumns_' + currentUser.username);
@@ -302,7 +311,7 @@ function executeLoginSequence(userData) {
 
     const savedOrder = localStorage.getItem('sys_order_' + currentUser.username);
     if (savedOrder) activeColumns = JSON.parse(savedOrder);
-    else activeColumns = [...DEFAULT_SYSTEM_COLUMNS]; 
+    else activeColumns = [...ALL_COLUMNS];
 
     const savedHidden = localStorage.getItem('hiddenColumns_' + currentUser.username);
     if (savedHidden) {
@@ -395,7 +404,7 @@ document.getElementById('menuCancelBtn').addEventListener('click', () => {
     localStorage.removeItem('ke_user_session');
 
     hiddenColumns = [];
-    activeColumns = [...DEFAULT_SYSTEM_COLUMNS];
+    activeColumns = [...ALL_COLUMNS];
     currentUser = null;
     menuPage.classList.remove('active');
     loginPage.classList.add('active');
@@ -1023,8 +1032,9 @@ document.getElementById('columnDropdown').addEventListener('change', (e) => {
         // 2. Wipe Resized Widths (System & Assignation)
         localStorage.removeItem('sys_cols_' + userKey);
         localStorage.removeItem('assign_cols_' + userKey);
-        // 3. Wipe Column Ordering
-        localStorage.removeItem('sys_order_' + userKey);
+        
+        // 3. FIX: Save ALL_COLUMNS to memory so it survives a page refresh!
+        localStorage.setItem('sys_order_' + userKey, JSON.stringify(ALL_COLUMNS));
         localStorage.removeItem('assign_order_' + userKey);
         
         // Force reload original assignation columns
@@ -1205,9 +1215,10 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
                 data.forEach(rowArray => {
                     let rowObj = {};
                     
-                    // Map the raw tab-separated values to your system's ALL_COLUMNS sequence
+                    // Map the raw tab-separated values using the translator array
                     rowArray.forEach((val, index) => {
-                        if (ALL_COLUMNS[index]) {
+                        // The added check ensures we safely ignore empty padding columns in the text file
+                        if (IMPORT_COLUMNS[index] && IMPORT_COLUMNS[index] !== "") {
                             let finalValue = val ? String(val).trim() : '';
                             
                             // Strip leading apostrophes from phone numbers (Excel formatting)
@@ -1215,7 +1226,7 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
                                 finalValue = finalValue.substring(1);
                             }
                             
-                            rowObj[ALL_COLUMNS[index]] = finalValue;
+                            rowObj[IMPORT_COLUMNS[index]] = finalValue;
                         }
                     });
 
@@ -1299,10 +1310,10 @@ document.getElementById('clipboardUploadBtn').addEventListener('click', async ()
                 data.forEach(rowArray => {
                     let rowObj = {};
                     
-                    // Map the raw clipboard values to your system's ALL_COLUMNS sequence
+                    // Map the raw clipboard values to your strict IMPORT_COLUMNS sequence
                     rowArray.forEach((val, index) => {
-                        if (ALL_COLUMNS[index]) {
-                            rowObj[ALL_COLUMNS[index]] = val ? String(val).trim() : '';
+                        if (IMPORT_COLUMNS[index]) {
+                            rowObj[IMPORT_COLUMNS[index]] = val ? String(val).trim() : '';
                         }
                     });
 

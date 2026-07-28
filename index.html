@@ -18,6 +18,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <!-- Add this new line for the Zip functionality -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- HEIC to JPG Converter -->
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 </head>
 <body data-theme="greenish">
     <!-- GLOBAL LOADING OVERLAY -->
@@ -444,9 +446,15 @@
                     <div id="modalReadOnlyDetails" class="read-only-box"></div>
 
                     <h4>Existing Media Files</h4>
-                    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; font-size: 14px; background: var(--card-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 10px; font-size: 14px; background: var(--card-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color);">
                         <span id="linkImg1"></span> <span id="linkImg2"></span> <span id="linkImg3"></span>
                         <span id="linkVid1"></span> <span id="linkVid2"></span> <span id="linkVid3"></span>
+                    </div>
+                    
+                    <!-- INLINE THEATER VIEWER -->
+                    <div id="inlineMediaViewer" style="display: none; margin-bottom: 20px; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; background: #000; text-align: center; position: relative;">
+                        <button onclick="document.getElementById('inlineMediaViewer').style.display='none'" style="position: absolute; top: 10px; right: 10px; background: #d32f2f; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; z-index: 10;">Close X</button>
+                        <div id="mediaViewerContent" style="min-height: 100px; display: flex; justify-content: center; align-items: center;"></div>
                     </div>
 
                     <div id="coordHistorySection" style="display: none; margin-bottom: 20px;">

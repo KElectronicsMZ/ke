@@ -3752,6 +3752,11 @@ async function loadActiveTickets(managerOverrideUser = null) {
     const isManager = role.includes('manager') || role.includes('supervisor');
     let targetRole = role; // Default to your own role
 
+    // FORCE HIDE THE DROPDOWN FIRST (Fixes the bug for non-managers)
+    const managerContainer = document.getElementById('managerUserSelectContainer');
+    if (managerContainer) managerContainer.style.display = 'none';
+
+
     // --- MANAGER INTERCEPTOR ---
     if (isManager) {
         document.getElementById('managerUserSelectContainer').style.display = 'flex';
@@ -3936,11 +3941,35 @@ const confirmTechBtn = document.getElementById('confirmTechBtn');
 function renderMediaLink(elementId, url, label) {
     const el = document.getElementById(elementId);
     if (url && url.trim() !== '') {
-        el.innerHTML = `<a href="${url}" target="_blank" style="color: #1976d2; font-weight: bold; text-decoration: underline;">📥 ${label}</a>`;
+        el.innerHTML = `
+            <a href="#" onclick="viewMediaInline('${url}', '${label}'); return false;" style="color: #1976d2; font-weight: bold; text-decoration: underline; margin-right: 8px;">👁️ ${label}</a>
+            <a href="${url}" target="_blank" style="text-decoration: none;" title="Open natively / Download">🔗</a>
+        `;
     } else {
         el.innerHTML = `<span style="color: #9e9e9e; text-decoration: line-through;">${label}</span>`;
     }
 }
+
+// --- INLINE MEDIA PLAYER LOGIC ---
+window.viewMediaInline = function(url, label) {
+    const viewer = document.getElementById('inlineMediaViewer');
+    const content = document.getElementById('mediaViewerContent');
+    
+    viewer.style.display = 'block';
+    content.innerHTML = '<span style="color: white; font-weight: bold;">Loading Media...</span>';
+    
+    const isVideo = url.toLowerCase().includes('.mp4') || url.toLowerCase().includes('.mov') || url.toLowerCase().includes('.webm') || label.toLowerCase().includes('vid');
+
+    if (isVideo) {
+        content.innerHTML = `
+            <video controls autoplay style="max-width: 100%; max-height: 350px; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
+                <source src="${url}">
+                <p style="color: white;">Your browser blocks this Apple video format. Click the 🔗 icon above to download it instead.</p>
+            </video>`;
+    } else {
+        content.innerHTML = `<img src="${url}" style="max-width: 100%; max-height: 350px; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); object-fit: contain;">`;
+    }
+};
 
 // --- UNIVERSAL TICKET HISTORY FETCHER ---
 function fetchAndRenderTicketHistory(soNumber) {
@@ -4125,7 +4154,11 @@ function openDetailsModal(ticket, viewMode = 'technician') {
 
         // Reset hidden fields
         reasonGroup.style.display = 'none';
-        document.getElementById('techCommentGroup').style.display = 'none'; // Hide comment by default!
+        document.getElementById('techCommentGroup').style.display = 'none'; // Hide comment by default
+        
+        // Force the button to be locked by default when modal opens
+        confirmTechBtn.disabled = true;
+        confirmTechBtn.textContent = 'Confirm 🔒';
 
         document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
             input.value = ''; 
@@ -4177,13 +4210,13 @@ document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
 // Validation Logic Gate
 function validateTechForm() {
     const money = parseFloat(collectedInput.value) || 0;
-    const reason = reasonSelect.value;
-    const comment = commentInput.value.trim();
     const isWarranty = document.getElementById('warrantyCheck').checked;
+    const reason = reasonSelect.value;
+    
     const commentGroup = document.getElementById('techCommentGroup');
-    const prefixDisplay = document.getElementById('autoPrefixDisplay'); // NEW
+    const prefixDisplay = document.getElementById('autoPrefixDisplay'); 
 
-    // --- NEW: Generate Auto-Prefix ---
+    // --- Generate Auto-Prefix ---
     let autoPrefix = '';
     if (isWarranty) {
         autoPrefix = `بدون تكلفة/ضمان${reason ? ' - ' + reason : ''} | `;
@@ -4197,34 +4230,26 @@ function validateTechForm() {
     } else {
         prefixDisplay.style.display = 'none';
     }
-    // ---------------------------------
 
-    // Show Reason Dropdown AND Comment Field if money is collected OR warranty is checked
+    // 1. Visibility Logic for Reason Dropdown
+    // Only show the reason list if money is entered OR the box is checked
     if (money > 0 || isWarranty) {
         reasonGroup.style.display = 'flex';
-        commentGroup.style.display = 'flex'; // Un-hide comment field
     } else {
         reasonGroup.style.display = 'none';
-        commentGroup.style.display = 'none'; // Hide comment field
-        reasonSelect.value = ''; // Clear reason if neither is active
-        commentInput.value = ''; // Clear comment if hidden
+        reasonSelect.value = ''; // Automatically reset reason if they clear the money/checkbox
     }
 
-    // 1. Validation Logic
-    let isCommentValid = true;
-    let isFinancialValid = true;
-
-    // If the fields are visible, they MUST be filled out
-    if (money > 0 || isWarranty) {
-        if (comment === '') isCommentValid = false;
-        if (reason === '') isFinancialValid = false;
-    }
-
-    // BOTH conditions must be met to unlock the confirm button
-    if (isCommentValid && isFinancialValid) {
+    // 2. Visibility Logic for Comment Box & Unlock Button
+    // Only show the comment box AND unlock the button IF a reason is selected
+    if (reasonSelect.value !== '') {
+        commentGroup.style.display = 'flex';
+        
         confirmTechBtn.disabled = false;
         confirmTechBtn.textContent = 'Confirm ✅';
     } else {
+        commentGroup.style.display = 'none';
+        
         confirmTechBtn.disabled = true;
         confirmTechBtn.textContent = 'Confirm 🔒';
     }
@@ -4628,7 +4653,27 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retrie
     // 1. Safety check
     if (!fileObject) return '';
 
-    const fileExtension = fileObject.name.split('.').pop();
+    let finalFile = fileObject;
+    let fileExtension = finalFile.name.split('.').pop().toLowerCase();
+    const progressLine = document.getElementById(`step-${fileTypeLabel}`);
+
+    // --- NEW: AUTO HEIC TO JPG CONVERTER ---
+    if (fileExtension === 'heic' || fileExtension === 'heif') {
+        if (progressLine) progressLine.innerHTML = `⏳ Converting ${fileTypeLabel} from Apple HEIC to JPG...`;
+        try {
+            // Process the conversion
+            const convertedBlob = await heic2any({ blob: finalFile, toType: "image/jpeg", quality: 0.8 });
+            const blobToUse = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+            
+            // Re-package it as a standard JPG file
+            const newName = finalFile.name.replace(/\.heic|\.heif/gi, ".jpg");
+            finalFile = new File([blobToUse], newName, { type: "image/jpeg" });
+            fileExtension = 'jpg';
+        } catch (err) {
+            console.error("HEIC conversion failed:", err);
+            // If it fails, we just continue and try to upload the original HEIC anyway
+        }
+    }
 
     // 2. Build Date & Time strings
     const now = new Date();
@@ -4641,11 +4686,10 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retrie
     const formattedDate = `${dd}-${mm}-${yyyy}`;
     const formattedTime = `${hh}-${min}`;
 
-    // 3. Create the requested file name
+    // 3. Create the requested file name (USING finalFile instead of fileObject!)
     const uniqueFileName = `${soNumber}_${fileTypeLabel}_${formattedDate}_${formattedTime}.${fileExtension}`;
     
-    // Grab the specific line of text on the screen so we can update it
-    const progressLine = document.getElementById(`step-${fileTypeLabel}`);
+
 
     // 4. Retry Loop Mechanic
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -4720,7 +4764,7 @@ async function uploadMediaToSupabase(fileObject, soNumber, fileTypeLabel, retrie
                 xhr.setRequestHeader("x-upsert", "true"); 
                 
                 // Send the file!
-                xhr.send(fileObject);
+                xhr.send(finalFile);
             });
             // --- END NEW ENGINE ---
 

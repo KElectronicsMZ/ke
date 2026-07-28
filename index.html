@@ -111,10 +111,13 @@
                 <button id="btnWipeMedia" style="background-color: #d32f2f; color: white; border: 1px solid #b71c1c; font-weight: bold; margin-right: 5px;">Wipe All Media</button>
                 <button id="btnDownloadMedia" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; font-weight: bold; margin-right: 15px;">Download All Media</button>
                 <button id="btnDownloadVisibleSystem" style="background-color: #2e7d32; color: white; border: 1px solid #1b5e20; font-weight: bold; margin-right: 15px;">Download Visible (Grouped)</button>
-                <!-- System Backup Buttons -->
+                <!-- System Backup & Restore Buttons -->
                 <button id="btnBackupCsv" style="background-color: #8e24aa; color: white; border: 1px solid #6a1b9a; font-weight: bold; margin-right: 5px;">Backup (CSV)</button>
-                <button id="btnBackupTxt" style="background-color: #8e24aa; color: white; border: 1px solid #6a1b9a; font-weight: bold; margin-right: 15px;">Backup (TXT)</button>
-                
+                <button id="btnBackupTxt" style="background-color: #8e24aa; color: white; border: 1px solid #6a1b9a; font-weight: bold; margin-right: 5px;">Backup (TXT)</button>
+
+                <!-- NEW: Darker Purple Restore Button -->
+                <button id="btnRestoreTxt" style="background-color: #4a148c; color: white; border: 1px solid #311b92; font-weight: bold; margin-right: 15px;">RESTORE (TXT)</button>
+                <input type="file" id="restoreTxtFileInput" accept=".txt" style="display: none;">
                 <select id="columnDropdown">
                     <option value="">+ add removed column</option>
                 </select>

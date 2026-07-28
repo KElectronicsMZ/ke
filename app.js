@@ -146,7 +146,7 @@ const ALL_COLUMNS = [
     "assigned_tech", "service_type", "agree_coord", "complete_coord", "complete_tech"
 ];
 
-// 2. THE TRANSLATOR (Updated to match your exact .txt file layout)
+// 2. THE TRANSLATOR (Strictly for External Samsung/IPAAS Export Files)
 const IMPORT_COLUMNS = [
     "so", "created_by", "branch", "date", "days", "status", "reason", "service_type", "name", 
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
@@ -1208,7 +1208,65 @@ function processCSVText(text) {
     });
 }
 
-// ---TXT FILE UPLOAD ENGINE ---
+// ==============================================================
+// BUTTON 1: THE RESTORE ENGINE (Force Overwrites Corrupted Data)
+// ==============================================================
+document.getElementById('btnRestoreTxt').addEventListener('click', () => {
+    document.getElementById('restoreTxtFileInput').click();
+});
+
+document.getElementById('restoreTxtFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        const text = evt.target.result;
+
+        Papa.parse(text, {
+            header: false,
+            delimiter: "\t",
+            skipEmptyLines: true,
+            complete: function(results) {
+                const data = results.data;
+                let addedCount = 0;
+
+                data.forEach(rowArray => {
+                    let rowObj = {};
+                    
+                    // Maps strictly to the Master Database Schema, bypassing the translator
+                    rowArray.forEach((val, index) => {
+                        if (ALL_COLUMNS[index]) {
+                            rowObj[ALL_COLUMNS[index]] = val ? String(val).trim() : '';
+                        }
+                    });
+
+                    if (rowObj.so) {
+                        // ⚠️ NO GUARD HERE: We want this to intentionally overwrite the database!
+                        if (!editedOrders[rowObj.so]) editedOrders[rowObj.so] = {};
+                        editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
+                        addedCount++;
+                        
+                        const existingIndex = databaseOrders.findIndex(o => String(o.so) === String(rowObj.so));
+                        if (existingIndex === -1) databaseOrders.unshift(rowObj);
+                        else databaseOrders[existingIndex] = { ...databaseOrders[existingIndex], ...rowObj };
+                    }
+                });
+
+                if (addedCount > 0) {
+                    alert(`${addedCount} order(s) staged from System Backup! Click 'Submit' to force overwrite the database.`);
+                    renderTableStructure();
+                }
+                document.getElementById('restoreTxtFileInput').value = '';
+            }
+        });
+    };
+    reader.readAsText(file);
+});
+
+// ==============================================================
+// BUTTON 2: THE SAMSUNG UPLOAD ENGINE (Protects Live Statuses)
+// ==============================================================
 document.getElementById('txtUploadBtn').addEventListener('click', () => {
     document.getElementById('txtFileInput').click();
 });
@@ -1221,81 +1279,69 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
     reader.onload = function(evt) {
         const text = evt.target.result;
 
-        // Use PapaParse just like the clipboard logic (no headers, tab delimited)
         Papa.parse(text, {
             header: false,
-            delimiter: "\t", // Explicitly look for Tabs instead of commas
+            delimiter: "\t",
             skipEmptyLines: true,
-            complete: function(results) {
+            complete: async function(results) { 
                 const data = results.data;
                 let addedCount = 0;
 
+                // --- PHASE 1: GATHER ALL INCOMING SO NUMBERS ---
+                const incomingSOs = [];
+                data.forEach(rowArray => {
+                    const soIndex = IMPORT_COLUMNS.indexOf('so');
+                    if (soIndex !== -1 && rowArray[soIndex]) {
+                        incomingSOs.push(String(rowArray[soIndex]).trim());
+                    }
+                });
+
+                // --- PHASE 2: QUERY LIVE SUPABASE DATABASE ---
+                let liveDbOrders = [];
+                if (incomingSOs.length > 0) {
+                    showGlobalLoader("Checking live database to protect statuses...");
+                    liveDbOrders = await fetchAllRecords('orders', 'so', incomingSOs);
+                    hideGlobalLoader();
+                }
+
+                // --- PHASE 3: MAP AND PROTECT DATA ---
                 data.forEach(rowArray => {
                     let rowObj = {};
                     
-                    // Map the raw tab-separated values using the translator array
                     rowArray.forEach((val, index) => {
-                        // The added check ensures we safely ignore empty padding columns in the text file
                         if (IMPORT_COLUMNS[index] && IMPORT_COLUMNS[index] !== "") {
                             let finalValue = val ? String(val).trim() : '';
-                            
-                            // Strip leading apostrophes from phone numbers (Excel formatting)
-                            if (finalValue.startsWith("'")) {
-                                finalValue = finalValue.substring(1);
-                            }
-                            
+                            if (finalValue.startsWith("'")) finalValue = finalValue.substring(1);
                             rowObj[IMPORT_COLUMNS[index]] = finalValue;
                         }
                     });
 
-                    // Ensure the row has an 'so' before adding it to memory
                     if (rowObj.so) {
-                        // --- NEW STATUS & ROUTE PROTECTION ---
-                        // 1. Look up if this order already exists in the live table or pending edits
-                        const existingDbOrder = databaseOrders.find(o => String(o.so) === String(rowObj.so)) || {};
-                        const existingEdit = editedOrders[rowObj.so] || {};
+                        // LIVE STATUS & ROUTE PROTECTION: Consult Supabase, not the screen
+                        const liveMatch = liveDbOrders.find(o => String(o.so) === String(rowObj.so)) || {};
                         
-                        const orderAlreadyExists = Object.keys(existingDbOrder).length > 0 || Object.keys(existingEdit).length > 0;
-                        
-                        if (orderAlreadyExists) {
-                            // Find the true current values
-                            const currentStatus = existingEdit.status !== undefined ? existingEdit.status : existingDbOrder.status;
-                            const currentRout = existingEdit.rout !== undefined ? existingEdit.rout : existingDbOrder.rout;
-                            
-                            // If they contain data, delete them from the incoming upload to block the overwrite
-                            if (currentStatus && String(currentStatus).trim() !== '') {
-                                delete rowObj.status;
-                            }
-                            if (currentRout && String(currentRout).trim() !== '') {
-                                delete rowObj.rout;
-                            }
+                        if (liveMatch.status && String(liveMatch.status).trim() !== '') {
+                            delete rowObj.status;
                         }
-                        // -------------------------------------
+                        if (liveMatch.rout && String(liveMatch.rout).trim() !== '') {
+                            delete rowObj.rout;
+                        }
 
-                        if (!editedOrders[rowObj.so]) {
-                            editedOrders[rowObj.so] = {};
-                        }
+                        if (!editedOrders[rowObj.so]) editedOrders[rowObj.so] = {};
                         editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
                         addedCount++;
                         
-                        // Push it visually to the table
                         const existingIndex = databaseOrders.findIndex(o => String(o.so) === String(rowObj.so));
-                        if (existingIndex === -1) {
-                            databaseOrders.unshift(rowObj); 
-                        } else {
-                            databaseOrders[existingIndex] = { ...databaseOrders[existingIndex], ...rowObj };
-                        }
+                        if (existingIndex === -1) databaseOrders.unshift(rowObj);
+                        else databaseOrders[existingIndex] = { ...databaseOrders[existingIndex], ...rowObj };
                     }
                 });
 
                 if (addedCount > 0) {
-                    alert(`${addedCount} order(s) staged from TXT file! Click 'Submit' to push to the database.`);
+                    alert(`${addedCount} order(s) staged from Samsung file! Click 'Submit' to safely update.`);
                     renderTableStructure(); 
-                } else {
-                    alert("No valid Service Orders (SO) found in the TXT file.");
                 }
                 
-                // Reset the input so they can upload the exact same file again if they need to
                 document.getElementById('txtFileInput').value = '';
             },
             error: function(err) {
@@ -1305,7 +1351,6 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
     };
     reader.readAsText(file);
 });
-// -------------------------------------------
 
 // --- NEW FEATURE: ADD ORDER FROM CLIPBOARD ---
 document.getElementById('clipboardUploadBtn').addEventListener('click', async () => {

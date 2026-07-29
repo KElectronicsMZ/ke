@@ -1345,12 +1345,14 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
                     if (rowObj.so) {
                         // LIVE STATUS & ROUTE PROTECTION: Consult Supabase, not the screen
                         const liveMatch = liveDbOrders.find(o => String(o.so) === String(rowObj.so)) || {};
-                        
+
                         if (liveMatch.status && String(liveMatch.status).trim() !== '') {
-                            delete rowObj.status;
+                            // Keep the existing live status instead of deleting it
+                            rowObj.status = liveMatch.status; 
                         }
                         if (liveMatch.rout && String(liveMatch.rout).trim() !== '') {
-                            delete rowObj.rout;
+                            // Keep the existing live route instead of deleting it
+                            rowObj.rout = liveMatch.rout; 
                         }
 
                         if (!editedOrders[rowObj.so]) editedOrders[rowObj.so] = {};

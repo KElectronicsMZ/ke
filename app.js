@@ -587,6 +587,16 @@ document.getElementById('btnAssignation').addEventListener('click', async () => 
     assignationOrders = [];
     editedAssignations = {};
 
+    // --- NEW: RESET CHECKBOXES & SELECTIONS ON PAGE OPEN ---
+    selectedAssignationOrders.clear();
+    
+    // Uncheck the "Select All" box visually if it was left checked
+    const selectAllBox = document.getElementById('selectAllAssignCheckbox');
+    if (selectAllBox) {
+        selectAllBox.checked = false;
+    }
+    // -------------------------------------------------------
+
     // --- 1. SET UP USER KEYS FIRST ---
     const userKey = currentUser ? currentUser.username : 'guest';
     const savedAssignOrder = localStorage.getItem('assign_order_' + userKey);
@@ -734,10 +744,26 @@ function renderTableStructure() {
     const indexFilter = document.createElement('th');
     filterRow.appendChild(indexFilter);
 
-    // --- Add empty header cells for the checkbox column --------------
-    const checkHeader = document.createElement('th');
-    checkHeader.textContent = "Select";
-    headerRow.appendChild(checkHeader);
+    // --- Add empty header cells for the checkbox column ---
+        const checkHeader = document.createElement('th');
+        
+        // NEW: "Select All" checkbox embedded in the header
+        checkHeader.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center;"><input type="checkbox" id="selectAllAssignCheckbox" style="margin-bottom: 2px; width: auto;"><span style="font-size: 11px;">Select All</span></div>`;
+        headerRow.appendChild(checkHeader);
+
+        // Attach Select All logic (targets ONLY visible rows)
+        checkHeader.querySelector('#selectAllAssignCheckbox').addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            dataToRender.forEach(row => {
+                if (isChecked) {
+                    selectedAssignationOrders.add(row.so);
+                } else {
+                    selectedAssignationOrders.delete(row.so);
+                }
+            });
+            // Instantly redraw to show all boxes checked/unchecked
+            renderAssignationTable(dataToRender); 
+        });
     
     const checkFilter = document.createElement('th');
     filterRow.appendChild(checkFilter);
@@ -2233,9 +2259,26 @@ function renderAssignationTable(dataToRender = assignationOrders) {
 
         // --- Add empty header cells for the checkbox column ---
         const checkHeader = document.createElement('th');
-        checkHeader.textContent = "Select";
-        headerRow.appendChild(checkHeader);
         
+        // NEW: "Select All" checkbox embedded in the header
+        checkHeader.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center;"><input type="checkbox" id="selectAllAssignCheckbox" style="margin-bottom: 2px; width: auto;"><span style="font-size: 11px;">Select All</span></div>`;
+        headerRow.appendChild(checkHeader);
+
+        // Attach Select All logic (Fixed: Forces actual memory update)
+        checkHeader.querySelector('#selectAllAssignCheckbox').addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            // Target only the visible checkboxes currently loaded in the table body
+            const rowCheckboxes = document.querySelectorAll('#assignTableBody input[type="checkbox"]');
+            
+            rowCheckboxes.forEach(box => {
+                // Only update if it actually needs to change
+                if (box.checked !== isChecked) {
+                    box.checked = isChecked;
+                    // This command forces the individual checkbox to save its specific SO to memory!
+                    box.dispatchEvent(new Event('change')); 
+                }
+            });
+        });
         const checkFilter = document.createElement('th');
         filterRow.appendChild(checkFilter);
         // --- end of Add empty header cells for the checkbox column ---
@@ -5882,3 +5925,383 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
 
     document.getElementById('metricDetailsModal').style.display = 'flex';
 };
+
+// ==========================================
+// --- ROUTE AREA MODAL LOGIC ---
+// ==========================================
+
+const newRouteModal = document.getElementById('newRouteModal');
+
+// Open Modal
+document.getElementById('btnOpenNewRouteModal').addEventListener('click', () => {
+    newRouteModal.style.display = 'flex';
+});
+
+// Close Modal Triggers
+document.getElementById('closeNewRouteModalBtn').addEventListener('click', () => newRouteModal.style.display = 'none');
+document.getElementById('cancelNewRouteBtn').addEventListener('click', () => newRouteModal.style.display = 'none');
+
+// Save Route to Database
+document.getElementById('saveNewRouteBtn').addEventListener('click', async () => {
+    const keywordInput = document.getElementById('newRouteKeywordInput');
+    const routeInput = document.getElementById('newRouteValueInput');
+    
+    const keyword = keywordInput.value.trim();
+    const routeVal = routeInput.value.trim();
+    
+    if (!keyword || !routeVal) {
+        alert("Action canceled. Both a Sub Area keyword and a Rout Value are required.");
+        return;
+    }
+
+    const saveBtn = document.getElementById('saveNewRouteBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    // Insert into Supabase route_keywords table
+    const { error } = await supabaseClient.from('route_keywords').insert({
+        keyword: keyword,
+        route_value: routeVal
+    });
+    
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Route';
+
+    if (error) {
+        // Postgres Error 23505 means "Unique Violation" (Duplicate)
+        if (error.code === '23505') {
+            alert(`⚠️ Error: The keyword "${keyword}" already exists in the database!`);
+        } else {
+            alert("Failed to save new route: " + error.message);
+        }
+    } else {
+        alert(`✅ Success! "${keyword}" will now automatically route to "${routeVal}".`);
+        keywordInput.value = '';
+        routeInput.value = '';
+        newRouteModal.style.display = 'none';
+    }
+});
+
+// Delete Route from Database
+document.getElementById('deleteRouteBtn').addEventListener('click', async () => {
+    const keywordInput = document.getElementById('newRouteKeywordInput');
+    const keyword = keywordInput.value.trim();
+    
+    if (!keyword) {
+        alert("Please enter the Sub Area keyword you want to delete.");
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to permanently delete "${keyword}" from the routing dictionary?`)) {
+        return;
+    }
+
+    const delBtn = document.getElementById('deleteRouteBtn');
+    delBtn.disabled = true;
+    delBtn.textContent = 'Deleting...';
+
+    // Tell Supabase to delete the row where the keyword matches, and return the deleted data
+    const { data, error } = await supabaseClient
+        .from('route_keywords')
+        .delete()
+        .eq('keyword', keyword)
+        .select(); 
+        
+    delBtn.disabled = false;
+    delBtn.textContent = '🗑️ Delete';
+
+    if (error) {
+        alert("Failed to delete route: " + error.message);
+    } else if (data && data.length === 0) {
+        // If Supabase didn't throw an error but returned 0 rows, it means the word wasn't there
+        alert(`⚠️ "${keyword}" was not found in the database.`);
+    } else {
+        alert(`🗑️ Success! "${keyword}" has been removed from the routing dictionary.`);
+        keywordInput.value = '';
+        document.getElementById('newRouteValueInput').value = '';
+        newRouteModal.style.display = 'none';
+    }
+});
+
+// ==========================================
+// --- AUTO ROUTE ENGINE & TEXT SANITIZER ---
+// ==========================================
+
+// Helper: Standardizes Arabic text to maximize match probability
+function sanitizeArabicAddress(text) {
+    if (!text) return "";
+    let clean = String(text).toLowerCase().trim();
+    
+    // 1. Strip "ال" from the very beginning of words
+    clean = clean.split(/\s+/).map(word => word.startsWith('ال') ? word.substring(2) : word).join(' ');
+    
+    // 2. Standardize endings (Taa Marbuta to Haa, Alif Maksura to Yaa)
+    clean = clean.replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+    
+    return clean;
+}
+
+// Helper: Replicates the AHK Model Category Suffix Engine
+function getDeviceType(modelVal) {
+    if (!modelVal) return "";
+    const upperModel = String(modelVal).toUpperCase().trim();
+    const prefix2 = upperModel.substring(0, 2);
+
+    if (["UA", "LH", "HG", "LS", "PS", "QA", "LS", "HT", "QA", "QN","QE","UN", "UE"].includes(prefix2) || upperModel.includes("VDE")) return "TV";
+    if (["RT", "RS", ,"RB","RF", "RZ", "WW", "WF", "WA", "WD"].includes(prefix2) || upperModel.includes("REF") || upperModel.includes("WSM")) return "HA";
+    if (["AR", "AC"].includes(prefix2) || upperModel.includes("ACN")) return "AC";
+    
+    return "";
+}
+
+document.getElementById('btnAutoRoute').addEventListener('click', async () => {
+    if (selectedAssignationOrders.size === 0) {
+        alert("Please select at least one order using the checkboxes to use Auto Route.");
+        return;
+    }
+    
+    // 1. Fetch the master alias dictionary from Supabase
+    showGlobalLoader("Fetching Route Dictionary...");
+    const { data: routeDict, error } = await supabaseClient.from('route_keywords').select('keyword, route_value');
+    hideGlobalLoader();
+    
+    if (error || !routeDict) {
+        alert("Failed to load route dictionary from the database: " + (error ? error.message : "Unknown Error"));
+        return;
+    }
+    
+    let failedOrders = [];
+    let updatedCount = 0;
+    
+    // 2. Process each selected order
+    selectedAssignationOrders.forEach(so => {
+        // Pull active data for this row
+        const baseRow = assignationOrders.find(o => String(o.so) === String(so)) || {};
+        const activeRow = { ...baseRow, ...(editedAssignations[so] || {}) };
+        const address = activeRow.address || "";
+        
+        // Pass the address through our sanitizer
+        const cleanAddress = sanitizeArabicAddress(address);
+        let matchedRoute = "";
+        let recognizedSubArea = ""; // <-- NEW VARIABLE
+        
+        // Scan the dictionary for a matching keyword
+        for (let i = 0; i < routeDict.length; i++) {
+            const cleanKeyword = sanitizeArabicAddress(routeDict[i].keyword);
+            
+            if (cleanAddress.includes(cleanKeyword)) {
+                matchedRoute = routeDict[i].route_value;
+                recognizedSubArea = routeDict[i].keyword; // <-- CAPTURE THE SUBAREA
+                break;
+            }
+        }
+        
+        // 3. Apply matches or log failures
+        if (matchedRoute) {
+            if (!editedAssignations[so]) {
+                editedAssignations[so] = { ...baseRow };
+            }
+            
+            // <-- NEW LOGIC TO COMBINE PARTS -->
+            const deviceType = getDeviceType(activeRow.model);
+            let finalRoute = `${matchedRoute}_${recognizedSubArea}`;
+            if (deviceType) {
+                finalRoute += `_${deviceType}`;
+            }
+            
+            editedAssignations[so].rout = finalRoute; // <-- APPLY COMBINED ROUTE
+            updatedCount++;
+        } else {
+            // Push to failed list using a Tab separator (\t) so it pastes neatly into Excel
+            failedOrders.push(`${so}\t${address}`);
+        }
+    });
+    
+    // 4. Redraw the table to instantly show the newly assigned routes
+    renderAssignationTable();
+    
+    // 5. Alert user and copy failures to clipboard
+    if (failedOrders.length > 0) {
+        const failText = failedOrders.join('\n');
+        navigator.clipboard.writeText(failText).then(() => {
+            alert(`✅ Auto Route complete! ${updatedCount} orders updated.\n\n⚠️ ${failedOrders.length} orders failed to find a location match.\n\nThe missing orders (SO and Address) have been copied to your clipboard.`);
+        }).catch(() => {
+            alert(`✅ Auto Route complete! ${updatedCount} orders updated.\n\n⚠️ ${failedOrders.length} orders failed to find a match. (Your browser blocked the clipboard copy action).`);
+        });
+    } else {
+        alert(`✅ Success! All ${updatedCount} selected orders were successfully routed.`);
+    }
+});
+
+// --- CLICK OUTSIDE MODAL TO CLOSE ---
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => {
+        // If the user clicked directly on the dark overlay background (outside modal-content)
+        if (e.target === overlay) {
+            overlay.style.display = 'none';
+        }
+    });
+});
+
+
+// --- USER HISTORY PANEL LOGIC (FIXED) ---
+
+async function fetchAndRenderUserHistory() {
+    const historyBody = document.getElementById('historyPanelBody');
+    if (!historyBody) return;
+
+    if (!currentUser || !currentUser.username) {
+        historyBody.innerHTML = '<p style="text-align: center; opacity: 0.7;">Please log in to view history.</p>';
+        return;
+    }
+
+    historyBody.innerHTML = '<p style="text-align: center; opacity: 0.7;">Loading history...</p>';
+
+    const activeUser = currentUser.username.trim();
+
+    // Query repair_log without ordering by non-existent 'id' column
+    const { data: logs, error } = await supabaseClient
+        .from('repair_log')
+        .select('*')
+        .or(`assigned_by.eq.${activeUser},assigned_tech.eq.${activeUser}`);
+
+    if (error) {
+        console.error("Error fetching user history:", error);
+        
+        // Fallback: Query assigned_by and assigned_tech separately if needed
+        const [resBy, resTech] = await Promise.all([
+            supabaseClient.from('repair_log').select('*').eq('assigned_by', activeUser),
+            supabaseClient.from('repair_log').select('*').eq('assigned_tech', activeUser)
+        ]);
+
+        const combined = [...(resBy.data || []), ...(resTech.data || [])];
+        const uniqueMap = new Map();
+        combined.forEach((item, index) => uniqueMap.set(item.so + '_' + (item.assign_date || '') + '_' + index, item));
+        
+        const fallbackLogs = Array.from(uniqueMap.values());
+        if (fallbackLogs.length > 0) {
+            sortAndDisplayHistory(fallbackLogs, historyBody);
+            return;
+        }
+
+        historyBody.innerHTML = '<p style="color: #d32f2f; text-align: center;">Failed to load history.</p>';
+        return;
+    }
+
+    if (!logs || logs.length === 0) {
+        historyBody.innerHTML = '<p style="text-align: center; opacity: 0.7;">No recent activity found.</p>';
+        return;
+    }
+
+    sortAndDisplayHistory(logs, historyBody);
+}
+
+// Helper function to sort logs by assign_date & assign_time (Newest First) and render top 50
+function sortAndDisplayHistory(logs, historyBody) {
+    logs.sort((a, b) => {
+        const parseDate = (d) => d ? d.split('-').reverse().join('-') : '1970-01-01';
+        const timeA = new Date(`${parseDate(a.assign_date)}T${a.assign_time || '00:00'}`);
+        const timeB = new Date(`${parseDate(b.assign_date)}T${b.assign_time || '00:00'}`);
+        return timeB - timeA; 
+    });
+
+    // Take the newest 50 entries
+    const latest50 = logs.slice(0, 50);
+    renderHistoryCards(latest50, historyBody);
+}
+
+function renderHistoryCards(logs, container) {
+    container.innerHTML = '';
+
+    logs.forEach(log => {
+        const card = document.createElement('div');
+        card.className = 'history-card';
+
+        const commentText = log.comment && log.comment.trim() !== '' ? log.comment : 'No comment recorded';
+
+        card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span class="history-so-link">SO: ${log.so}</span>
+                <span style="font-size: 11px; opacity: 0.7;">${log.assign_date || ''} ${log.assign_time || ''}</span>
+            </div>
+            <div class="history-row">
+                <span><strong>By:</strong> ${log.assigned_by || 'N/A'}</span>
+                <span><strong>To:</strong> ${log.assigned_tech || 'N/A'}</span>
+            </div>
+            <div class="history-row">
+                <span><strong>Status:</strong> ${log.status || 'N/A'}</span>
+            </div>
+            <div class="history-comment-box">
+                <strong>Comment:</strong> ${commentText}
+            </div>
+        `;
+
+        card.querySelector('.history-so-link').addEventListener('click', async () => {
+            let fullOrder = (typeof databaseOrders !== 'undefined' ? databaseOrders.find(o => String(o.so) === String(log.so)) : null) || 
+                            (typeof assignationOrders !== 'undefined' ? assignationOrders.find(o => String(o.so) === String(log.so)) : null);
+
+            if (!fullOrder) {
+                showGlobalLoader("Loading ticket details...");
+                const { data: fetchedOrder } = await supabaseClient
+                    .from('orders')
+                    .select('*')
+                    .eq('so', log.so)
+                    .single();
+                hideGlobalLoader();
+
+                if (fetchedOrder) {
+                    fullOrder = fetchedOrder;
+                }
+            }
+
+            if (fullOrder) {
+                openViewOnlyModal(fullOrder);
+            } else {
+                alert(`Could not load full ticket details for SO: ${log.so}`);
+            }
+        });
+
+        container.appendChild(card);
+    });
+}
+
+// SAFE EVENT ATTACHMENT
+document.addEventListener('DOMContentLoaded', () => {
+    const btnOpenHistory = document.getElementById('btnOpenHistory');
+    const closeHistoryPanelBtn = document.getElementById('closeHistoryPanelBtn');
+
+    if (btnOpenHistory) {
+        btnOpenHistory.addEventListener('click', () => {
+            const historyPanel = document.getElementById('historyPanel');
+            if (historyPanel) historyPanel.classList.add('open');
+            fetchAndRenderUserHistory();
+        });
+    }
+
+    if (closeHistoryPanelBtn) {
+        closeHistoryPanelBtn.addEventListener('click', () => {
+            const historyPanel = document.getElementById('historyPanel');
+            if (historyPanel) historyPanel.classList.remove('open');
+        });
+    }
+});
+
+// CLICK OUTSIDE TO COLLAPSE
+document.addEventListener('click', (e) => {
+    const historyPanel = document.getElementById('historyPanel');
+    const btnOpenHistory = document.getElementById('btnOpenHistory');
+
+    if (!historyPanel || !historyPanel.classList.contains('open')) return;
+
+    const isAnyModalOpen = Array.from(document.querySelectorAll('.modal-overlay'))
+                                .some(modal => modal.style.display === 'flex');
+
+    if (isAnyModalOpen) return;
+
+    const clickedInsidePanel = historyPanel.contains(e.target);
+    const clickedOpenBtn = btnOpenHistory && btnOpenHistory.contains(e.target);
+
+    if (!clickedInsidePanel && !clickedOpenBtn) {
+        historyPanel.classList.remove('open');
+    }
+});

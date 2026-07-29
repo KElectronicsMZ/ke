@@ -30,13 +30,15 @@
     <div id="globalUserBanner" style="display: none; background: var(--btn-bg); color: var(--text-color); padding: 5px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid var(--border-color); z-index: 9999; position: sticky; top: 0;">
         User: <span id="bannerUsername"></span> - <span id="bannerRole"></span>
     </div>
-    <div class="theme-container">
-    <label for="themeSelect">Theme: </label>
+    <div class="theme-container" style="display: flex; gap: 10px; align-items: center;">
+        <button id="btnOpenHistory" style="padding: 5px 12px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); font-weight: bold; border-radius: 4px;">
+            📜 History
+        </button>
+        <label for="themeSelect">Theme: </label>
         <select id="themeSelect">
             <option value="dark">Dark Clean</option>
             <option value="greenish" selected>Greenish</option>
             <option value="blueish">Blueish Bright</option>
-            <!-- NEW THEME OPTIONS -->
             <option value="warm-brown">Warm Brown</option>
             <option value="royal-gold">Royal Gold</option>
             <option value="gold-black">Gold & Black</option>
@@ -299,6 +301,8 @@
             <button id="assignClearFiltersBtn">Clear Filters/Sort</button>
             <button id="assignResetLayoutBtn" style="background-color: #d32f2f; color: white; border-color: #b71c1c; margin-left: 5px;">Reset Layout</button>
             <button id="assignRemoveSelectedBtn" style="background-color: #f57c00; color: white; border-color: #e65100;">Remove Selected (From View)</button>
+            <button id="btnAutoRoute" style="background-color: #1976d2; color: white; border-color: #1565c0; font-weight: bold; margin-left: 10px;">🤖 Auto Route</button>
+            <button id="btnOpenNewRouteModal" style="background-color: #8e24aa; color: white; border-color: #6a1b9a; font-weight: bold; margin-left: 10px;">➕ / ➖ Add or Remove Subarea</button>
             
             <!-- NEW SAVE AND RESTORE BUTTONS -->
             <button id="assignSaveLocalBtn" style="background-color: #fbc02d; color: black; border-color: #f9a825; font-weight: bold; margin-left: 10px;">💾 Save Progress</button>
@@ -569,6 +573,34 @@
             </div> 
         </div>
 
+    <!-- ROUTE AREA MODAL -->
+    <div id="newRouteModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3>Add or Remove Subarea</h3>
+                <button id="closeNewRouteModalBtn" class="close-btn">X</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13px; opacity: 0.8; margin-top: 0; margin-bottom: 15px;"><strong>To add:</strong> Fill both fields.<br><strong>To remove:</strong> Type the keyword and click Delete.</p>
+                <div class="input-group">
+                    <label>Sub Area (Keyword / Typo):</label>
+                    <input type="text" id="newRouteKeywordInput" placeholder="e.g. بيطاش">
+                </div>
+                <div class="input-group">
+                    <label>Rout Value (Target):</label>
+                    <input type="text" id="newRouteValueInput" list="routList" autocomplete="off" placeholder="e.g. Agamy_1">
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content: space-between;">
+                <button id="cancelNewRouteBtn" class="secondary-btn" style="background: #757575;">Cancel</button>
+                <div style="display: flex; gap: 10px;">
+                    <button id="deleteRouteBtn" class="secondary-btn">🗑️ Delete</button>
+                    <button id="saveNewRouteBtn" class="primary-btn">💾 Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
         <!-- METRIC DETAILS POPUP MODAL -->
     <div id="metricDetailsModal" class="modal-overlay">
         <div class="modal-content" style="max-width: 600px;">
@@ -584,5 +616,16 @@
     </div>
 
     <script src="app.js"></script>
+    <!-- USER HISTORY SIDE PANEL -->
+    <div id="historyPanel" class="history-panel">
+        <div class="history-panel-header">
+            <h3>My Recent Activity (Last 50)</h3>
+            <button id="closeHistoryPanelBtn" class="close-btn">X</button>
+        </div>
+        <div id="historyPanelBody" class="history-panel-body">
+            <p style="opacity: 0.7; text-align: center; margin-top: 20px;">Loading history...</p>
+        </div>
+    </div>
+    
 </body>
 </html>

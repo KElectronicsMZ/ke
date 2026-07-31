@@ -6080,6 +6080,13 @@ document.getElementById('btnAutoRoute').addEventListener('click', async () => {
         // Pull active data for this row
         const baseRow = assignationOrders.find(o => String(o.so) === String(so)) || {};
         const activeRow = { ...baseRow, ...(editedAssignations[so] || {}) };
+        
+        // --- SECURITY UPDATE: Skip if 'rout' already has a value ---
+        if (activeRow.rout && String(activeRow.rout).trim() !== '') {
+            return; // Skips this order and moves safely to the next one
+        }
+        // ---------------------------------------------------------------
+
         const address = activeRow.address || "";
         
         // Pass the address through our sanitizer

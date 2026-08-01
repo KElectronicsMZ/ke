@@ -4244,7 +4244,7 @@ function openDetailsModal(ticket, viewMode = 'technician') {
 
         // Reset hidden fields
         reasonGroup.style.display = 'none';
-        document.getElementById('techCommentGroup').style.display = 'none'; // Hide comment by default
+        document.getElementById('techCommentGroup').style.display = 'flex'; // ALWAYS show comment field
         
         // Force the button to be locked by default when modal opens
         confirmTechBtn.disabled = true;
@@ -4330,16 +4330,12 @@ function validateTechForm() {
         reasonSelect.value = ''; // Automatically reset reason if they clear the money/checkbox
     }
 
-    // 2. Visibility Logic for Comment Box & Unlock Button
-    // Only show the comment box AND unlock the button IF a reason is selected
+    // 2. Unlock logic for the Confirm Button
+    // The comment box remains permanently visible, so we only handle the button state here.
     if (reasonSelect.value !== '') {
-        commentGroup.style.display = 'flex';
-        
         confirmTechBtn.disabled = false;
         confirmTechBtn.textContent = 'Confirm ✅';
     } else {
-        commentGroup.style.display = 'none';
-        
         confirmTechBtn.disabled = true;
         confirmTechBtn.textContent = 'Confirm 🔒';
     }

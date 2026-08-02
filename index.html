@@ -120,9 +120,9 @@
                 <!-- NEW: Darker Purple Restore Button -->
                 <button id="btnRestoreTxt" style="background-color: #4a148c; color: white; border: 1px solid #311b92; font-weight: bold; margin-right: 15px;">RESTORE (TXT)</button>
                 <input type="file" id="restoreTxtFileInput" accept=".txt" style="display: none;">
-                <select id="columnDropdown">
-                    <option value="">+ add removed column</option>
-                </select>
+                
+                <button id="btnManageColumns" style="background-color: #f57c00; color: white; border: 1px solid #e65100; font-weight: bold; margin-right: 15px; padding: 6px 12px; border-radius: 4px; cursor: pointer;">⚙️ Manage Columns</button>
+                
                 <button id="csvUploadBtn">Upload a .csv</button>
                 <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
 
@@ -513,15 +513,15 @@
                             <select id="reasonSelect">
                                 <option value="">-- Select Reason --</option>
                                 <!-- The value="" is exactly what gets saved to the database -->
-                                 <option value="01 - زيارة">0.1 - بدون زيارة</option>
+                                 <option value="01 - بدون زيارة">0.1 - بدون زيارة</option>
                                 <option value="01 - زيارة">01 - زيارة</option>
                                 <option value="02 - صيانة">02 - صيانة</option>
-                                <option value="03 - اوبن سيل/ليدات">03 - اوبن سيل/ليدات</option>
-                                <option value="04 - كبس">04 - كبس</option>
-                                <option value="05 - شحن">05 - شحن</option>
-                                <option value="06- صيانة تكييف">06- صيانة تكييف</option>
-                                <option value="07 - شحن /تركيب تكييف">07 - شحن /تركيب تكييف</option>
-
+                                <option value="02 - تركيب">03 - تركيب</option>
+                                <option value="03 - اوبن سيل/ليدات">04 - اوبن سيل/ليدات</option>
+                                <option value="04 - كبس">05 - كبس</option>
+                                <option value="05 - شحن">06 - شحن</option>
+                                <option value="06- صيانة تكييف">07- صيانة تكييف</option>
+                                <option value="07 - شحن /تركيب تكييف">08 - شحن /تركيب تكييف</option>
                             </select>
                         </div>
 
@@ -572,7 +572,25 @@
                 </div>
             </div> 
         </div>
-
+        <!-- System COLUMN MANAGER MODAL -->
+    <div id="columnManagerModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3>Manage System Columns</h3>
+                <button id="closeColumnManagerBtn" class="close-btn">X</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13px; opacity: 0.8; margin-top: 0; margin-bottom: 15px;">Drag the <strong>☰</strong> icon up or down to reorder columns. Uncheck a box to hide that column.</p>
+                <ul id="columnManagerList" style="list-style: none; padding: 0; margin: 0; max-height: 50vh; overflow-y: auto;">
+                    <!-- List items injected by JavaScript -->
+                </ul>
+            </div>
+            <div class="modal-footer" style="justify-content: space-between;">
+                <button id="resetColumnsBtn" class="secondary-btn" style="background: #757575;">Reset Default</button>
+                <button id="saveColumnsBtn" class="primary-btn">💾 Save & Apply</button>
+            </div>
+        </div>
+    </div>
     <!-- ROUTE AREA MODAL -->
     <div id="newRouteModal" class="modal-overlay">
         <div class="modal-content" style="max-width: 400px;">

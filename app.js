@@ -775,13 +775,8 @@ function renderTableStructure() {
         
         // Wrap the name in a clickable span for sorting
         th.innerHTML = `
-            <div class="header-wrapper" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <button class="move-arrow left-arrow" title="Move Left" style="display: none; background: transparent; border: none; cursor: pointer; font-size: 16px;">◀</button>
-                <div style="display: flex; justify-content: center; align-items: center; flex-grow: 1;">
-                    <span class="sort-header" style="cursor:pointer;">${displayName}</span> 
-                    <button class="delete-col-btn" onclick="hideColumn('${colKey}')" style="margin-left: 5px;">-</button>
-                </div>
-                <button class="move-arrow right-arrow" title="Move Right" style="display: none; background: transparent; border: none; cursor: pointer; font-size: 16px;">▶</button>
+            <div class="header-wrapper" style="display: flex; justify-content: center; align-items: center; width: 100%;">
+                <span class="sort-header" style="cursor:pointer; font-weight: bold;">${displayName}</span> 
             </div>
         `;
         
@@ -849,7 +844,6 @@ function renderTableStructure() {
     });
 
     populateTableRows(databaseOrders);
-    updateDropdownOptions();
     // Fire resizer
     applyResizableColumns('dataTable', 'sys_cols');
 
@@ -965,9 +959,11 @@ function populateTableRows(dataToDisplay) {
                     masterValueInput.value = e.target.value;
                     masterValueInput.style.display = 'inline-block';
                     
-                    // NEW: Show buttons and attach the current SO to the container's memory
-                    actionButtons.style.display = 'flex';
-                    actionButtons.dataset.activeSo = currentSO; 
+                    // Show buttons and attach the current SO to the container's memory
+                    if (actionButtons) {
+                        actionButtons.style.display = 'flex';
+                        actionButtons.dataset.activeSo = currentSO; 
+                    }
                     
                     // NEW: Reset the tech dropdown to a clean state if they click a different cell
                     document.getElementById('masterTechDropdown').style.display = 'none';
@@ -1028,78 +1024,7 @@ function runFilters() {
     populateTableRows(filteredData);
 }
 
-// --- 8. SHOW/HIDE COLUMN CONTROL MODULES ---
-window.hideColumn = function(columnName) {
-    if (columnName === 'so') {
-        alert("The primary key 'SO' column cannot be hidden.");
-        return;
-    }
-    activeColumns = activeColumns.filter(c => c !== columnName);
-    if (!hiddenColumns.includes(columnName)) hiddenColumns.push(columnName);
-    
-    // NEW: Save to local storage under this user's name
-    localStorage.setItem('hiddenColumns_' + currentUser.username, JSON.stringify(hiddenColumns));
-    
-    renderTableStructure();
-};
 
-function updateDropdownOptions() {
-    const dropdown = document.getElementById('columnDropdown');
-    
-    // Add default option
-    dropdown.innerHTML = '<option value="">+ add removed column</option>';
-    
-    // ADDED: The RESET option styled in red
-    dropdown.innerHTML += '<option value="RESET" style="color: red; font-weight: bold;">RESET</option>';
-    
-    hiddenColumns.forEach(col => {
-        const opt = document.createElement('option');
-        opt.value = col;
-        opt.textContent = col;
-        dropdown.appendChild(opt);
-    });
-}
-
-
-document.getElementById('columnDropdown').addEventListener('change', (e) => {
-    const chosenCol = e.target.value;
-    
-    // --- PHASE 3: MASTER LAYOUT RESET ---
-    if (chosenCol === "RESET") {
-        hiddenColumns = [];
-        activeColumns = [...ALL_COLUMNS]; 
-        
-        const userKey = currentUser ? currentUser.username : 'guest';
-        
-        // 1. Wipe Hidden Columns
-        localStorage.removeItem('hiddenColumns_' + userKey);
-        // 2. Wipe Resized Widths (System & Assignation)
-        localStorage.removeItem('sys_cols_' + userKey);
-        localStorage.removeItem('assign_cols_' + userKey);
-        
-        // 3. FIX: Save ALL_COLUMNS to memory so it survives a page refresh!
-        localStorage.setItem('sys_order_' + userKey, JSON.stringify(ALL_COLUMNS));
-        localStorage.removeItem('assign_order_' + userKey);
-        
-        // Force reload original assignation columns
-        ASSIGN_COLUMNS.length = 0;
-        ASSIGN_COLUMNS.push("so", "date", "days", "status", "service_type", "address", "rout", "assigned_tech", "model", "remark", "status_comment", "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3");
-
-        renderTableStructure(); 
-        if (assignationPage.classList.contains('active')) renderAssignationTable();
-        
-        e.target.value = ""; 
-        alert("Layout reset to factory defaults.");
-        return; 
-    }
-
-    if (chosenCol) {
-        hiddenColumns = hiddenColumns.filter(c => c !== chosenCol);
-        activeColumns.push(chosenCol);
-        localStorage.setItem('hiddenColumns_' + (currentUser ? currentUser.username : 'guest'), JSON.stringify(hiddenColumns));
-        renderTableStructure();
-    }
-});
 
 // --- 9. INLINE CHANGES SUBMISSION ---
 document.getElementById('systemSubmitBtn').addEventListener('click', async () => {
@@ -2291,12 +2216,8 @@ function renderAssignationTable(dataToRender = assignationOrders) {
             const th = document.createElement('th');
             const displayName = colKey === 'so' ? 'SO' : colKey;
             th.innerHTML = `
-                <div class="header-wrapper" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <button class="move-arrow left-arrow" title="Move Left" style="display: none; background: transparent; border: none; cursor: pointer; font-size: 16px;">◀</button>
-                    <div style="display: flex; justify-content: center; align-items: center; flex-grow: 1;">
-                        <span class="sort-header" style="cursor:pointer;">${displayName}</span>
-                    </div>
-                    <button class="move-arrow right-arrow" title="Move Right" style="display: none; background: transparent; border: none; cursor: pointer; font-size: 16px;">▶</button>
+                <div class="header-wrapper" style="display: flex; justify-content: center; align-items: center; width: 100%;">
+                    <span class="sort-header" style="cursor:pointer; font-weight: bold;">${displayName}</span>
                 </div>
             `;
             
@@ -5411,7 +5332,12 @@ function downloadGroupedVisibleText(tableBodyId, memoryMap, allColsArray, filena
         const rowData = memoryMap[so] || databaseOrders.find(o => String(o.so) === String(so)) || {};
         
         let tech = (rowData.assigned_tech || '').trim();
-        if (tech === '' || tech.toUpperCase() === 'EMPTY') tech = 'Unassigned';
+        let currentStatus = (rowData.status || '').trim();
+        
+        // Group under the tech's name ONLY if the status is exactly "Technician"
+        if (tech === '' || tech.toUpperCase() === 'EMPTY' || currentStatus !== 'Technician') {
+            tech = 'Unassigned';
+        }
 
         if (!groupedData[tech]) groupedData[tech] = [];
 
@@ -6109,10 +6035,13 @@ document.getElementById('btnAutoRoute').addEventListener('click', async () => {
             
             // <-- NEW LOGIC TO COMBINE PARTS -->
             const deviceType = getDeviceType(activeRow.model);
-            let finalRoute = `${matchedRoute}_${recognizedSubArea}`;
+            let finalRoute = matchedRoute;
+            
             if (deviceType) {
-                finalRoute += `_${deviceType}`;
+                finalRoute += `_${deviceType}`; // Add device type in the middle if it exists
             }
+            
+            finalRoute += `_${recognizedSubArea}`; // Append the sub-area at the very end
             
             editedAssignations[so].rout = finalRoute; // <-- APPLY COMBINED ROUTE
             updatedCount++;
@@ -6202,7 +6131,7 @@ async function fetchAndRenderUserHistory() {
 }
 
 // Helper function to sort logs by assign_date & assign_time (Newest First) and render top 50
-function sortAndDisplayHistory(logs, historyBody) {
+async function sortAndDisplayHistory(logs, historyBody) {
     logs.sort((a, b) => {
         const parseDate = (d) => d ? d.split('-').reverse().join('-') : '1970-01-01';
         const timeA = new Date(`${parseDate(a.assign_date)}T${a.assign_time || '00:00'}`);
@@ -6212,10 +6141,20 @@ function sortAndDisplayHistory(logs, historyBody) {
 
     // Take the newest 50 entries
     const latest50 = logs.slice(0, 50);
-    renderHistoryCards(latest50, historyBody);
+    
+    // --- NEW: Fetch customer names and addresses from main database ---
+    const soList = [...new Set(latest50.map(l => l.so))];
+    const { data: ordersData } = await supabaseClient.from('orders').select('so, name, address').in('so', soList);
+    const orderMap = {};
+    if (ordersData) {
+        ordersData.forEach(o => orderMap[o.so] = o);
+    }
+    // ------------------------------------------------------------------
+
+    renderHistoryCards(latest50, historyBody, orderMap);
 }
 
-function renderHistoryCards(logs, container) {
+function renderHistoryCards(logs, container, orderMap = {}) {
     container.innerHTML = '';
 
     logs.forEach(log => {
@@ -6223,11 +6162,23 @@ function renderHistoryCards(logs, container) {
         card.className = 'history-card';
 
         const commentText = log.comment && log.comment.trim() !== '' ? log.comment : 'No comment recorded';
+        
+        // --- NEW: Map the fetched name and address to this specific card ---
+        const customer = orderMap[log.so] || {};
+        const custName = customer.name || 'N/A';
+        const custAddress = customer.address || 'N/A';
+        // ------------------------------------------------------------------
 
         card.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span class="history-so-link">SO: ${log.so}</span>
                 <span style="font-size: 11px; opacity: 0.7;">${log.assign_date || ''} ${log.assign_time || ''}</span>
+            </div>
+            <div class="history-row" style="color: #1976d2; font-weight: bold; padding-top: 4px;">
+                <span>👤 ${custName}</span>
+            </div>
+            <div class="history-row" style="opacity: 0.8; font-size: 11px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); margin-bottom: 6px;">
+                <span>📍 ${custAddress}</span>
             </div>
             <div class="history-row">
                 <span><strong>By:</strong> ${log.assigned_by || 'N/A'}</span>
@@ -6310,3 +6261,130 @@ document.addEventListener('click', (e) => {
         historyPanel.classList.remove('open');
     }
 });
+
+// ==========================================
+// --- COLUMN MANAGER ENGINE (DRAG & DROP) ---
+// ==========================================
+const columnManagerModal = document.getElementById('columnManagerModal');
+const columnManagerList = document.getElementById('columnManagerList');
+let draggedItem = null;
+
+const btnManageColumns = document.getElementById('btnManageColumns');
+if (btnManageColumns) {
+    btnManageColumns.addEventListener('click', () => {
+        if (!columnManagerList || !columnManagerModal) return;
+        columnManagerList.innerHTML = '';
+        
+        // Combine active and hidden columns to show the full list
+        const currentOrder = [...activeColumns, ...hiddenColumns];
+        
+        currentOrder.forEach(col => {
+            const isSO = col === 'so'; // Protect the primary key!
+            
+            const li = document.createElement('li');
+            li.className = 'col-drag-item';
+            li.draggable = true;
+            li.dataset.column = col;
+            
+            const isChecked = activeColumns.includes(col) ? 'checked' : '';
+            const disableCheck = isSO ? 'disabled title="Cannot hide primary key"' : '';
+            
+            li.innerHTML = `
+                <span class="col-drag-handle">☰</span>
+                <input type="checkbox" class="col-visibility-check" style="margin-right: 12px; transform: scale(1.3); cursor: pointer;" ${isChecked} ${disableCheck}>
+                <span style="font-weight: bold; cursor: default;">${isSO ? 'SO (Required Database Key)' : col}</span>
+            `;
+            
+            // --- HTML5 Drag & Drop Listeners ---
+            li.addEventListener('dragstart', function(e) {
+                draggedItem = this;
+                setTimeout(() => this.classList.add('dragging'), 0);
+            });
+            
+            li.addEventListener('dragend', function() {
+                draggedItem = null;
+                this.classList.remove('dragging');
+            });
+            
+            li.addEventListener('dragover', function(e) {
+                e.preventDefault(); // Required to allow dropping
+                const draggingNode = document.querySelector('.dragging');
+                if (!draggingNode) return;
+                
+                // Find where we are hovering to insert the item
+                const siblings = [...columnManagerList.querySelectorAll('.col-drag-item:not(.dragging)')];
+                const nextSibling = siblings.find(sibling => {
+                    return e.clientY <= sibling.getBoundingClientRect().top + sibling.offsetHeight / 2;
+                });
+                columnManagerList.insertBefore(draggingNode, nextSibling);
+            });
+
+            columnManagerList.appendChild(li);
+        });
+        
+        columnManagerModal.style.display = 'flex';
+    });
+}
+
+const closeColumnManagerBtn = document.getElementById('closeColumnManagerBtn');
+if (closeColumnManagerBtn) {
+    closeColumnManagerBtn.addEventListener('click', () => {
+        if (columnManagerModal) columnManagerModal.style.display = 'none';
+    });
+}
+
+// Save and Apply Logic
+const saveColumnsBtn = document.getElementById('saveColumnsBtn');
+if (saveColumnsBtn) {
+    saveColumnsBtn.addEventListener('click', () => {
+        const userKey = currentUser ? currentUser.username : 'guest';
+        const newActive = [];
+        const newHidden = [];
+        
+        // Read the physical DOM order from top to bottom
+        document.querySelectorAll('.col-drag-item').forEach(li => {
+            const colKey = li.dataset.column;
+            const isChecked = li.querySelector('.col-visibility-check').checked;
+            
+            // Force 'so' to always remain active just in case
+            if (isChecked || colKey === 'so') {
+                newActive.push(colKey);
+            } else {
+                newHidden.push(colKey);
+            }
+        });
+        
+        // Update live memory variables
+        activeColumns = newActive;
+        hiddenColumns = newHidden;
+        
+        // Save to LocalStorage so it remembers on next login
+        localStorage.setItem('sys_order_' + userKey, JSON.stringify(activeColumns));
+        localStorage.setItem('hiddenColumns_' + userKey, JSON.stringify(hiddenColumns));
+        
+        // Redraw table and close modal
+        renderTableStructure();
+        if (columnManagerModal) columnManagerModal.style.display = 'none';
+    });
+}
+
+// Reset Default Logic
+const resetColumnsBtn = document.getElementById('resetColumnsBtn');
+if (resetColumnsBtn) {
+    resetColumnsBtn.addEventListener('click', () => {
+        const userKey = currentUser ? currentUser.username : 'guest';
+        
+        // Restore exact factory variables
+        activeColumns = [...ALL_COLUMNS];
+        hiddenColumns = [];
+        
+        // Wipe customized storage
+        localStorage.setItem('sys_order_' + userKey, JSON.stringify(activeColumns));
+        localStorage.removeItem('hiddenColumns_' + userKey);
+        localStorage.removeItem('sys_cols_' + userKey); // Clears customized column widths
+        
+        renderTableStructure();
+        if (columnManagerModal) columnManagerModal.style.display = 'none';
+        alert("Layout and columns reset to factory defaults.");
+    });
+}

@@ -621,3 +621,29 @@ th.move-active {
     font-size: 12px;
     word-break: break-word;
 }
+
+/* --- COLUMN MANAGER STYLES --- */
+.col-drag-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    margin-bottom: 6px;
+    background: var(--btn-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    transition: background-color 0.2s;
+}
+.col-drag-item.dragging {
+    opacity: 0.4;
+    background: var(--bg-color);
+}
+.col-drag-handle {
+    margin-right: 15px;
+    cursor: grab;
+    font-size: 18px;
+    color: var(--text-color);
+}
+.col-drag-handle:active {
+    cursor: grabbing;
+}

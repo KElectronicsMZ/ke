@@ -449,6 +449,27 @@ document.getElementById('btnSystem').addEventListener('click', () => {
     // Restrictions removed! If they can see the button, they can click it.
     menuPage.classList.remove('active');
     systemPage.classList.add('active');
+    
+    // --- NEW: SET DEFAULT DATES TO LAST 30 DAYS ---
+    const now = new Date();
+    const past30 = new Date();
+    past30.setDate(now.getDate() - 30);
+    
+    const formatInputDate = (dateObj) => {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    const startDateInput = document.getElementById('systemStartDate');
+    const endDateInput = document.getElementById('systemEndDate');
+    
+    // Only set if they are empty so we don't overwrite user selection when navigating back and forth
+    if (startDateInput && !startDateInput.value) startDateInput.value = formatInputDate(past30);
+    if (endDateInput && !endDateInput.value) endDateInput.value = formatInputDate(now);
+    // ----------------------------------------------
+
     loadDatabaseData(); 
 });
 document.getElementById('systemCancelBtn').addEventListener('click', () => {
@@ -710,13 +731,45 @@ document.getElementById('techHubBtn').addEventListener('click', () => {
 
 // --- 6. DATA VISUALIZATION ENGINE (DYNAMIC TABLE) ---
 async function loadDatabaseData() {
-    showGlobalLoader("Fetching System Records..."); // Trigger Loader
+    showGlobalLoader("Fetching System Records..."); 
     
-    // Replaced the simple select('*') with our powerful pagination engine
-    const data = await fetchAllRecords('orders');
+    const startInput = document.getElementById('systemStartDate').value;
+    const endInput = document.getElementById('systemEndDate').value;
+    
+    let data = [];
+    
+    if (startInput && endInput) {
+        const start = new Date(startInput);
+        const end = new Date(endInput);
+        
+        let dateStringsToFetch = [];
+        let currentDay = new Date(start);
+        
+        // Loop through every day in the selected range
+        while (currentDay <= end) {
+            const dd = String(currentDay.getDate()).padStart(2, '0');
+            const mm = String(currentDay.getMonth() + 1).padStart(2, '0');
+            const yyyy = currentDay.getFullYear();
+            
+            // Build the string formats that match your database entries exactly
+            dateStringsToFetch.push(`${mm}.${dd}.${yyyy}`); // Example: 07.28.2026
+            dateStringsToFetch.push(`${mm}/${dd}/${yyyy}`); // Example: 07/28/2026
+            dateStringsToFetch.push(`${dd}.${mm}.${yyyy}`); // Fallback
+            dateStringsToFetch.push(`${dd}/${mm}/${yyyy}`); // Fallback
+            
+            // Move to the next day in the loop
+            currentDay.setDate(currentDay.getDate() + 1);
+        }
+        
+        // Use the pagination engine to ask Supabase ONLY for these specific text dates
+        data = await fetchAllRecords('orders', 'date', dateStringsToFetch);
+    } else {
+        // Fallback: If the dates are empty, fetch everything
+        data = await fetchAllRecords('orders');
+    }
     
     if (!data) {
-        hideGlobalLoader(); // Hide if it fails
+        hideGlobalLoader(); 
         alert("Error loading data from database. Please check your connection.");
         return;
     }
@@ -725,7 +778,15 @@ async function loadDatabaseData() {
     editedOrders = {};
     renderTableStructure();
     
-    hideGlobalLoader(); // Hide when finished rendering
+    hideGlobalLoader(); 
+}
+
+// Hook up the Apply Range button
+const applySystemDateBtn = document.getElementById('btnApplySystemDate');
+if (applySystemDateBtn) {
+    applySystemDateBtn.addEventListener('click', () => {
+        loadDatabaseData(); 
+    });
 }
 
 function renderTableStructure() {

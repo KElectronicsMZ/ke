@@ -120,9 +120,8 @@
                 <!-- NEW: Darker Purple Restore Button -->
                 <button id="btnRestoreTxt" style="background-color: #4a148c; color: white; border: 1px solid #311b92; font-weight: bold; margin-right: 15px;">RESTORE (TXT)</button>
                 <input type="file" id="restoreTxtFileInput" accept=".txt" style="display: none;">
-                
-                <button id="btnManageColumns" style="background-color: #f57c00; color: white; border: 1px solid #e65100; font-weight: bold; margin-right: 15px; padding: 6px 12px; border-radius: 4px; cursor: pointer;">⚙️ Manage Columns</button>
-                
+
+
                 <button id="csvUploadBtn">Upload a .csv</button>
                 <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
 
@@ -134,23 +133,41 @@
             </div>
         </div>
 
-        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; width: 100%;">
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; width: 100%;">
             
-            <div id="masterEditContainer" style="padding: 10px; font-weight: bold; font-size: 14px; min-height: 35px; display: flex; align-items: center; gap: 10px;">
+            <!-- TOP ROW: Persistent Controls -->
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                
+                <!-- Left Side: Manage Columns & Dates -->
+                <div id="systemDateFilterContainer" style="display: flex; gap: 10px; align-items: center; background: var(--card-bg); padding: 10px; border: 1px solid var(--border-color); border-radius: 4px;">
+                    <button id="btnManageColumns" style="background-color: #f57c00; color: white; border: 1px solid #e65100; font-weight: bold; padding: 6px 12px; border-radius: 4px; cursor: pointer;">⚙️ Manage Columns</button>
+                    <div style="border-left: 2px solid var(--border-color); height: 24px; margin: 0 5px;"></div>
+                    <label style="font-size: 12px; font-weight: bold; opacity: 0.8;">Start:</label>
+                    <input type="date" id="systemStartDate" style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                    <label style="font-size: 12px; font-weight: bold; opacity: 0.8;">End:</label>
+                    <input type="date" id="systemEndDate" style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                    <button id="btnApplySystemDate" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; padding: 6px 12px; font-weight: bold; cursor: pointer; border-radius: 4px;">Apply Range</button>
+                </div>
+
+                <!-- Right Side: Action Buttons -->
+                <div id="permanentOrderActions" style="display: flex; gap: 10px; align-items: center; background: var(--card-bg); padding: 10px; border: 1px solid var(--border-color); border-radius: 4px;">
+                    <input type="text" id="systemSearchSoInput" placeholder="Enter SO Number..." style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); width: 150px;">
+                    <button id="btnSearchOrder" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; padding: 6px 12px; font-weight: bold; cursor: pointer; border-radius: 4px;">Search Order</button>
+                    
+                    <div style="border-left: 2px solid var(--border-color); height: 24px; margin: 0 5px;"></div> 
+                    <button id="btnAgreeCoord" style="background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Agree (Coord)</button>
+                    <button id="btnCompleteTech" style="background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Complete (Assign Tech)</button>
+                    
+                    <select id="masterTechDropdown" style="display: none; padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);"><option value="">-- Select Tech --</option></select>
+                    <button id="btnSubmitTechAssign" style="display: none; background-color: #2e7d32; color: white; border: 1px solid #1b5e20; padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Confirm Completion</button>
+                </div>
+            </div>
+            
+            <!-- BOTTOM ROW: Master Edit Tracker (Hidden unless clicking a cell) -->
+            <div id="masterEditContainer" style="padding: 10px; font-weight: bold; font-size: 14px; min-height: 35px; display: flex; align-items: center; gap: 10px; background: transparent;">
                 <span id="masterSOKey"></span>
                 <span id="masterHeaderLabel"></span>
                 <input type="text" id="masterValueInput" style="display: none; padding: 4px; font-size: 14px; width: 300px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" />
-            </div>
-
-            <div id="permanentOrderActions" style="display: flex; gap: 10px; align-items: center; background: var(--card-bg); padding: 10px; border: 1px solid var(--border-color); border-radius: 4px;">
-                <input type="text" id="systemSearchSoInput" placeholder="Enter SO Number..." style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); width: 150px;">
-                <button id="btnSearchOrder" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; padding: 6px 12px; font-weight: bold; cursor: pointer; border-radius: 4px;">Search Order</button>
-                
-                <div style="border-left: 2px solid var(--border-color); height: 24px; margin: 0 5px;"></div> <button id="btnAgreeCoord" style="background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Agree (Coord)</button>
-                <button id="btnCompleteTech" style="background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Complete (Assign Tech)</button>
-                
-                <select id="masterTechDropdown" style="display: none; padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);"><option value="">-- Select Tech --</option></select>
-                <button id="btnSubmitTechAssign" style="display: none; background-color: #2e7d32; color: white; border: 1px solid #1b5e20; padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Confirm Completion</button>
             </div>
             
         </div>

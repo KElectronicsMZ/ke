@@ -27,24 +27,32 @@
         <div class="spinner"></div>
         <h3 id="loaderText" style="margin-top: 15px; letter-spacing: 1px;">Loading Data...</h3>
     </div>
-    <div id="globalUserBanner" style="display: none; background: var(--btn-bg); color: var(--text-color); padding: 5px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid var(--border-color); z-index: 9999; position: sticky; top: 0;">
-        User: <span id="bannerUsername"></span> - <span id="bannerRole"></span>
-    </div>
-    <div class="theme-container" style="display: flex; gap: 10px; align-items: center;">
-        <button id="btnOpenHistory" style="padding: 5px 12px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); font-weight: bold; border-radius: 4px;">
-            📜 History
-        </button>
-        <label for="themeSelect">Theme: </label>
-        <select id="themeSelect">
-            <option value="dark">Dark Clean</option>
-            <option value="greenish" selected>Greenish</option>
-            <option value="blueish">Blueish Bright</option>
-            <option value="warm-brown">Warm Brown</option>
-            <option value="royal-gold">Royal Gold</option>
-            <option value="gold-black">Gold & Black</option>
-            <option value="deep-crimson">Deep Crimson</option>
-            <option value="sun-flower">Sun Flower</option>
-        </select>
+    <div id="globalUserBanner" style="display: none; background: var(--btn-bg); color: var(--text-color); padding: 8px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid var(--border-color); z-index: 9999; position: sticky; top: 0;">
+        
+        <!-- Left Side: Warehouse Link -->
+        <a href="#" id="navWarehouseLink" style="position: absolute; left: 15px; color: var(--text-color); text-decoration: none; cursor: pointer;">📦 Warehouse</a>
+        
+        <!-- Center: User Info -->
+        <span style="line-height: 24px;">User: <span id="bannerUsername"></span> - <span id="bannerRole"></span></span>
+        
+        <!-- Right Side: History Link & Theme Selector -->
+        <div style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); display: flex; gap: 20px; align-items: center;">
+            <a href="#" id="btnOpenHistory" onclick="event.preventDefault();" style="color: var(--text-color); text-decoration: none; cursor: pointer;">📜 History</a>
+            
+            <div style="display: flex; gap: 5px; align-items: center;">
+                <label for="themeSelect" style="font-size: 12px; margin: 0; cursor: pointer;">Theme:</label>
+                <select id="themeSelect" style="padding: 2px 5px; font-size: 12px; border-radius: 3px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); cursor: pointer; outline: none;">
+                    <option value="dark">Dark Clean</option>
+                    <option value="greenish" selected>Greenish</option>
+                    <option value="blueish">Blueish Bright</option>
+                    <option value="warm-brown">Warm Brown</option>
+                    <option value="royal-gold">Royal Gold</option>
+                    <option value="gold-black">Gold & Black</option>
+                    <option value="deep-crimson">Deep Crimson</option>
+                    <option value="sun-flower">Sun Flower</option>
+                </select>
+            </div>
+        </div>
     </div>
 
     <div id="loginPage" class="page active">
@@ -650,7 +658,22 @@
         </div>
     </div>
 
+   <!-- WAREHOUSE PAGE -->
+    <div id="warehousePage" class="page">
+        <div class="system-header" style="width: 100%; max-width: 800px; text-align: center;">
+            <h2>Warehouse Management</h2>
+        </div>
+        <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 40px; border-radius: 8px; width: 100%; max-width: 800px; text-align: center;">
+            <h3 style="opacity: 0.8;">this is warehouse place holder</h3>
+        </div>
+        <div class="button-group" style="margin-top: 20px;">
+            <button id="warehouseHubBtn" style="padding: 10px 30px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color);">Back to HUB</button>
+        </div>
+    </div>
+
     <script src="app.js"></script>
+    <script src="warehouse.js"></script>
+    
     <!-- USER HISTORY SIDE PANEL -->
     <div id="historyPanel" class="history-panel">
         <div class="history-panel-header">

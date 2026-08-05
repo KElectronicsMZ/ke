@@ -647,3 +647,161 @@ th.move-active {
 .col-drag-handle:active {
     cursor: grabbing;
 }
+
+/* ========================================= */
+/* --- MOBILE RESPONSIVENESS (PHONES/TABLETS) --- */
+/* ========================================= */
+@media (max-width: 768px) {
+    
+    /* 1. Stack the Monitor Page Sidebar ABOVE the main table */
+    .monitor-layout {
+        flex-direction: column;
+    }
+    
+    /* Let the sidebar take the full width of the phone screen */
+    .monitor-sidebar {
+        width: 100%;
+    }
+
+    /* 2. Enforce Strict Table Containers */
+    /* This stops the table from stretching the whole page, forcing the scrollbar to appear INSIDE the box */
+    .page {
+        padding: 10px; /* Less empty space on small screens */
+        max-width: 100vw;
+        overflow-x: hidden; 
+    }
+    .table-container {
+        width: 100%;
+        max-width: 100vw;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch; /* Makes swiping smooth on iPhones */
+    }
+
+    /* 3. Fix the HUB Menu buttons to be 2-columns instead of 3 */
+    .menu-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    /* 4. Stack the System Page controls */
+    div:has(> #systemDateFilterContainer) {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    #systemDateFilterContainer, 
+    #permanentOrderActions {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    /* 5. Stack the top action buttons (Wipe, Backup, Restore) */
+    .system-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .system-actions {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        gap: 8px;
+    }
+    
+    .system-actions button {
+        width: 100% !important;
+        margin: 0 !important;
+    }
+
+    /* 6. Daily Assignation Page Layout */
+    
+    /* Stack the Textarea and Fetch button */
+    div:has(> #batchSoInput) {
+        flex-direction: column;
+    }
+    #batchSoInput, #btnFetchBatchSo {
+        width: 100% !important;
+        box-sizing: border-box;
+    }
+    #btnFetchBatchSo {
+        padding: 12px !important;
+    }
+
+    /* Stack all the action buttons under the tables */
+    #assignationPage .table-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    #assignationPage .table-controls button {
+        width: 100% !important;
+        margin: 0 !important;
+        box-sizing: border-box;
+    }
+    
+    /* Stack the pending staging info box */
+    #assignationPage .table-controls > div {
+        width: 100%;
+        flex-direction: column;
+        text-align: center;
+        box-sizing: border-box;
+    }
+
+    /* Wrap the Master Edit Tracker */
+    #assignMasterEditContainer div {
+        flex-wrap: wrap;
+    }
+    #assignMasterValueInput {
+        width: 100% !important;
+    }
+
+    /* 7. Bonuses Page Layout */
+    
+    /* Target the container holding the date inputs and load button */
+    #bonusesPage .date-filter-group > div:nth-child(2) {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 8px !important;
+    }
+    
+    /* Make the Load Data button full width */
+    #btnFetchBonuses {
+        width: 100%;
+        margin-top: 5px;
+        padding: 12px !important;
+    }
+    
+    /* Make the HUB button at the bottom full width */
+    #bonusesPage .table-controls {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    #bonusesHubBtn {
+        width: 100% !important;
+        margin: 0 !important;
+    }
+
+    /* 8. Global Banner Mobile Fix */
+    #globalUserBanner {
+        padding: 10px !important;
+        line-height: normal !important;
+    }
+    
+    /* Un-pin the Warehouse link and stack it */
+    #globalUserBanner > #navWarehouseLink {
+        position: static !important;
+        display: block;
+        margin-bottom: 8px;
+    }
+    
+    /* Un-pin the History/Theme block and center it */
+    #globalUserBanner > div {
+        position: static !important;
+        transform: none !important;
+        justify-content: center;
+        margin-top: 8px;
+        flex-wrap: wrap;
+    }
+}

@@ -179,10 +179,20 @@ const systemPage = document.getElementById('systemPage');
 
 // --- 4. THEME SELECTION ENGINE ---
 const themeSelect = document.getElementById('themeSelect');
+
+// 1. Listen for changes and save to memory
 themeSelect.addEventListener('change', (e) => {
-    document.body.setAttribute('data-theme', e.target.value);
+    const selectedTheme = e.target.value;
+    document.body.setAttribute('data-theme', selectedTheme);
+    localStorage.setItem('ke_saved_theme', selectedTheme); // <-- Saves the theme
 });
 
+// 2. Read from memory when the app loads
+const savedTheme = localStorage.getItem('ke_saved_theme');
+if (savedTheme) {
+    document.body.setAttribute('data-theme', savedTheme); // Apply the theme visually
+    themeSelect.value = savedTheme; // Update the dropdown box to match
+}
 
 // --- ASSIGNATION PAGE: RESET LAYOUT ---
 document.getElementById('assignResetLayoutBtn').addEventListener('click', () => {
@@ -470,7 +480,7 @@ document.getElementById('btnSystem').addEventListener('click', () => {
     if (endDateInput && !endDateInput.value) endDateInput.value = formatInputDate(now);
     // ----------------------------------------------
 
-    loadDatabaseData(); 
+    //loadDatabaseData(); 
 });
 document.getElementById('systemCancelBtn').addEventListener('click', () => {
     if (Object.keys(editedOrders).length > 0) {

@@ -97,6 +97,15 @@
         <div id="offlineSyncBanner" style="display: none; background: #d32f2f; color: white; padding: 15px; margin-bottom: 20px; border-radius: 5px; text-align: center; font-weight: bold; width: 100%; max-width: 600px; box-sizing: border-box; cursor: pointer;">
             ⚠️ <span id="syncCountText">0</span> Orders Pending Offline Sync. Click here to sync now!
         </div>
+
+        <!-- HUB SEARCH BAR -->
+        <div id="hubSearchContainer" style="display: flex; gap: 10px; margin-bottom: 25px; align-items: center; justify-content: center; width: 100%; max-width: 600px;">
+            <input type="text" id="hubSearchSoInput" placeholder="Enter SO Number..." style="padding: 12px; flex-grow: 1; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); border-radius: 4px; font-size: 16px;">
+            <button id="btnHubSearchOrder" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; padding: 12px 20px; font-weight: bold; cursor: pointer; border-radius: 4px; font-size: 16px;">Search Order</button>
+        </div>
+        <!-- END HUB SEARCH BAR -->
+
+
         <div class="menu-grid">
             <button class="menu-btn" id="btnMyOrders">My orders</button>
             <button class="menu-btn" id="btnMonitor">Monitor</button>

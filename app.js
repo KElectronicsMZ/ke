@@ -3143,6 +3143,57 @@ document.getElementById('btnSearchOrder').addEventListener('click', () => {
     }
 });
 
+// ---HUB SEARCH ORDER LOGIC ---
+document.getElementById('btnHubSearchOrder').addEventListener('click', async () => {
+    const searchInput = document.getElementById('hubSearchSoInput').value.trim();
+    if (!searchInput) {
+        alert("Please enter an SO number to search.");
+        return;
+    }
+
+    showGlobalLoader("Locating Order...");
+
+    // 1. Try to find the order in the live edits or main memory first
+    let foundOrder = null;
+    if (typeof editedOrders !== 'undefined' && editedOrders[searchInput]) {
+        foundOrder = editedOrders[searchInput];
+    } else if (typeof databaseOrders !== 'undefined' && databaseOrders.length > 0) {
+        foundOrder = databaseOrders.find(o => String(o.so) === searchInput);
+    }
+
+    // 2. If it's not in memory, ask the database directly
+    if (!foundOrder) {
+        const { data, error } = await supabaseClient
+            .from('orders')
+            .select('*')
+            .eq('so', searchInput)
+            .single();
+        
+        if (data && !error) {
+            foundOrder = data;
+        }
+    }
+
+    hideGlobalLoader();
+
+    // 3. Display the result
+    if (foundOrder) {
+        openViewOnlyModal(foundOrder);
+        // Clear the input box so it's ready for the next search
+        document.getElementById('hubSearchSoInput').value = ''; 
+    } else {
+        alert(`Order with SO: ${searchInput} does not exist in the system.`);
+    }
+});
+
+// ALLOW 'ENTER' KEY TO SEARCH FROM THE HUB
+document.getElementById('hubSearchSoInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault(); 
+        document.getElementById('btnHubSearchOrder').click();
+    }
+});
+
 // Action 1: Agree (Coord)
 document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
     // Pull the SO directly from the search box

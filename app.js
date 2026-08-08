@@ -799,6 +799,81 @@ if (applySystemDateBtn) {
     });
 }
 
+// --- GET A LIST (BATCH FETCH) LOGIC FOR SYSTEM PAGE ---
+
+// 1. Toggle the hidden text area
+const btnToggleGetList = document.getElementById('btnToggleGetList');
+const systemGetListContainer = document.getElementById('systemGetListContainer');
+
+if (btnToggleGetList && systemGetListContainer) {
+    btnToggleGetList.addEventListener('click', () => {
+        if (systemGetListContainer.style.display === 'none') {
+            systemGetListContainer.style.display = 'flex';
+        } else {
+            systemGetListContainer.style.display = 'none';
+        }
+    });
+}
+
+// 2. Fetch the specific orders and draw the table
+const btnFetchSystemList = document.getElementById('btnFetchSystemList');
+const systemBatchSoInput = document.getElementById('systemBatchSoInput');
+
+if (btnFetchSystemList && systemBatchSoInput) {
+    btnFetchSystemList.addEventListener('click', async () => {
+        const rawText = systemBatchSoInput.value;
+        // Split by comma or newline and clean up spaces
+        const soList = rawText.split(/[\n,]+/).map(s => s.trim()).filter(s => s);
+
+        if (soList.length === 0) {
+            alert("Please paste at least one SO number.");
+            return;
+        }
+
+        showGlobalLoader("Fetching specific orders...");
+
+        // Use the pagination engine to ask Supabase ONLY for these specific SOs
+        const data = await fetchAllRecords('orders', 'so', soList);
+
+        hideGlobalLoader();
+
+        if (!data) {
+            alert("Error loading data from database. Please check your connection.");
+            return;
+        }
+
+        // Check for missing orders
+        const foundSOs = data.map(d => String(d.so));
+        const missingSOs = soList.filter(so => !foundSOs.includes(String(so)));
+
+        if (missingSOs.length > 0) {
+            alert(`Fetched ${data.length} orders.\n\n⚠️ Could not find ${missingSOs.length} order(s) in the system: \n${missingSOs.join(', ')}`);
+        } else {
+            alert(`Success! Fetched all ${data.length} orders.`);
+        }
+
+        // Wipe the existing table memory and replace it with ONLY the new data
+        databaseOrders = data || [];
+        editedOrders = {}; // Wipe unsaved edits to prevent ghost data from showing up
+        
+        // Force the table to redraw with the new limited dataset
+        renderTableStructure();
+        
+        // Clean up the UI
+        systemBatchSoInput.value = '';
+        systemGetListContainer.style.display = 'none';
+    });
+
+    // Allow 'Enter' key to fetch, and 'Shift+Enter' for new line
+    systemBatchSoInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            btnFetchSystemList.click();
+        }
+    });
+}
+// --- END GET A LIST LOGIC ---
+
 function renderTableStructure() {
     const headerRow = document.getElementById('headerRow');
     const filterRow = document.getElementById('filterRow');
@@ -3126,15 +3201,37 @@ function getCurrentDateTime() {
 }
 
 // --- NEW: SEARCH ORDER LOGIC ---
-document.getElementById('btnSearchOrder').addEventListener('click', () => {
+document.getElementById('btnSearchOrder').addEventListener('click', async () => {
     const searchInput = document.getElementById('systemSearchSoInput').value.trim();
     if (!searchInput) {
         alert("Please enter an SO number to search.");
         return;
     }
 
-    // Look for the order in the live edits first, then the main database memory
-    const foundOrder = editedOrders[searchInput] || databaseOrders.find(o => String(o.so) === searchInput);
+    showGlobalLoader("Locating Order...");
+
+    // 1. Try to find the order in the live edits or main memory first
+    let foundOrder = null;
+    if (typeof editedOrders !== 'undefined' && editedOrders[searchInput]) {
+        foundOrder = editedOrders[searchInput];
+    } else if (typeof databaseOrders !== 'undefined' && databaseOrders.length > 0) {
+        foundOrder = databaseOrders.find(o => String(o.so) === searchInput);
+    }
+
+    // 2. If it's not in memory, ask the database directly
+    if (!foundOrder) {
+        const { data, error } = await supabaseClient
+            .from('orders')
+            .select('*')
+            .eq('so', searchInput)
+            .single();
+        
+        if (data && !error) {
+            foundOrder = data;
+        }
+    }
+
+    hideGlobalLoader();
 
     if (foundOrder) {
         openViewOnlyModal(foundOrder);
@@ -3196,17 +3293,23 @@ document.getElementById('hubSearchSoInput').addEventListener('keydown', (e) => {
 
 // Action 1: Agree (Coord)
 document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
-    // Pull the SO directly from the search box
     const activeSo = document.getElementById('systemSearchSoInput').value.trim();
     if (!activeSo) {
         alert("Please enter an SO number in the search box first.");
         return;
     }
     
-    // Verify it exists before taking action
-    const foundOrder = editedOrders[activeSo] || databaseOrders.find(o => String(o.so) === activeSo);
-    if (!foundOrder) {
-        alert(`Cannot apply action: Order SO ${activeSo} not found.`);
+    // VERIFY DIRECTLY WITH DATABASE
+    showGlobalLoader("Verifying Order...");
+    const { data: foundOrder, error: fetchErr } = await supabaseClient
+        .from('orders')
+        .select('so')
+        .eq('so', activeSo)
+        .single();
+    hideGlobalLoader();
+
+    if (fetchErr || !foundOrder) {
+        alert(`Cannot apply action: Order SO ${activeSo} not found in the database.`);
         return;
     }
 
@@ -3232,7 +3335,7 @@ document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
         return;
     }
 
-    // 3. NEW: Execute main orders table update!
+    // 3. Execute main orders table update!
     const { error: orderError } = await supabaseClient.from('orders')
         .update({ agree_coord: currentUsername })
         .eq('so', activeSo);
@@ -3284,15 +3387,23 @@ document.getElementById('btnSubmitTechAssign').addEventListener('click', async (
     const selectedTech = document.getElementById('masterTechDropdown').value;
 
     if (!activeSo) return;
-    
-    const foundOrder = editedOrders[activeSo] || databaseOrders.find(o => String(o.so) === activeSo);
-    if (!foundOrder) {
-        alert(`Cannot apply action: Order SO ${activeSo} not found.`);
-        return;
-    }
 
     if (!selectedTech) {
         alert("Please select a technician from the dropdown list first.");
+        return;
+    }
+
+    // VERIFY DIRECTLY WITH DATABASE
+    showGlobalLoader("Verifying Order...");
+    const { data: foundOrder, error: fetchErr } = await supabaseClient
+        .from('orders')
+        .select('so')
+        .eq('so', activeSo)
+        .single();
+    hideGlobalLoader();
+
+    if (fetchErr || !foundOrder) {
+        alert(`Cannot apply action: Order SO ${activeSo} not found in the database.`);
         return;
     }
 
@@ -3319,7 +3430,7 @@ document.getElementById('btnSubmitTechAssign').addEventListener('click', async (
         return;
     }
 
-    // 3. NEW: Execute main orders table update!
+    // 3. Execute main orders table update!
     const { error: orderError } = await supabaseClient.from('orders')
         .update({ 
             complete_coord: currentUsername,
@@ -3337,7 +3448,6 @@ document.getElementById('btnSubmitTechAssign').addEventListener('click', async (
         document.getElementById('masterTechDropdown').value = '';
     }
 });
-// ==========================================//
 
 // ==========================================
 // --- BONUSES / PERFORMANCE TRACKING PAGE ---

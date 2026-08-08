@@ -164,6 +164,8 @@
                     <label style="font-size: 12px; font-weight: bold; opacity: 0.8;">End:</label>
                     <input type="date" id="systemEndDate" style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
                     <button id="btnApplySystemDate" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; padding: 6px 12px; font-weight: bold; cursor: pointer; border-radius: 4px;">Apply Range</button>
+                    <div style="border-left: 2px solid var(--border-color); height: 24px; margin: 0 5px;"></div>
+                    <button id="btnToggleGetList" style="background-color: #8e24aa; color: white; border: 1px solid #6a1b9a; padding: 6px 12px; font-weight: bold; cursor: pointer; border-radius: 4px; margin-left: 5px;">Get a List</button>
                 </div>
 
                 <!-- Right Side: Action Buttons -->
@@ -178,6 +180,12 @@
                     <select id="masterTechDropdown" style="display: none; padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);"><option value="">-- Select Tech --</option></select>
                     <button id="btnSubmitTechAssign" style="display: none; background-color: #2e7d32; color: white; border: 1px solid #1b5e20; padding: 6px 12px; cursor: pointer; font-weight: bold; border-radius: 4px;">Confirm Completion</button>
                 </div>
+            </div>
+
+            <!-- Hidden Get List Container , this make a table based on the list of orders you provide -->
+            <div id="systemGetListContainer" style="display: none; width: 100%; gap: 10px; align-items: flex-start; margin-top: 10px; background: var(--card-bg); padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box;">
+                <textarea id="systemBatchSoInput" placeholder="Paste list of SOs here (one per line or comma separated)..." rows="3" style="flex-grow: 1; padding: 10px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></textarea>
+                <button id="btnFetchSystemList" style="background-color: #8e24aa; color: white; border: 1px solid #6a1b9a; padding: 10px 20px; font-weight: bold; cursor: pointer; border-radius: 4px; height: 100%;">Fetch & Draw Table</button>
             </div>
             
             <!-- BOTTOM ROW: Master Edit Tracker (Hidden unless clicking a cell) -->

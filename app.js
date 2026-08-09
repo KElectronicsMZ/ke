@@ -434,7 +434,8 @@ function applyRoleBasedMenuVisibility() {
     const btnAssignation = document.getElementById('btnAssignation');
     const btnMyOrders = document.getElementById('btnMyOrders');
     const btnBonuses = document.getElementById('btnBonuses');
-    const btnCollectMoney = document.getElementById('btnCollectMoney'); // Added this one too!
+    const btnCallCenter = document.getElementById('btnCallCenter'); 
+    const btnSettings = document.getElementById('btnSettings'); // <-- NEW
 
     // 1. Visible to EVERYONE
     if (btnMyOrders) btnMyOrders.style.display = 'block';
@@ -444,14 +445,23 @@ function applyRoleBasedMenuVisibility() {
     if (btnSystem) btnSystem.style.display = 'none';
     if (btnMonitor) btnMonitor.style.display = 'none';
     if (btnAssignation) btnAssignation.style.display = 'none';
-    if (btnCollectMoney) btnCollectMoney.style.display = 'none';
+    if (btnCallCenter) btnCallCenter.style.display = 'none';
+    if (btnSettings) btnSettings.style.display = 'none'; // <-- NEW
 
-    // 3. Show restricted buttons ONLY if they are NOT a technician
+    // 3. Show restricted buttons based on roles
     if (!role.includes('technician')) {
         if (btnSystem) btnSystem.style.display = 'block';
         if (btnMonitor) btnMonitor.style.display = 'block';
         if (btnAssignation) btnAssignation.style.display = 'block';
-        if (btnCollectMoney) btnCollectMoney.style.display = 'block';
+    }
+    
+    if (role === 'cc' || role.includes('manager') || role.includes('supervisor') || role.includes('coordinator')) {
+        if (btnCallCenter) btnCallCenter.style.display = 'block';
+    }
+
+    // Settings is STRICTLY for Managers and Supervisors
+    if (role.includes('manager') || role.includes('supervisor')) {
+        if (btnSettings) btnSettings.style.display = 'block';
     }
 }
 // ---------------------------------------------------
@@ -555,6 +565,20 @@ document.getElementById('systemHubBtn').addEventListener('click', () => {
     
     // Hide the system page and show the menu (HUB) page
     systemPage.classList.remove('active');
+    menuPage.classList.add('active');
+});
+
+// --- SETTINGS PAGE NAVIGATION ---
+const settingsPage = document.getElementById('settingsPage');
+
+document.getElementById('btnSettings').addEventListener('click', () => {
+    menuPage.classList.remove('active');
+    settingsPage.classList.add('active');
+    // We will add the logic to fetch the active switch states here in the next phase!
+});
+
+document.getElementById('settingsHubBtn').addEventListener('click', () => {
+    settingsPage.classList.remove('active');
     menuPage.classList.add('active');
 });
 
@@ -873,6 +897,66 @@ if (btnFetchSystemList && systemBatchSoInput) {
     });
 }
 // --- END GET A LIST LOGIC ---
+
+// --- MANUAL SEND TO CC QUEUE LOGIC ---
+const btnToggleSendToCC = document.getElementById('btnToggleSendToCC');
+const systemSendToCCContainer = document.getElementById('systemSendToCCContainer');
+
+if (btnToggleSendToCC && systemSendToCCContainer) {
+    btnToggleSendToCC.addEventListener('click', () => {
+        if (systemSendToCCContainer.style.display === 'none') {
+            systemSendToCCContainer.style.display = 'flex';
+        } else {
+            systemSendToCCContainer.style.display = 'none';
+        }
+    });
+}
+
+const btnSubmitSendToCC = document.getElementById('btnSubmitSendToCC');
+const systemCcSoInput = document.getElementById('systemCcSoInput');
+
+if (btnSubmitSendToCC && systemCcSoInput) {
+    btnSubmitSendToCC.addEventListener('click', async () => {
+        const rawText = systemCcSoInput.value;
+        const soList = rawText.split(/[\n,]+/).map(s => s.trim()).filter(s => s);
+
+        if (soList.length === 0) {
+            alert("Please paste at least one SO number.");
+            return;
+        }
+
+        btnSubmitSendToCC.disabled = true;
+        btnSubmitSendToCC.textContent = 'Sending...';
+
+        // RULE: Safely delete any existing pending records for these SOs so we cleanly overwrite them
+        await supabaseClient
+            .from('follow_up')
+            .delete()
+            .in('so', soList)
+            .eq('call_status', 'pending');
+
+        // Build the payload
+        const insertPayload = soList.map(so => ({
+            so: so,
+            call_type: 'manual_list', // We tag it specifically so the CC operator knows why it's here
+            call_status: 'pending'
+        }));
+
+        // Insert fresh records
+        const { error } = await supabaseClient.from('follow_up').insert(insertPayload);
+
+        btnSubmitSendToCC.disabled = false;
+        btnSubmitSendToCC.textContent = 'Send to Queue';
+
+        if (error) {
+            alert("Failed to send orders to Call Center: " + error.message);
+        } else {
+            alert(`✅ Success! ${soList.length} orders have been placed in the Call Center queue.`);
+            systemCcSoInput.value = '';
+            systemSendToCCContainer.style.display = 'none';
+        }
+    });
+}
 
 function renderTableStructure() {
     const headerRow = document.getElementById('headerRow');
@@ -4342,6 +4426,7 @@ function openDetailsModal(ticket, viewMode = 'technician') {
         <hr style="border-color: var(--border-color); margin: 12px 0;">
         <strong>Remark:</strong> ${ticket.remark || 'N/A'}<br>
         <strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}<br>
+        <strong>Status:</strong> ${ticket.status || 'N/A'}<br>
         <strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${ticket.assigned_tech || 'N/A'}</span><br>
         <strong>Route:</strong> ${ticket.rout || 'N/A'}<br>
         <strong>I/O:</strong> ${ticket.io || 'N/A'}<br>
@@ -5814,6 +5899,7 @@ document.getElementById('modalCopyBtn').addEventListener('click', () => {
     SN: ${t.serial || 'N/A'}
     Remark: ${t.remark || 'N/A'}
     Status Comment: ${t.status_comment || 'N/A'}
+    Status: ${t.status || 'N/A'}
     Assigned Tech: ${t.assigned_tech || 'N/A'}
     Route: ${t.rout || 'N/A'}
     I/O: ${t.io || 'N/A'}
@@ -5882,6 +5968,7 @@ function openViewOnlyModal(ticket) {
         <hr style="border-color: var(--border-color); margin: 12px 0;">
         <strong>Remark:</strong> ${ticket.remark || 'N/A'}<br>
         <strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}<br>
+        <strong>Status:</strong> ${ticket.status || 'N/A'}<br>
         <strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${ticket.assigned_tech || 'N/A'}</span><br>
         <strong>Route:</strong> ${ticket.rout || 'N/A'}<br>
         <strong>I/O:</strong> ${ticket.io || 'N/A'}<br>

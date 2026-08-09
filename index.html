@@ -18,6 +18,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <!-- Add this new line for the Zip functionality -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Add this new line for Excel export functionality -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- HEIC to JPG Converter -->
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 </head>
@@ -130,6 +132,7 @@
                 <button id="btnWipeMedia" style="background-color: #d32f2f; color: white; border: 1px solid #b71c1c; font-weight: bold; margin-right: 5px;">Wipe All Media</button>
                 <button id="btnDownloadMedia" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; font-weight: bold; margin-right: 15px;">Download All Media</button>
                 <button id="btnDownloadVisibleSystem" style="background-color: #2e7d32; color: white; border: 1px solid #1b5e20; font-weight: bold; margin-right: 15px;">Download Visible (Grouped)</button>
+                <button id="btnDownloadExcelSystem" style="background-color: #2e7d32; color: white; border: 1px solid #1b5e20; font-weight: bold; margin-right: 15px;">Download Excel</button>
                 <!-- System Backup & Restore Buttons -->
                 <button id="btnBackupCsv" style="background-color: #8e24aa; color: white; border: 1px solid #6a1b9a; font-weight: bold; margin-right: 5px;">Backup (CSV)</button>
                 <button id="btnBackupTxt" style="background-color: #8e24aa; color: white; border: 1px solid #6a1b9a; font-weight: bold; margin-right: 5px;">Backup (TXT)</button>

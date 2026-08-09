@@ -5624,6 +5624,63 @@ document.getElementById('btnDownloadVisibleSystem').addEventListener('click', ()
     downloadGroupedVisibleText('tableBody', editedOrders, ALL_COLUMNS, 'System_Visible_Export');
 });
 
+// --- EXCEL EXPORT FOR SYSTEM PAGE ---
+document.getElementById('btnDownloadExcelSystem').addEventListener('click', () => {
+    // 1. Check permissions (matches the rules of the button next to it)
+    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
+    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
+        alert("Access Denied: You do not have permission to download Excel exports.");
+        return;
+    }
+
+    const tableBody = document.getElementById('tableBody');
+    if (!tableBody || tableBody.children.length === 0) {
+        alert("No visible data to export.");
+        return;
+    }
+
+    // 2. Gather visible SOs from the DOM
+    const visibleSOs = Array.from(tableBody.querySelectorAll('tr')).map(tr => {
+        const soInput = Array.from(tr.querySelectorAll('input')).find(inp => inp.readOnly === true && inp.style.fontWeight === '900');
+        if (soInput) return soInput.value;
+        return null;
+    }).filter(val => val !== null);
+
+    if (visibleSOs.length === 0) {
+        alert("No valid orders found to export.");
+        return;
+    }
+
+    showGlobalLoader("Generating Excel File...");
+
+    // 3. Reconstruct the data matching the exact columns currently visible on screen
+    const excelData = visibleSOs.map(so => {
+        const rowData = editedOrders[so] || databaseOrders.find(o => String(o.so) === String(so)) || {};
+        let cleanRow = {};
+        
+        activeColumns.forEach(col => {
+            cleanRow[col] = rowData[col] || '';
+        });
+        
+        return cleanRow;
+    });
+
+    // 4. Generate and download the Excel file using SheetJS
+    try {
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Visible_Orders");
+        
+        // Create a neat filename with the date
+        const dateStr = new Date().toISOString().split('T')[0];
+        XLSX.writeFile(workbook, `System_Orders_${dateStr}.xlsx`);
+    } catch (error) {
+        alert("An error occurred while generating the Excel file: " + error.message);
+    }
+    
+    hideGlobalLoader();
+});
+
 // Bind Assignation Export
 document.getElementById('assignDownloadVisibleBtn').addEventListener('click', () => {
     const allowedRoles = ['coordinator', 'supervisor', 'manager']; 

@@ -1258,7 +1258,57 @@ function runFilters() {
     populateTableRows(filteredData);
 }
 
+// --- CALCULATE DAYS DIFFERENCE ---
+document.getElementById('btnUpdateDays').addEventListener('click', () => {
+    // 1. Get today's exact date (set time to midnight so the math is perfectly clean)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let updateCount = 0;
 
+    // 2. Loop through all the orders currently loaded on the screen
+    databaseOrders.forEach(order => {
+        const so = order.so;
+        
+        // Grab the date (check if the user already edited it inline first, otherwise use the database value)
+        const dateStr = (editedOrders[so] && editedOrders[so].date !== undefined) ? editedOrders[so].date : order.date;
+        
+        if (dateStr && String(dateStr).trim() !== '') {
+            // Split the string by either a period (.) or a slash (/)
+            const parts = String(dateStr).split(/[\.\/]/); 
+            
+            if (parts.length === 3) {
+                const month = parseInt(parts[0], 10) - 1; // JavaScript months start at 0 (January = 0)
+                const day = parseInt(parts[1], 10);
+                let year = parseInt(parts[2], 10);
+                
+                // Safety catch: If someone typed "26" instead of "2026", convert it
+                if (year < 100) year += 2000; 
+                
+                const orderDate = new Date(year, month, day);
+                
+                // 3. Do the math: Subtract order date from today, then convert milliseconds to days
+                const timeDiff = today.getTime() - orderDate.getTime();
+                const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24));
+                
+                // 4. Save it into the staging memory exactly as if the user typed it
+                if (!editedOrders[so]) {
+                    editedOrders[so] = { ...order };
+                }
+                editedOrders[so].days = daysDiff;
+                updateCount++;
+            }
+        }
+    });
+    
+    if (updateCount > 0) {
+        alert(`Successfully calculated days for ${updateCount} orders! Click 'Submit' to permanently save these changes to the database.`);
+        // 5. Force the table to erase itself and redraw with the new numbers
+        renderTableStructure();
+    } else {
+        alert("No valid dates were found to update.");
+    }
+});
 
 // --- 9. INLINE CHANGES SUBMISSION ---
 document.getElementById('systemSubmitBtn').addEventListener('click', async () => {

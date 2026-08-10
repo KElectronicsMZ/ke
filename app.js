@@ -572,9 +572,13 @@ document.getElementById('systemHubBtn').addEventListener('click', () => {
 const settingsPage = document.getElementById('settingsPage');
 
 document.getElementById('btnSettings').addEventListener('click', () => {
-    menuPage.classList.remove('active');
+    // 1. Turn off ANY page that is currently visible
+    document.querySelectorAll('.page.active').forEach(page => {
+        page.classList.remove('active');
+    });
+    
+    // 2. Turn on the Settings page
     settingsPage.classList.add('active');
-    // We will add the logic to fetch the active switch states here in the next phase!
 });
 
 document.getElementById('settingsHubBtn').addEventListener('click', () => {

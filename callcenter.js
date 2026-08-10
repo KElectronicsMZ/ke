@@ -74,23 +74,40 @@
     }
 
     // --- RENDER DYNAMIC TICKETS ---
-    function renderCCTickets(followUps, ordersData) {
+    async function renderCCTickets(followUps, ordersData) {
+        // Fetch recent repair logs to grab the latest technician comments
+        const soList = followUps.map(f => f.so);
+        const { data: logs } = await supabaseClient.from('repair_log').select('so, comment, assigned_by').in('so', soList).neq('comment', '');
+
         followUps.forEach(fu => {
-            // Match the follow-up record with the master order details
             const order = ordersData.find(o => String(o.so) === String(fu.so)) || {};
             
+            // Find the latest comment for this SO
+            const orderLogs = (logs || []).filter(l => String(l.so) === String(fu.so));
+            const latestLog = orderLogs.length > 0 ? orderLogs[orderLogs.length - 1] : null;
+            const techCommentHtml = latestLog ? `<div style="background: rgba(25, 118, 210, 0.1); padding: 8px; border-left: 3px solid #1976d2; margin-top: 8px; font-size: 13px;"><strong>Tech Comment (${latestLog.assigned_by}):</strong> ${latestLog.comment}</div>` : '';
+
             const card = document.createElement('div');
             card.className = 'ticket-card';
-            card.style.borderColor = '#ffb300'; // Unique Yellow/Orange border for CC
+            card.style.borderColor = '#ffb300'; 
             card.style.borderWidth = '2px';
 
-            // Safe Phone Links
             const safePhone1 = order.phone ? String(order.phone).replace(/\s+/g, '') : '';
             const safePhone2 = order.phone_2 ? String(order.phone_2).replace(/\s+/g, '') : '';
             const p1 = order.phone ? `<a class="phone-link" href="tel:${safePhone1}">📞 ${order.phone}</a>` : 'N/A';
             const p2 = order.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${order.phone_2}</a>` : 'N/A';
 
-            // 1. Build Master Info Section (Top part of ticket)
+            // Build Parts Array
+            let partsArray = [];
+            for (let i = 1; i <= 5; i++) {
+                let part = (order[`part_${i}`] || '').trim();
+                let qty = (order[`qty_${i}`] || '').trim();
+                if (part && part.toUpperCase() !== 'EMPTY') {
+                    partsArray.push(`${part} (x${qty && qty.toUpperCase() !== 'EMPTY' ? qty : '1'})`);
+                }
+            }
+            let partsHtml = partsArray.length > 0 ? `<div style="color: #8e24aa; font-size: 13px; font-weight: bold; margin-top: 8px;">🛠️ Parts: ${partsArray.join(', ')}</div>` : '';
+
             const baseInfoHTML = `
                 <div class="ticket-header" style="background: rgba(255, 179, 0, 0.1); padding: 10px; margin: -15px -15px 15px -15px; border-bottom: 2px solid #ffb300; border-radius: 8px 8px 0 0;">
                     <span><strong style="color: #ffb300; font-size: 16px;">[Call Center]</strong> SO: <span style="font-size: 16px;">${fu.so}</span></span>
@@ -100,11 +117,17 @@
                 <div class="ticket-row"><span><strong>Date:</strong> ${order.date || 'N/A'}</span> <span>${p2}</span></div>
                 <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${order.address || 'N/A'}</div>
                 <div class="ticket-row"><span><strong>Model:</strong> ${order.model || 'N/A'}</span> <span><strong>SN:</strong> ${order.serial || 'N/A'}</span></div>
-                <div class="ticket-row" style="margin-top: 5px;"><strong>Status Comment:</strong> ${order.status_comment || 'N/A'}</div>
-                <div class="ticket-row" style="margin-top: 5px;"><strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${order.assigned_tech || 'N/A'}</span></div>
+                <hr style="border-color: var(--border-color); margin: 8px 0;">
+                <div style="font-size: 13px; margin-bottom: 4px;"><strong>Remark:</strong> ${order.remark || 'N/A'}</div>
+                <div style="font-size: 13px; margin-bottom: 4px;"><strong>Status Comment:</strong> ${order.status_comment || 'N/A'}</div>
+                <div style="font-size: 13px; margin-bottom: 4px;"><strong>Route:</strong> ${order.rout || 'N/A'} | <strong>I/O:</strong> ${order.io || 'N/A'}</div>
+                <div style="font-size: 13px;"><strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${order.assigned_tech || 'N/A'}</span></div>
+                ${partsHtml}
+                ${techCommentHtml}
                 <hr style="border-color: var(--border-color); margin: 15px 0;">
             `;
 
+        
             // 2. Build Dynamic Form Based on Call Type
             let formHTML = '';
             
@@ -292,5 +315,45 @@
              ccTicketContainer.innerHTML = "<h3 style='text-align:center;'>Queue complete! 🎉</h3>";
         }
     }
+
+    // --- GLOBAL HELPER: Push to Call Center Queue ---
+    // This is attached to 'window' so app.js can call it easily
+    window.pushToCCQueue = async function(soList, callType) {
+        if (!soList || soList.length === 0) return;
+
+        // 1. Fetch live settings to see if this trigger is turned ON
+        const { data: settings } = await supabaseClient
+            .from('system_settings')
+            .select('*')
+            .eq('id', 1)
+            .single();
+
+        if (!settings) return;
+
+        // 2. Check if the specific trigger is enabled
+        let isEnabled = false;
+        if (callType === 'new_order' && settings.cc_trigger_new_order) isEnabled = true;
+        if (callType === 'qa_complete' && settings.cc_trigger_qa_complete) isEnabled = true;
+        if (callType === 'dispatch_live' && settings.cc_trigger_dispatch_live) isEnabled = true;
+
+        if (!isEnabled) return; // Stop if the manager turned this switch off
+
+        // 3. Delete any EXISTING 'pending' records for these SOs (Leaves 'submitted' intact!)
+        await supabaseClient
+            .from('follow_up')
+            .delete()
+            .in('so', soList)
+            .eq('call_status', 'pending');
+
+        // 4. Insert the fresh queue records
+        const insertPayload = soList.map(so => ({
+            so: String(so),
+            call_type: callType,
+            call_status: 'pending'
+        }));
+
+        await supabaseClient.from('follow_up').insert(insertPayload);
+        console.log(`[Call Center] Added ${soList.length} orders to queue for ${callType}`);
+    };
 
 })();

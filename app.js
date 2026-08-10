@@ -1403,6 +1403,7 @@ function processCSVText(text) {
         skipEmptyLines: true,
         complete: function(results) {
             const data = results.data;
+            let newSOsForCC = []; 
             
             data.forEach(csvRow => {
                 let rowObj = {};
@@ -1426,12 +1427,21 @@ function processCSVText(text) {
 
                 // Stage the row so the Submit button detects it as an edit/addition
                 if (rowObj.so) {
-                    if (!editedOrders[rowObj.so]) {
-                        editedOrders[rowObj.so] = {};
+                    // Check if it's completely new to the system
+                    const existingOrder = databaseOrders.find(o => String(o.so) === String(rowObj.so));
+                    if (!existingOrder && !editedOrders[rowObj.so]) {
+                        newSOsForCC.push(rowObj.so);
                     }
+
+                    if (!editedOrders[rowObj.so]) editedOrders[rowObj.so] = {};
                     editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
                 }
             });
+
+            // TRIGGER CALL CENTER if it's a new order and the settings allow it (check settings page)
+            if (newSOsForCC.length > 0 && typeof window.pushToCCQueue === 'function') {
+                window.pushToCCQueue(newSOsForCC, 'new_order');
+            }
 
             alert("CSV uploaded successfully! Click 'Submit' to sync these orders to the database.");
             renderTableStructure();
@@ -3066,6 +3076,13 @@ document.getElementById('assignNowInstantBtn').addEventListener('click', async (
     if (logErr) {
         alert("Orders assigned, but failed to log history: " + logErr.message);
     } else {
+
+        // TRIGGER CALL CENTER (if settings page allow it)
+        const dispatchedSOs = recordsToProcess.map(r => r.so);
+        if (typeof window.pushToCCQueue === 'function') {
+            window.pushToCCQueue(dispatchedSOs, 'dispatch_live');
+        }
+
         alert("⚡ Success! Orders instantly dispatched to the technicians!");
         
         // Clear the screen ready for the next batch
@@ -3214,6 +3231,12 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
         pushBtn.disabled = false;
         pushBtn.textContent = '🚀 Push Live Now';
         return;
+    }
+
+    // TRIGGER CALL CENTER
+    const pushedSOs = allowedToPush.map(r => r.so);
+    if (typeof window.pushToCCQueue === 'function') {
+        window.pushToCCQueue(pushedSOs, 'dispatch_live');
     }
 
     // 8. Final Cleanup: Wipe the entire staging table completely clean
@@ -3441,7 +3464,7 @@ document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
     showGlobalLoader("Verifying Order...");
     const { data: foundOrder, error: fetchErr } = await supabaseClient
         .from('orders')
-        .select('so')
+        .select('so, agree_coord') // <-- UPDATED: Fetch the agree_coord column
         .eq('so', activeSo)
         .single();
     hideGlobalLoader();
@@ -3450,6 +3473,13 @@ document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
         alert(`Cannot apply action: Order SO ${activeSo} not found in the database.`);
         return;
     }
+
+    // --- CHECK IF ALREADY AGREED ---
+    if (foundOrder.agree_coord && foundOrder.agree_coord.trim() !== '') {
+        alert(`Action blocked: This order was already agreed by ${foundOrder.agree_coord}.`);
+        return; // Stops the function here so nothing gets written to the database
+    }
+    // ------------------------------------
 
     const { date, time } = getCurrentDateTime();
     const currentUsername = currentUser ? currentUser.username : 'Unknown';
@@ -3535,7 +3565,7 @@ document.getElementById('btnSubmitTechAssign').addEventListener('click', async (
     showGlobalLoader("Verifying Order...");
     const { data: foundOrder, error: fetchErr } = await supabaseClient
         .from('orders')
-        .select('so')
+        .select('so, complete_coord') // <-- UPDATED: Fetch the complete_coord column
         .eq('so', activeSo)
         .single();
     hideGlobalLoader();
@@ -3544,6 +3574,18 @@ document.getElementById('btnSubmitTechAssign').addEventListener('click', async (
         alert(`Cannot apply action: Order SO ${activeSo} not found in the database.`);
         return;
     }
+
+    // --- NEW: CHECK IF ALREADY COMPLETED ---
+    if (foundOrder.complete_coord && foundOrder.complete_coord.trim() !== '') {
+        alert(`Action blocked: This order was already completed by ${foundOrder.complete_coord}.`);
+        
+        // Clean up the UI
+        document.getElementById('masterTechDropdown').style.display = 'none';
+        document.getElementById('btnSubmitTechAssign').style.display = 'none';
+        document.getElementById('masterTechDropdown').value = '';
+        return; // Stops the function here
+    }
+    // ---------------------------------------
 
     const { date, time } = getCurrentDateTime();
     const currentUsername = currentUser ? currentUser.username : 'Unknown';
@@ -4174,10 +4216,37 @@ async function loadActiveTickets(managerOverrideUser = null) {
 
     const targetName = managerOverrideUser || currentUser.username;
     
-    // Managers ALWAYS get the coordinator tools. Otherwise, base it on the target's role.
-    currentMyOrdersViewMode = (isManager || targetRole.includes('coordinator')) ? 'coordinator' : 'technician';
+    // Managers, coordinators, AND tracking users all get the coordinator tools.
+    currentMyOrdersViewMode = (isManager || targetRole.includes('coordinator') || targetRole.includes('tracking')) ? 'coordinator' : 'technician';
 
-    // --- COORDINATOR ROUTE (Also triggers if a Manager selects a Coordinator!) ---
+    // --- TRACKING ROUTE ---
+    if (targetRole.includes('tracking')) {
+        document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Loading Tracking Pool...</h3>";
+        try {
+            // Fetch all orders where the status is currently 'Tracking'
+            const { data, error } = await supabaseClient.from('orders').select('*').ilike('status', 'tracking');
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>No orders in the Tracking pool! 🎉</h3>";
+                originalMyOrders = [];
+                buildMyOrdersFilterTable();
+                if(document.getElementById('myOrdersCountBadge')) document.getElementById('myOrdersCountBadge').style.display = 'none';
+                return;
+            }
+
+            data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
+            originalMyOrders = [...data];
+            currentMyOrders = [...data];
+            buildMyOrdersFilterTable();
+            renderTickets(currentMyOrders, currentMyOrdersViewMode); 
+        } catch (err) {
+            alert("Error loading tracking tickets: " + err.message);
+        }
+        return; 
+    }
+
+    // --- EXISTING: COORDINATOR ROUTE (Also triggers if a Manager selects a Coordinator!) ---
     if (targetRole.includes('coordinator')) {
         document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Loading Back Office Pool...</h3>";
         try {
@@ -4498,6 +4567,14 @@ function openDetailsModal(ticket, viewMode = 'technician') {
     document.getElementById('coordHistorySection').style.display = 'block';
     fetchAndRenderTicketHistory(ticket.so);
     
+    // Reset accordion to closed state
+    document.getElementById('followUpContent').style.display = 'none';
+    document.getElementById('followUpArrow').textContent = '▼';
+    
+    // Fetch and populate the data in the background
+    fetchAndRenderFollowUpHistory(ticket.so);
+
+
     if (viewMode === 'coordinator') {
         // Hide Tech Zone
         document.getElementById('techActionSection').style.display = 'none';
@@ -5005,6 +5082,11 @@ confirmCoordBtn.addEventListener('click', async () => {
         confirmCoordBtn.disabled = false;
         confirmCoordBtn.textContent = 'Confirm Action ✅';
         return;
+    }
+
+    // TRIGGER CALL CENTER
+    if (newStatus === 'Complete' && typeof window.pushToCCQueue === 'function') {
+        window.pushToCCQueue([activeTechTicket.so], 'qa_complete');
     }
 
     alert(`Success: Order ${activeTechTicket.so} has been updated!`);
@@ -6818,3 +6900,78 @@ if (resetColumnsBtn) {
         alert("Layout and columns reset to factory defaults.");
     });
 }
+
+async function fetchAndRenderFollowUpHistory(soNumber) {
+    const contentBox = document.getElementById('followUpContent');
+    contentBox.innerHTML = '<span style="color: gray;">Loading follow-up records...</span>';
+
+    const { data: followUps, error } = await supabaseClient
+        .from('follow_up')
+        .select('*')
+        .eq('so', soNumber)
+        .eq('call_status', 'submitted')
+        .order('submitted_at', { ascending: false });
+
+    if (error || !followUps || followUps.length === 0) {
+        contentBox.innerHTML = '<span style="opacity: 0.7;">No completed follow-up records found for this order.</span>';
+        return;
+    }
+
+    contentBox.innerHTML = '';
+    
+    followUps.forEach(record => {
+        // Format the date nicely
+        const dateObj = new Date(record.submitted_at);
+        const niceDate = dateObj.toLocaleDateString() + ' at ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        // QA Questions layout
+        let qaHtml = '';
+        if (record.call_type === 'qa_complete') {
+            qaHtml = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;">
+                    <div><strong>Good Service:</strong> ${record.qa_good_service || '-'}</div>
+                    <div><strong>Cleaned Up:</strong> ${record.qa_clean || '-'}</div>
+                    <div><strong>Uniform:</strong> ${record.qa_uniform || '-'}</div>
+                    <div><strong>Overshoe:</strong> ${record.qa_overshoe || '-'}</div>
+                </div>
+            `;
+        }
+
+        // Audio Player
+        const audioHtml = record.recording_url ? `
+            <div style="margin-top: 10px;">
+                <audio controls style="width: 100%; height: 30px;">
+                    <source src="${record.recording_url}">
+                    Your browser does not support audio playback.
+                </audio>
+            </div>
+        ` : '';
+
+        const card = document.createElement('div');
+        card.style.cssText = "margin-bottom: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg);";
+        card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 5px; margin-bottom: 5px;">
+                <strong style="color: #ffb300;">${record.call_type.replace('_', ' ').toUpperCase()}</strong>
+                <span style="font-size: 11px; opacity: 0.8;">${niceDate}</span>
+            </div>
+            <div><strong>Operator:</strong> ${record.operator_name || 'Unknown'}</div>
+            <div style="margin-top: 5px;"><strong>Comment:</strong> ${record.comment || 'No comment left.'}</div>
+            ${qaHtml}
+            ${audioHtml}
+        `;
+        contentBox.appendChild(card);
+    });
+}
+
+// Attach the toggle button listener once globally
+document.getElementById('toggleFollowUpBtn').addEventListener('click', () => {
+    const content = document.getElementById('followUpContent');
+    const arrow = document.getElementById('followUpArrow');
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        arrow.textContent = '▲';
+    } else {
+        content.style.display = 'none';
+        arrow.textContent = '▼';
+    }
+});

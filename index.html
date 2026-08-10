@@ -610,6 +610,7 @@
                             <select id="coordStatusSelect" style="padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); margin-bottom: 10px;">
                                 <option value="">-- Select Action --</option>
                                 <option value="Pending">Pending</option>
+                                <option value="Tracking">Tracking</option>
                                 <option value="Complete">Complete</option>
                                 <option value="Cancel">Cancel</option>
                                 <option value="Replacement">Replacement</option>
@@ -630,6 +631,17 @@
                     </div>
                     
                 </div> <div id="uploadProgressContainer" style="display: none; padding: 15px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 15px; font-size: 14px; font-weight: bold; color: var(--text-color);">
+                </div>
+
+                <!-- EXPANDABLE FOLLOW UP DETAILS -->
+                <div style="margin-top: 20px; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden;">
+                    <button id="toggleFollowUpBtn" style="width: 100%; background: rgba(255, 179, 0, 0.1); border: none; padding: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: var(--text-color);">
+                        <span style="color: #ffb300;">📞 Follow Up Details</span>
+                        <span id="followUpArrow">▼</span>
+                    </button>
+                    <div id="followUpContent" style="display: none; padding: 15px; background: var(--bg-color); font-size: 13px; max-height: 300px; overflow-y: auto;">
+                        <span style="color: gray;">Loading...</span>
+                    </div>
                 </div>
                 
                 <div class="modal-footer">

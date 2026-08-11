@@ -50,6 +50,8 @@
                     <option value="warm-brown">Warm Brown</option>
                     <option value="royal-gold">Royal Gold</option>
                     <option value="gold-black">Gold & Black</option>
+                    <option value="brushed-steel">Brushed Steel (Silver)</option>
+                    <option value="blood-moon">Blood Moon (Black & Red)</option>
                     <option value="deep-crimson">Deep Crimson</option>
                     <option value="sun-flower">Sun Flower</option>
                 </select>
@@ -716,11 +718,50 @@
     <!-- CALL CENTER PAGE -->
     <div id="callCenterPage" class="page">
         <div class="system-header" style="width: 100%; max-width: 600px; flex-direction: column; align-items: center; gap: 10px;">
-            <h2 style="margin: 0;">📞 Call Center Queue</h2>
-            <button id="ccHubBtn" class="details-btn" style="width: auto; padding: 8px 30px; margin-top: 0;">Back to HUB</button>
+            <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                📞 Call Center Queue 
+                <span id="ccQueueCountBadge" style="background: #ffb300; color: #000; padding: 2px 10px; border-radius: 10px; font-size: 16px; font-weight: bold; display: none;">0</span>
+            </h2>
+            <div style="display: flex; gap: 10px; width: 100%;">
+                <button id="ccHistoryBtn" class="details-btn" style="flex: 1; margin-top: 0; background: #8e24aa; color: white; border: 1px solid #6a1b9a;">📜 View History</button>
+                <button id="ccHubBtn" class="details-btn" style="flex: 1; margin-top: 0;">Back to HUB</button>
+            </div>
         </div>
-        <div id="ccTicketContainer" style="width: 100%; max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; padding: 10px;">
-            <!-- CC Tickets will be injected here by Javascript -->
+        
+        <!-- QUEUE VIEW -->
+        <div id="ccQueueView" style="width: 100%; max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; padding: 10px;">
+            <div id="ccTicketContainer" style="display: flex; flex-direction: column; gap: 15px;">
+                <!-- CC Tickets will be injected here by Javascript -->
+            </div>
+        </div>
+
+        <!-- HISTORY VIEW (Hidden by default) -->
+        <div id="ccHistoryView" style="display: none; width: 100%; flex-direction: column; align-items: center; gap: 15px; padding: 10px; max-width: 90vw;">
+            
+            <!-- Date Filter Banner -->
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; background: var(--card-bg); padding: 15px; border-radius: 4px; border: 1px solid var(--border-color); width: 100%;">
+                <div style="display: flex; flex-direction: column;">
+                    <label style="font-size: 12px; font-weight: bold; opacity: 0.8;">Start Date:</label>
+                    <input type="date" id="ccHistStartDate" style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                </div>
+                <div style="display: flex; flex-direction: column;">
+                    <label style="font-size: 12px; font-weight: bold; opacity: 0.8;">End Date:</label>
+                    <input type="date" id="ccHistEndDate" style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                </div>
+                <div style="display: flex; align-items: flex-end;">
+                    <button id="btnFetchCcHistory" class="primary-btn" style="height: 32px; padding: 0 15px;">Apply Filter</button>
+                </div>
+            </div>
+
+            <!-- History Table -->
+            <div class="table-container" style="width: 100%; max-height: 60vh;">
+                <table id="ccHistoryTable">
+                    <thead id="ccHistHeaderRow"></thead>
+                    <tbody id="ccHistTableBody"></tbody>
+                </table>
+            </div>
+
+            <button id="ccBackToQueueBtn" class="secondary-btn" style="width: 100%; max-width: 300px;">🔙 Back to Queue</button>
         </div>
     </div>
     

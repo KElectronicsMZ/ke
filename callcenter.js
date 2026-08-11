@@ -10,6 +10,11 @@
     const menuPage = document.getElementById('menuPage');
     const ccTicketContainer = document.getElementById('ccTicketContainer');
 
+    // --- MEMORY VARIABLES FOR FILTER ENGINE ---
+    let ccOriginalFollowUps = [];
+    let ccOriginalOrdersData = [];
+    let ccOriginalLogs = [];
+
     // --- NAVIGATION LOGIC ---
     if (btnCallCenter) {
         btnCallCenter.addEventListener('click', () => {
@@ -53,6 +58,10 @@
         if (!followUps || followUps.length === 0) {
             if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
             ccTicketContainer.innerHTML = "<h3 style='text-align:center;'>No pending calls in the queue! 🎉</h3>";
+            
+            const badge = document.getElementById('ccQueueCountBadge');
+            if (badge) badge.style.display = 'none';
+            
             return;
         }
 
@@ -63,6 +72,13 @@
             .select('*')
             .in('so', soList);
 
+        // --- NEW: Fetch logs once here to prevent server spam during live filtering ---
+        const { data: logsData } = await supabaseClient
+            .from('repair_log')
+            .select('so, comment, assigned_by')
+            .in('so', soList)
+            .neq('comment', '');
+
         if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
 
         if (ordErr) {
@@ -70,19 +86,32 @@
             return;
         }
 
-        renderCCTickets(followUps, ordersData || []);
+        // --- NEW: Save data to memory for the filter engine ---
+        ccOriginalFollowUps = followUps;
+        ccOriginalOrdersData = ordersData || [];
+        ccOriginalLogs = logsData || [];
+
+        buildCCFilterTable(); // Build the search boxes
+        renderCCTickets(ccOriginalFollowUps, ccOriginalOrdersData, ccOriginalLogs);
+        
+        // Update and show the badge
+        const badge = document.getElementById('ccQueueCountBadge');
+        if (badge) {
+            badge.textContent = followUps.length;
+            badge.style.display = 'inline-block';
+        }
     }
 
+    
     // --- RENDER DYNAMIC TICKETS ---
-    async function renderCCTickets(followUps, ordersData) {
-        // Fetch recent repair logs to grab the latest technician comments
-        const soList = followUps.map(f => f.so);
-        const { data: logs } = await supabaseClient.from('repair_log').select('so, comment, assigned_by').in('so', soList).neq('comment', '');
+    // Accepts logs as a parameter and clears the container
+    async function renderCCTickets(followUps, ordersData, logs = ccOriginalLogs) {
+        ccTicketContainer.innerHTML = ''; // Wipe old tickets before drawing new ones
 
         followUps.forEach(fu => {
             const order = ordersData.find(o => String(o.so) === String(fu.so)) || {};
             
-            // Find the latest comment for this SO
+            // Find the latest comment for this SO using the passed logs
             const orderLogs = (logs || []).filter(l => String(l.so) === String(fu.so));
             const latestLog = orderLogs.length > 0 ? orderLogs[orderLogs.length - 1] : null;
             const techCommentHtml = latestLog ? `<div style="background: rgba(25, 118, 210, 0.1); padding: 8px; border-left: 3px solid #1976d2; margin-top: 8px; font-size: 13px;"><strong>Tech Comment (${latestLog.assigned_by}):</strong> ${latestLog.comment}</div>` : '';
@@ -208,6 +237,121 @@
         });
     }
 
+    // ==========================================
+    // --- CALL CENTER FILTER ENGINE ---
+    // ==========================================
+    
+    function buildCCFilterTable() {
+        let filterContainer = document.getElementById('ccFilterContainer');
+
+        // Create the HTML container dynamically if it doesn't exist yet
+        if (!filterContainer) {
+            filterContainer = document.createElement('div');
+            filterContainer.id = 'ccFilterContainer';
+            // Styling modeled exactly after the My Orders table
+            filterContainer.style.cssText = 'width: 100%; margin: 0 auto 15px auto; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden;';
+
+            filterContainer.innerHTML = `
+                <table style="width: 100%; border-collapse: collapse; text-align: center; table-layout: fixed;">
+                    <thead>
+                        <tr id="ccFilterHeaders"></tr>
+                        <tr id="ccFilterInputs"></tr>
+                    </thead>
+                </table>
+            `;
+            // Insert it right above the ticket container
+            const queueView = document.getElementById('ccQueueView');
+            queueView.insertBefore(filterContainer, ccTicketContainer);
+        }
+
+        const headerRow = document.getElementById('ccFilterHeaders');
+        const inputRow = document.getElementById('ccFilterInputs');
+
+        if (ccOriginalFollowUps.length === 0) {
+            filterContainer.style.display = 'none';
+            return;
+        }
+
+        filterContainer.style.display = 'block';
+        headerRow.innerHTML = '';
+        inputRow.innerHTML = '';
+
+        // Columns we want to filter by
+        const CC_FILTER_COLS = [
+            { key: 'so', label: 'SO' },
+            { key: 'call_type', label: 'Type' },
+            { key: 'date', label: 'Date' },
+            { key: 'rout', label: 'Rout' },
+            { key: 'phone', label: 'Phone' }
+        ];
+
+        CC_FILTER_COLS.forEach(col => {
+            // 1. Build Header Name
+            const th = document.createElement('th');
+            th.style.padding = "5px";
+            th.style.borderBottom = "1px solid var(--border-color)";
+            th.style.borderRight = "1px solid var(--border-color)";
+            th.innerHTML = `<span style="font-weight:bold; font-size: 13px; color: #1976d2;">${col.label}</span>`;
+            headerRow.appendChild(th);
+
+            // 2. Build Input Box
+            const td = document.createElement('th');
+            td.style.padding = "2px";
+            td.style.borderRight = "1px solid var(--border-color)";
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.dataset.column = col.key;
+            input.style.width = '100%';
+            input.style.boxSizing = 'border-box';
+            input.style.padding = '4px 2px';
+            input.style.fontSize = '12px';
+            input.style.background = 'var(--bg-color)';
+            input.style.color = 'var(--text-color)';
+            input.style.border = '1px solid var(--border-color)';
+            input.style.borderRadius = '2px';
+
+            // Trigger the filter function when the user types
+            input.addEventListener('input', runCCFilters);
+
+            td.appendChild(input);
+            inputRow.appendChild(td);
+        });
+    }
+
+    function runCCFilters() {
+        const filterInputs = document.querySelectorAll('#ccFilterInputs input');
+        let filteredFollowUps = [...ccOriginalFollowUps];
+
+        filterInputs.forEach(input => {
+            const val = input.value.toLowerCase().trim();
+            const colKey = input.dataset.column;
+
+            if (val) {
+                filteredFollowUps = filteredFollowUps.filter(fu => {
+                    const order = ccOriginalOrdersData.find(o => String(o.so) === String(fu.so)) || {};
+
+                    let cellValue = '';
+                    if (colKey === 'so' || colKey === 'call_type') {
+                        // Data stored in the follow_up table
+                        cellValue = String(fu[colKey] || '').toLowerCase();
+                    } else if (colKey === 'phone') {
+                        // Search both phone columns for a match
+                        cellValue = String(order.phone || '').toLowerCase() + ' ' + String(order.phone_2 || '').toLowerCase();
+                    } else {
+                        // Data stored in the orders table (date, rout, etc)
+                        cellValue = String(order[colKey] || '').toLowerCase();
+                    }
+
+                    return cellValue.includes(val);
+                });
+            }
+        });
+
+        // Instantly redraw the tickets with the filtered results!
+        renderCCTickets(filteredFollowUps, ccOriginalOrdersData, ccOriginalLogs);
+    }
+
     // --- FORM SUBMISSION ENGINE ---
     async function submitCCForm(fuData, cardEl, btnEl) {
         btnEl.disabled = true;
@@ -311,7 +455,17 @@
         alert("Follow Up successfully submitted!");
         cardEl.remove(); 
 
-        if (ccTicketContainer.children.length === 0) {
+        
+        // Count the remaining tickets and update the badge dynamically
+        const remainingCards = ccTicketContainer.querySelectorAll('.ticket-card').length;
+        const badge = document.getElementById('ccQueueCountBadge');
+        
+        if (badge) {
+            badge.textContent = remainingCards;
+            if (remainingCards === 0) badge.style.display = 'none';
+        }
+
+        if (remainingCards === 0) {
              ccTicketContainer.innerHTML = "<h3 style='text-align:center;'>Queue complete! 🎉</h3>";
         }
     }
@@ -356,4 +510,343 @@
         console.log(`[Call Center] Added ${soList.length} orders to queue for ${callType}`);
     };
 
+    // ==========================================
+    // --- MANUAL SEND TO CC QUEUE LOGIC ---
+    // (Operates on the System Page)
+    // ==========================================
+    const btnToggleSendToCC = document.getElementById('btnToggleSendToCC');
+    const systemSendToCCContainer = document.getElementById('systemSendToCCContainer');
+    const btnSubmitSendToCC = document.getElementById('btnSubmitSendToCC');
+    const btnSubmitSendToCCQA = document.getElementById('btnSubmitSendToCCQA');
+    const systemCcSoInput = document.getElementById('systemCcSoInput');
+
+    if (btnToggleSendToCC && systemSendToCCContainer) {
+        btnToggleSendToCC.addEventListener('click', () => {
+            if (systemSendToCCContainer.style.display === 'none') {
+                systemSendToCCContainer.style.display = 'flex';
+            } else {
+                systemSendToCCContainer.style.display = 'none';
+            }
+        });
+    }
+
+    // Reusable function to handle sending specific call types
+    async function processManualCCQueue(callType, buttonElement) {
+        const rawText = systemCcSoInput.value;
+        const soList = rawText.split(/[\n,]+/).map(s => s.trim()).filter(s => s);
+
+        if (soList.length === 0) {
+            alert("Please paste at least one SO number.");
+            return;
+        }
+
+        // Save original text to restore it if needed
+        const originalText = buttonElement.textContent;
+        buttonElement.disabled = true;
+        buttonElement.textContent = 'Sending...';
+
+        // RULE: Safely delete any existing pending records for these SOs so we cleanly overwrite them
+        await supabaseClient
+            .from('follow_up')
+            .delete()
+            .in('so', soList)
+            .eq('call_status', 'pending');
+
+        // Build the payload with the specific call type passed from the button
+        const insertPayload = soList.map(so => ({
+            so: String(so),
+            call_type: callType, 
+            call_status: 'pending'
+        }));
+
+        // Insert fresh records
+        const { error } = await supabaseClient.from('follow_up').insert(insertPayload);
+
+        buttonElement.disabled = false;
+        buttonElement.textContent = originalText;
+
+        if (error) {
+            alert("Failed to send orders to Call Center: " + error.message);
+        } else {
+            alert(`✅ Success! ${soList.length} orders have been placed in the Call Center queue as '${callType}'.`);
+            systemCcSoInput.value = '';
+            systemSendToCCContainer.style.display = 'none';
+        }
+    }
+
+    // Hook up both buttons to the engine
+    if (btnSubmitSendToCC && systemCcSoInput) {
+        btnSubmitSendToCC.addEventListener('click', () => {
+            processManualCCQueue('manual_list', btnSubmitSendToCC);
+        });
+    }
+
+    if (btnSubmitSendToCCQA && systemCcSoInput) {
+        btnSubmitSendToCCQA.addEventListener('click', () => {
+            processManualCCQueue('qa_complete', btnSubmitSendToCCQA);
+        });
+    }
+
+    // ==========================================
+    // --- CALL CENTER HISTORY VIEW LOGIC ---
+    // ==========================================
+    const ccQueueView = document.getElementById('ccQueueView');
+    const ccHistoryView = document.getElementById('ccHistoryView');
+    const ccHistoryBtn = document.getElementById('ccHistoryBtn');
+    const ccBackToQueueBtn = document.getElementById('ccBackToQueueBtn');
+    const btnFetchCcHistory = document.getElementById('btnFetchCcHistory');
+    const ccHistStartDate = document.getElementById('ccHistStartDate');
+    const ccHistEndDate = document.getElementById('ccHistEndDate');
+    
+    let ccHistoryData = [];
+    let ccHistorySortDir = {};
+
+    // 1. View Toggles
+    if (ccHistoryBtn) {
+        ccHistoryBtn.addEventListener('click', () => {
+            ccQueueView.style.display = 'none';
+            ccHistoryView.style.display = 'flex';
+            
+            // Auto-fill dates with the last 30 days if empty
+            if (!ccHistStartDate.value || !ccHistEndDate.value) {
+                const now = new Date();
+                const past30 = new Date();
+                past30.setDate(now.getDate() - 30);
+                
+                const formatInputDate = (dateObj) => {
+                    const y = dateObj.getFullYear();
+                    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+                    const d = String(dateObj.getDate()).padStart(2, '0');
+                    return `${y}-${m}-${d}`;
+                };
+                
+                ccHistStartDate.value = formatInputDate(past30);
+                ccHistEndDate.value = formatInputDate(now);
+            }
+        });
+    }
+
+    if (ccBackToQueueBtn) {
+        ccBackToQueueBtn.addEventListener('click', () => {
+            ccHistoryView.style.display = 'none';
+            ccQueueView.style.display = 'flex';
+        });
+    }
+
+    // 2. Fetch History Logic
+    if (btnFetchCcHistory) {
+        btnFetchCcHistory.addEventListener('click', async () => {
+            const start = ccHistStartDate.value;
+            const end = ccHistEndDate.value;
+            
+            if (!start || !end) {
+                alert("Please select both a start and end date.");
+                return;
+            }
+
+            if (typeof showGlobalLoader === 'function') showGlobalLoader("Fetching Call Logs...");
+
+            // Time padding to ensure the entire end day is included mathematically
+            const startISO = `${start}T00:00:00.000Z`;
+            const endISO = `${end}T23:59:59.999Z`;
+
+            const { data, error } = await supabaseClient
+                .from('follow_up')
+                .select('*')
+                .gte('submitted_at', startISO)
+                .lte('submitted_at', endISO)
+                .order('submitted_at', { ascending: false });
+
+            if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
+
+            if (error) {
+                alert("Failed to fetch history: " + error.message);
+                return;
+            }
+
+            ccHistoryData = data || [];
+            renderCcHistoryTable();
+        });
+    }
+
+    // 3. Render Table
+    function renderCcHistoryTable() {
+        const thead = document.getElementById('ccHistHeaderRow');
+        const tbody = document.getElementById('ccHistTableBody');
+        
+        // Define exactly what columns we want to see
+        const CC_HIST_COLUMNS = [
+            { key: 'so', label: 'SO' },
+            { key: 'call_type', label: 'Type' },
+            { key: 'call_status', label: 'Status' },
+            { key: 'operator_name', label: 'Operator' },
+            { key: 'submitted_at', label: 'Submitted At' },
+            { key: 'qa_good_service', label: 'QA: Good' },
+            { key: 'qa_clean', label: 'QA: Clean' },
+            { key: 'qa_uniform', label: 'QA: Uniform' },
+            { key: 'qa_overshoe', label: 'QA: Overshoe' },
+            { key: 'comment', label: 'Comment' },
+            { key: 'recording_url', label: 'Recording' }
+        ];
+
+        // Build Headers and Search Filters (Only once)
+        if (thead.children.length === 0) {
+            const trHead = document.createElement('tr');
+            
+            // Index column header
+            const indexTh = document.createElement('th');
+            indexTh.innerHTML = `<div>#</div><input type="text" disabled style="width: 100%; box-sizing: border-box; margin-top: 5px; padding: 4px; border: 1px solid transparent; background: transparent; visibility: hidden;">`;
+            trHead.appendChild(indexTh);
+
+            CC_HIST_COLUMNS.forEach(col => {
+                const th = document.createElement('th');
+                
+                // Sorting header
+                th.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <span class="sort-header" style="cursor:pointer; font-weight:bold;">${col.label}</span>
+                    </div>
+                `;
+                th.querySelector('.sort-header').addEventListener('click', () => sortCcHistoryColumn(col.key));
+                
+                // Excel-Style Search Input
+                const searchInput = document.createElement('input');
+                searchInput.type = 'text';
+                searchInput.placeholder = 'Search...';
+                searchInput.style.cssText = 'width: 100%; box-sizing: border-box; margin-top: 5px; padding: 4px; font-size: 11px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--bg-color); color: var(--text-color);';
+                searchInput.addEventListener('keyup', filterCcHistoryTable);
+                
+                th.appendChild(searchInput);
+                trHead.appendChild(th);
+            });
+            thead.appendChild(trHead);
+        }
+
+        // Build Body Rows
+        tbody.innerHTML = '';
+        ccHistoryData.forEach((row, index) => {
+            const tr = document.createElement('tr');
+            
+            // Number column
+            const indexTd = document.createElement('td');
+            indexTd.textContent = index + 1;
+            indexTd.style.textAlign = 'center';
+            indexTd.style.fontWeight = 'bold';
+            tr.appendChild(indexTd);
+
+            CC_HIST_COLUMNS.forEach(col => {
+                const td = document.createElement('td');
+                
+                if (col.key === 'so') {
+                    // Make SO clickable to instantly load and open the view-only ticket
+                    const a = document.createElement('a');
+                    a.href = '#';
+                    a.textContent = row[col.key] || '';
+                    a.style.cssText = 'color: var(--text-color); font-weight: 900; text-decoration: underline; cursor: pointer;';
+                    a.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        if (typeof showGlobalLoader === 'function') showGlobalLoader("Fetching Ticket Details...");
+                        // Fetch the master order details using the SO
+                        const { data: orderData } = await supabaseClient.from('orders').select('*').eq('so', row.so).single();
+                        if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
+
+                        if (orderData && typeof openViewOnlyModal === 'function') {
+                            openViewOnlyModal(orderData); // Opens your universal modal
+                        } else {
+                            alert("Could not load full ticket details for SO: " + row.so);
+                        }
+                    });
+                    td.appendChild(a);
+                } else if (col.key === 'submitted_at') {
+                    if (row[col.key]) {
+                        const d = new Date(row[col.key]);
+                        td.textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    }
+                } else if (col.key === 'recording_url') {
+                    if (row[col.key]) {
+                        const a = document.createElement('a');
+                        a.href = row[col.key];
+                        a.target = '_blank';
+                        a.textContent = '🔊 Listen';
+                        a.style.cssText = 'color: #1976d2; font-weight: bold; text-decoration: none;';
+                        td.appendChild(a);
+                    } else {
+                        td.textContent = 'N/A';
+                    }
+                } else {
+                    td.textContent = row[col.key] !== null ? row[col.key] : '';
+                }
+                
+                // Add styling to prevent ugly cell stretching
+                td.style.padding = "6px";
+                td.style.fontSize = "13px";
+                td.style.whiteSpace = "nowrap";
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+
+        // Hook into the global column resizer so the user can drag columns
+        if (typeof applyResizableColumns === 'function') {
+            applyResizableColumns('ccHistoryTable', 'cchist_cols');
+        }
+    }
+
+    // 4. Filtering Logic
+    function filterCcHistoryTable() {
+        const trs = document.getElementById('ccHistTableBody').getElementsByTagName('tr');
+        const inputs = document.getElementById('ccHistHeaderRow').getElementsByTagName('input');
+        
+        let visibleCount = 1; 
+        
+        for (let i = 0; i < trs.length; i++) {
+            let showRow = true;
+            const tds = trs[i].getElementsByTagName('td');
+            
+            for (let j = 0; j < inputs.length; j++) {
+                const filterText = inputs[j].value.toLowerCase();
+                if (filterText !== '') {
+                    if (tds[j]) {
+                        const cellText = tds[j].textContent.toLowerCase();
+                        if (cellText.indexOf(filterText) === -1) {
+                            showRow = false; 
+                            break; 
+                        }
+                    }
+                }
+            }
+            
+            trs[i].style.display = showRow ? '' : 'none';
+            // Renumber visible rows dynamically
+            if (showRow && tds[0]) {
+                tds[0].textContent = visibleCount++;
+            }
+        }
+    }
+
+    // 5. Sorting Logic
+    function sortCcHistoryColumn(colKey) {
+        const currentDir = ccHistorySortDir[colKey] === 'asc' ? 'desc' : 'asc';
+        ccHistorySortDir = { [colKey]: currentDir }; 
+
+        ccHistoryData.sort((a, b) => {
+            let valA = a[colKey] || '';
+            let valB = b[colKey] || '';
+
+            if (colKey === 'submitted_at') {
+                const dateA = new Date(valA || '1970-01-01');
+                const dateB = new Date(valB || '1970-01-01');
+                return currentDir === 'asc' ? dateA - dateB : dateB - dateA;
+            }
+
+            return currentDir === 'asc' 
+                ? String(valA).localeCompare(String(valB)) 
+                : String(valB).localeCompare(String(valA));
+        });
+
+        renderCcHistoryTable();
+        filterCcHistoryTable(); 
+    }
+
+   
 })();

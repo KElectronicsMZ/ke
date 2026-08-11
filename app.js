@@ -915,65 +915,7 @@ if (btnFetchSystemList && systemBatchSoInput) {
 }
 // --- END GET A LIST LOGIC ---
 
-// --- MANUAL SEND TO CC QUEUE LOGIC ---
-const btnToggleSendToCC = document.getElementById('btnToggleSendToCC');
-const systemSendToCCContainer = document.getElementById('systemSendToCCContainer');
 
-if (btnToggleSendToCC && systemSendToCCContainer) {
-    btnToggleSendToCC.addEventListener('click', () => {
-        if (systemSendToCCContainer.style.display === 'none') {
-            systemSendToCCContainer.style.display = 'flex';
-        } else {
-            systemSendToCCContainer.style.display = 'none';
-        }
-    });
-}
-
-const btnSubmitSendToCC = document.getElementById('btnSubmitSendToCC');
-const systemCcSoInput = document.getElementById('systemCcSoInput');
-
-if (btnSubmitSendToCC && systemCcSoInput) {
-    btnSubmitSendToCC.addEventListener('click', async () => {
-        const rawText = systemCcSoInput.value;
-        const soList = rawText.split(/[\n,]+/).map(s => s.trim()).filter(s => s);
-
-        if (soList.length === 0) {
-            alert("Please paste at least one SO number.");
-            return;
-        }
-
-        btnSubmitSendToCC.disabled = true;
-        btnSubmitSendToCC.textContent = 'Sending...';
-
-        // RULE: Safely delete any existing pending records for these SOs so we cleanly overwrite them
-        await supabaseClient
-            .from('follow_up')
-            .delete()
-            .in('so', soList)
-            .eq('call_status', 'pending');
-
-        // Build the payload
-        const insertPayload = soList.map(so => ({
-            so: so,
-            call_type: 'manual_list', // We tag it specifically so the CC operator knows why it's here
-            call_status: 'pending'
-        }));
-
-        // Insert fresh records
-        const { error } = await supabaseClient.from('follow_up').insert(insertPayload);
-
-        btnSubmitSendToCC.disabled = false;
-        btnSubmitSendToCC.textContent = 'Send to Queue';
-
-        if (error) {
-            alert("Failed to send orders to Call Center: " + error.message);
-        } else {
-            alert(`✅ Success! ${soList.length} orders have been placed in the Call Center queue.`);
-            systemCcSoInput.value = '';
-            systemSendToCCContainer.style.display = 'none';
-        }
-    });
-}
 
 function renderTableStructure() {
     const headerRow = document.getElementById('headerRow');

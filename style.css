@@ -63,6 +63,25 @@ body[data-theme="deep-crimson"] {
     --btn-hover: #e53935;
 }
 
+
+body[data-theme="blood-moon"] {
+    --bg-color: #0a0a0a;
+    --card-bg: #141414;
+    --text-color: #ff4d4d;
+    --border-color: #5c0000;
+    --btn-bg: #990000;
+    --btn-hover: #cc0000;
+}
+
+body[data-theme="brushed-steel"] {
+    --bg-color: #e0e4e8;
+    --card-bg: #f4f6f8;
+    --text-color: #2c3539; 
+    --border-color: #b0b8c1;
+    --btn-bg: #9ca6b0;
+    --btn-hover: #7b8893;
+}
+
 body[data-theme="sun-flower"] {
     --bg-color: #fffde7;
     --card-bg: #ffffff;

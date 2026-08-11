@@ -9,7 +9,7 @@
         // Register the Service Worker if the browser supports it
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js');
+                navigator.serviceWorker.register('./sw.js');
             });
         }
     </script>

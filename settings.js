@@ -3,7 +3,7 @@
 // ==========================================
 
 (function() {
-    // 1. Grab the HTML elements using the EXACT IDs from your index.html
+    // 1. Grab HTML elements
     const saveButton = document.getElementById('save-settings-btn');
     const newOrdersBox = document.getElementById('trigger-new-orders');
     const qaCompleteBox = document.getElementById('trigger-qa-complete');
@@ -11,71 +11,225 @@
     const successMsg = document.getElementById('ccSettingsSavedMsg'); 
     const btnSettings = document.getElementById('btnSettings');
 
-    // 2. Load the current settings from the database when the Settings page opens
+    // Permissions UI elements
+    const roleSelectDropdown = document.getElementById('roleSelectDropdown');
+    const permissionsContainer = document.getElementById('permissionsContainer');
+    const savePermissionsBtn = document.getElementById('save-permissions-btn');
+    const permSettingsSavedMsg = document.getElementById('permSettingsSavedMsg');
+
+    // User Role UI elements
+    const userSelectDropdown = document.getElementById('userSelectDropdown');
+    const assignRoleContainer = document.getElementById('assignRoleContainer');
+    const assignRoleDropdown = document.getElementById('assignRoleDropdown');
+    const currentUserRoleText = document.getElementById('currentUserRoleText');
+    const saveUserRoleBtn = document.getElementById('save-user-role-btn');
+    const userRoleSavedMsg = document.getElementById('userRoleSavedMsg');
+
+    // Maps database columns to clean labels for the UI
+    const permissionMap = [
+        { col: 'can_view_my_orders', label: 'My Orders' },
+        { col: 'can_view_monitor', label: 'Monitor' },
+        { col: 'can_view_bonuses', label: 'Bonuses' },
+        { col: 'can_view_assignation', label: 'Daily Assignation' },
+        { col: 'can_view_system', label: 'System' },
+        { col: 'can_view_call_center', label: 'Call Center' },
+        { col: 'can_view_settings', label: 'Settings (Admin)' },
+        { col: 'can_view_warehouse', label: 'Warehouse' },
+        { col: 'can_view_accounting', label: 'Accounting' },
+        { col: 'can_view_tracking', label: 'Tracking' }
+    ];
+
+    // 2. Fetch everything when Settings page opens
     if (btnSettings) {
         btnSettings.addEventListener('click', async () => {
-            const { data, error } = await supabaseClient
-                .from('system_settings')
-                .select('*')
-                .eq('id', 1)
-                .single();
+            // Fetch Call Center Settings
+            const { data: ccData } = await supabaseClient.from('system_settings').select('*').eq('id', 1).single();
+            if (ccData) {
+                newOrdersBox.checked = ccData.cc_trigger_new_order === true;
+                qaCompleteBox.checked = ccData.cc_trigger_qa_complete === true;
+                dispatchLiveBox.checked = ccData.cc_trigger_dispatch_live === true;
+            }
+
+            // Fetch Users to extract unique roles and populate User Dropdown
+            const { data: usersData } = await supabaseClient.from('profiles').select('username, role').order('username');
             
-            if (data && !error) {
-                // Update the checkboxes to match the database
-                newOrdersBox.checked = data.cc_trigger_new_order === true;
-                qaCompleteBox.checked = data.cc_trigger_qa_complete === true;
-                dispatchLiveBox.checked = data.cc_trigger_dispatch_live === true;
-            } else if (error) {
-                console.error("Could not load settings from database:", error);
+            if (usersData) {
+                userSelectDropdown.innerHTML = '<option value="">-- Choose User --</option>';
+                const uniqueRoles = new Set();
+
+                usersData.forEach(u => {
+                    const opt = document.createElement('option');
+                    opt.value = u.username;
+                    opt.textContent = u.username;
+                    const userRole = (u.role || 'unassigned').toLowerCase().trim();
+                    opt.dataset.currentRole = userRole; 
+                    userSelectDropdown.appendChild(opt);
+                    
+                    if (userRole && userRole !== 'unassigned') {
+                        uniqueRoles.add(userRole);
+                    }
+                });
+
+                // Populate BOTH Role Dropdowns
+                roleSelectDropdown.innerHTML = '<option value="">-- Choose Role --</option>';
+                assignRoleDropdown.innerHTML = '<option value="">-- Choose Role --</option>';
+                
+                Array.from(uniqueRoles).sort().forEach(role => {
+                    const opt1 = document.createElement('option');
+                    opt1.value = role;
+                    opt1.textContent = role.toUpperCase();
+                    roleSelectDropdown.appendChild(opt1);
+
+                    const opt2 = document.createElement('option');
+                    opt2.value = role;
+                    opt2.textContent = role.toUpperCase();
+                    assignRoleDropdown.appendChild(opt2);
+                });
             }
         });
     }
 
-    // 3. Save the new settings when the button is clicked
+    // 3. Save Call Center Settings
     if (saveButton && newOrdersBox && qaCompleteBox && dispatchLiveBox) {
         saveButton.addEventListener('click', async function() {
-            
-            // Lock the button and change text so the user knows it's working
             saveButton.disabled = true;
             saveButton.textContent = 'Saving...';
             successMsg.style.display = 'none';
 
-            // Prepare data matching your EXACT Supabase column names
             const settingsData = {
                 cc_trigger_new_order: newOrdersBox.checked,
                 cc_trigger_qa_complete: qaCompleteBox.checked,
                 cc_trigger_dispatch_live: dispatchLiveBox.checked
             };
 
-            console.log("Preparing to save:", settingsData);
+            const { error } = await supabaseClient.from('system_settings').update(settingsData).eq('id', 1);
 
-            try {
-                // Update the 'system_settings' table (Row ID 1)
-                // We use 'supabaseClient' because that is your active connection from app.js
-                const { error } = await supabaseClient
-                    .from('system_settings') 
-                    .update(settingsData)
-                    .eq('id', 1);
-
-                if (error) throw error;
-
-                // Success! Restore button and show the success message
-                saveButton.textContent = '💾 Save Settings';
-                saveButton.disabled = false;
+            saveButton.textContent = '💾 Save Call Center Settings';
+            saveButton.disabled = false;
+            
+            if (error) {
+                alert('Problem saving settings: ' + error.message);
+            } else {
                 successMsg.style.display = 'inline-block';
-                
-                // Hide the green success message automatically after 3 seconds
-                setTimeout(() => {
-                    successMsg.style.display = 'none';
-                }, 3000);
+                setTimeout(() => successMsg.style.display = 'none', 3000);
+            }
+        });
+    }
 
-            } catch (error) {
-                console.error("Error saving:", error);
-                alert('There was a problem saving your settings: ' + error.message);
+    // 4. Role Permissions: Show Checkboxes on change
+    if (roleSelectDropdown) {
+        roleSelectDropdown.addEventListener('change', async (e) => {
+            const selectedRole = e.target.value;
+            if (!selectedRole) {
+                permissionsContainer.style.display = 'none';
+                savePermissionsBtn.style.display = 'none';
+                return;
+            }
+
+            permissionsContainer.innerHTML = '<span style="color: gray;">Loading permissions...</span>';
+            permissionsContainer.style.display = 'flex';
+            
+            const { data, error } = await supabaseClient.from('role_permissions').select('*').eq('role', selectedRole).single();
+
+            permissionsContainer.innerHTML = ''; 
+            
+            // If there's an error (e.g. role doesn't exist in table yet), we just default all to false
+            const permsData = data || {};
+
+            permissionMap.forEach(perm => {
+                const label = document.createElement('label');
+                label.style.cssText = 'display: flex; align-items: center; gap: 10px; cursor: pointer; border-bottom: 1px dashed var(--border-color); padding-bottom: 8px;';
+                const isChecked = permsData[perm.col] ? 'checked' : '';
+                label.innerHTML = `
+                    <input type="checkbox" data-col="${perm.col}" style="width: 18px; height: 18px;" ${isChecked}>
+                    <span style="font-weight: bold;">${perm.label}</span>
+                `;
+                permissionsContainer.appendChild(label);
+            });
+
+            savePermissionsBtn.style.display = 'block';
+        });
+    }
+
+    // 5. Role Permissions: Save (Upsert)
+    if (savePermissionsBtn) {
+        savePermissionsBtn.addEventListener('click', async () => {
+            const selectedRole = roleSelectDropdown.value;
+            if (!selectedRole) return;
+
+            savePermissionsBtn.disabled = true;
+            savePermissionsBtn.textContent = 'Saving...';
+            permSettingsSavedMsg.style.display = 'none';
+
+            const payload = { role: selectedRole }; 
+            permissionsContainer.querySelectorAll('input[type="checkbox"]').forEach(box => {
+                payload[box.dataset.col] = box.checked;
+            });
+
+            const { error } = await supabaseClient.from('role_permissions').upsert(payload, { onConflict: 'role' });
+
+            savePermissionsBtn.disabled = false;
+            savePermissionsBtn.textContent = '💾 Save Role Permissions';
+
+            if (error) {
+                alert("Error saving permissions: " + error.message);
+            } else {
+                permSettingsSavedMsg.style.display = 'block';
+                setTimeout(() => permSettingsSavedMsg.style.display = 'none', 3000);
+            }
+        });
+    }
+
+    // 6. User Role: Show info on change
+    if (userSelectDropdown) {
+        userSelectDropdown.addEventListener('change', (e) => {
+            const selectedUsername = e.target.value;
+            if (!selectedUsername) {
+                assignRoleContainer.style.display = 'none';
+                saveUserRoleBtn.style.display = 'none';
+                return;
+            }
+
+            const selectedOption = e.target.options[e.target.selectedIndex];
+            const currentRole = selectedOption.dataset.currentRole;
+
+            currentUserRoleText.textContent = `Current Role: ${currentRole.toUpperCase()}`;
+            assignRoleDropdown.value = currentRole; 
+
+            assignRoleContainer.style.display = 'flex';
+            saveUserRoleBtn.style.display = 'block';
+        });
+    }
+
+    // 7. User Role: Save Update
+    if (saveUserRoleBtn) {
+        saveUserRoleBtn.addEventListener('click', async () => {
+            const selectedUsername = userSelectDropdown.value;
+            const newRole = assignRoleDropdown.value;
+
+            if (!selectedUsername || !newRole) {
+                alert("Please select both a user and a role.");
+                return;
+            }
+
+            saveUserRoleBtn.disabled = true;
+            saveUserRoleBtn.textContent = 'Saving...';
+            userRoleSavedMsg.style.display = 'none';
+
+            const { error } = await supabaseClient.from('profiles').update({ role: newRole }).eq('username', selectedUsername);
+
+            saveUserRoleBtn.disabled = false;
+            saveUserRoleBtn.textContent = '💾 Update User Role';
+
+            if (error) {
+                alert("Error updating user role: " + error.message);
+            } else {
+                const selectedOption = userSelectDropdown.options[userSelectDropdown.selectedIndex];
+                selectedOption.dataset.currentRole = newRole;
+                currentUserRoleText.textContent = `Current Role: ${newRole.toUpperCase()}`;
                 
-                // Restore button if it fails
-                saveButton.textContent = '💾 Save Settings';
-                saveButton.disabled = false;
+                userRoleSavedMsg.style.display = 'block';
+                setTimeout(() => userRoleSavedMsg.style.display = 'none', 3000);
             }
         });
     }

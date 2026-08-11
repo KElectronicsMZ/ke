@@ -31,8 +31,7 @@
     </div>
     <div id="globalUserBanner" style="display: none; background: var(--btn-bg); color: var(--text-color); padding: 8px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid var(--border-color); z-index: 9999; position: sticky; top: 0;">
         
-        <!-- Left Side: Warehouse Link -->
-        <a href="#" id="navWarehouseLink" style="position: absolute; left: 15px; color: var(--text-color); text-decoration: none; cursor: pointer;">📦 Warehouse</a>
+        
         
         <!-- Center: User Info -->
         <span style="line-height: 24px;">User: <span id="bannerUsername"></span> - <span id="bannerRole"></span></span>
@@ -116,6 +115,9 @@
             <button class="menu-btn" id="btnAssignation">Daily Assignation</button>
             <button class="menu-btn" id="btnSystem">System</button>
             <button class="menu-btn" id="btnCallCenter">Call Center</button>
+            <button class="menu-btn" id="btnWarehouse">Warehouse</button>
+            <button class="menu-btn" id="btnAccounting">Accounting</button>
+            <button class="menu-btn" id="btnTracking">Tracking</button>
             
         </div>
         <div class="center-cancel">
@@ -729,21 +731,81 @@
             <button id="settingsHubBtn" class="details-btn" style="width: auto; padding: 8px 30px; margin-top: 0;">Back to HUB</button>
         </div>
         
-        <div style="width: 100%; max-width: 800px; margin-top: 20px;">
-            <!-- Call Center Manager Controls -->
-            <!-- Checkbox Elements -->
-            <input type="checkbox" id="trigger-new-orders">
-            <label for="trigger-new-orders">New Orders Uploaded</label>
+        <div style="width: 100%; max-width: 800px; margin-top: 20px; display: flex; flex-direction: column; gap: 20px;">
+            
+            <!-- SECTION 1: Call Center Automations -->
+            <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #ffb300; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">📞 Call Center Automations</h3>
+                <p style="font-size: 13px; opacity: 0.8; margin-bottom: 15px;">Select which system events automatically send tickets to the Call Center queue.</p>
+                
+                <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="trigger-new-orders" style="width: 18px; height: 18px;"> 
+                        <span><strong>New Orders:</strong> Trigger when new CSV files are uploaded to the system.</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="trigger-qa-complete" style="width: 18px; height: 18px;"> 
+                        <span><strong>QA Complete:</strong> Trigger when a Coordinator marks an order as 'Complete'.</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="trigger-dispatch-live" style="width: 18px; height: 18px;"> 
+                        <span><strong>Dispatch Live:</strong> Trigger when orders are instantly assigned to technicians.</span>
+                    </label>
+                </div>
+                
+                <button id="save-settings-btn" class="primary-btn" style="width: 100%;">💾 Save Call Center Settings</button>
+                <div id="ccSettingsSavedMsg" style="display: none; color: #4caf50; font-weight: bold; margin-top: 10px; text-align: center;">Settings Saved Successfully!</div>
+            </div>
 
-            <input type="checkbox" id="trigger-qa-complete">
-            <label for="trigger-qa-complete">QA Complete</label>
+            <!-- SECTION 2: Role Permissions -->
+            <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #1976d2; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">🔐 Role-Based Permissions</h3>
+                <p style="font-size: 13px; opacity: 0.8; margin-bottom: 15px;">Select an account type (role), then configure which pages they are allowed to access on the HUB.</p>
+                
+                <div class="input-group" style="margin-bottom: 20px;">
+                    <label>Select Role to Edit:</label>
+                    <select id="roleSelectDropdown" style="padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                        <option value="">-- Choose Role --</option>
+                        <!-- Injected via JS -->
+                    </select>
+                </div>
 
-            <input type="checkbox" id="trigger-dispatch-live">
-            <label for="trigger-dispatch-live">Dispatch Live</label>
+                <div id="permissionsContainer" style="display: none; flex-direction: column; gap: 12px; margin-bottom: 20px; background: rgba(0,0,0,0.05); padding: 15px; border-radius: 4px; border: 1px dashed var(--border-color);">
+                    <!-- Checkboxes injected by JS -->
+                </div>
 
-            <!-- Save Button -->
-            <button id="save-settings-btn">💾 Save Settings</button>
-            <span id="ccSettingsSavedMsg" style="display: none; color: green; font-weight: bold; margin-left: 10px;">Settings Saved!</span>
+                <button id="save-permissions-btn" class="primary-btn" style="width: 100%; display: none; background: #1976d2;">💾 Save Role Permissions</button>
+                <div id="permSettingsSavedMsg" style="display: none; color: #4caf50; font-weight: bold; margin-top: 10px; text-align: center;">Permissions Updated Successfully!</div>
+            </div>
+
+            <!-- SECTION 3: User Role Assignment -->
+            <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #8e24aa; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">👤 User Role Assignment</h3>
+                <p style="font-size: 13px; opacity: 0.8; margin-bottom: 15px;">Change the account type (role) for individual users.</p>
+                
+                <div class="input-group" style="margin-bottom: 15px;">
+                    <label>Select User:</label>
+                    <select id="userSelectDropdown" style="padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                        <option value="">-- Choose User --</option>
+                        <!-- Injected via JS -->
+                    </select>
+                </div>
+
+                <div id="assignRoleContainer" style="display: none; flex-direction: column; gap: 15px; margin-bottom: 20px; background: rgba(0,0,0,0.05); padding: 15px; border-radius: 4px; border: 1px dashed var(--border-color);">
+                    <div id="currentUserRoleText" style="font-size: 13px; font-weight: bold; color: #1976d2; padding-bottom: 5px; border-bottom: 1px solid var(--border-color);"></div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label>Assign New Role:</label>
+                        <select id="assignRoleDropdown" style="padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                            <option value="">-- Choose Role --</option>
+                            <!-- Injected via JS -->
+                        </select>
+                    </div>
+                </div>
+
+                <button id="save-user-role-btn" class="primary-btn" style="width: 100%; display: none; background: #8e24aa;">💾 Update User Role</button>
+                <div id="userRoleSavedMsg" style="display: none; color: #4caf50; font-weight: bold; margin-top: 10px; text-align: center;">User Role Updated Successfully!</div>
+            </div>
+
         </div>
     </div>
 
@@ -760,11 +822,39 @@
         </div>
     </div>
 
+    <!-- ACCOUNTING PAGE -->
+    <div id="accountingPage" class="page">
+        <div class="system-header" style="width: 100%; max-width: 800px; text-align: center;">
+            <h2>Accounting Management</h2>
+        </div>
+        <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 40px; border-radius: 8px; width: 100%; max-width: 800px; text-align: center;">
+            <h3 style="opacity: 0.8;">Accounting module coming soon...</h3>
+        </div>
+        <div class="button-group" style="margin-top: 20px;">
+            <button id="accountingHubBtn" style="padding: 10px 30px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color);">Back to HUB</button>
+        </div>
+    </div>
+
+    <!-- TRACKING PAGE -->
+    <div id="trackingPage" class="page">
+        <div class="system-header" style="width: 100%; max-width: 800px; text-align: center;">
+            <h2>Tracking Management</h2>
+        </div>
+        <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 40px; border-radius: 8px; width: 100%; max-width: 800px; text-align: center;">
+            <h3 style="opacity: 0.8;">Tracking module coming soon...</h3>
+        </div>
+        <div class="button-group" style="margin-top: 20px;">
+            <button id="trackingHubBtn" style="padding: 10px 30px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color);">Back to HUB</button>
+        </div>
+    </div>
+
     <script src="app.js"></script>
     <script src="warehouse.js"></script>
     <script src="callcenter.js"></script>
     <script src="settings.js"></script>
-    
+    <script src="accounting.js"></script>
+    <script src="tracking.js"></script>
+
     <!-- USER HISTORY SIDE PANEL -->
     <div id="historyPanel" class="history-panel">
         <div class="history-panel-header">

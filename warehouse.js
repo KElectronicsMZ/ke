@@ -5,14 +5,14 @@
 // This prevents variable naming conflicts (like 'menuPage') with the main system.
 
 (function() {
-    const navWarehouseLink = document.getElementById('navWarehouseLink');
+    const btnWarehouse = document.getElementById('btnWarehouse');
     const warehousePage = document.getElementById('warehousePage');
     const warehouseHubBtn = document.getElementById('warehouseHubBtn');
     const localMenuPage = document.getElementById('menuPage');
 
-    // 1. Listen for clicks on the Top Left Link
-    if (navWarehouseLink) {
-        navWarehouseLink.addEventListener('click', (e) => {
+    // 1. Listen for clicks on the new Big Button
+    if (btnWarehouse) {
+        btnWarehouse.addEventListener('click', (e) => {
             e.preventDefault(); // Stops the page from jumping to the top
             
             // Turn off any page that is currently visible

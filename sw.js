@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ke-tech-cache-v3.5'; // We bumped the version up!
+const CACHE_NAME = 'ke-tech-cache-v4.0'; // Bumped version up!
 
 // The essential files the app needs to load visually
 const ASSETS_TO_CACHE = [
@@ -6,9 +6,13 @@ const ASSETS_TO_CACHE = [
     './index.html',
     './style.css',
     './app.js',
-    './manifest.json' // Added this so the app installs correctly on phones
+    './warehouse.js',
+    './callcenter.js',
+    './settings.js',
+    './accounting.js',
+    './tracking.js',
+    './manifest.json' 
 ];
-
 // 1. Install the Service Worker and save the files to the phone's cache
 self.addEventListener('install', (event) => {
     // Skip the waiting lifecycle to force the new service worker to activate immediately

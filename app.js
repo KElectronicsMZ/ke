@@ -422,47 +422,60 @@ document.getElementById('menuCancelBtn').addEventListener('click', () => {
     document.getElementById('passwordInput').value = '';
 });
 
+
 // --- ROLE-BASED MENU VISIBILITY ENGINE ---
-function applyRoleBasedMenuVisibility() {
+async function applyRoleBasedMenuVisibility() {
     if (!currentUser) return;
-    
-    const role = currentUser.role ? currentUser.role.toLowerCase() : '';
-    
-    // Grab all menu buttons by their IDs
-    const btnSystem = document.getElementById('btnSystem');
-    const btnMonitor = document.getElementById('btnMonitor');
-    const btnAssignation = document.getElementById('btnAssignation');
+
+    const userRole = currentUser.role ? currentUser.role.toLowerCase().trim() : '';
+
+    // 1. Grab all menu buttons by their IDs
     const btnMyOrders = document.getElementById('btnMyOrders');
+    const btnMonitor = document.getElementById('btnMonitor');
     const btnBonuses = document.getElementById('btnBonuses');
-    const btnCallCenter = document.getElementById('btnCallCenter'); 
-    const btnSettings = document.getElementById('btnSettings'); // <-- NEW
+    const btnAssignation = document.getElementById('btnAssignation');
+    const btnSystem = document.getElementById('btnSystem');
+    const btnCallCenter = document.getElementById('btnCallCenter');
+    const btnSettings = document.getElementById('btnSettings');
+    const btnWarehouse = document.getElementById('btnWarehouse');
+    const btnAccounting = document.getElementById('btnAccounting');
+    const btnTracking = document.getElementById('btnTracking');
 
-    // 1. Visible to EVERYONE
-    if (btnMyOrders) btnMyOrders.style.display = 'block';
-    if (btnBonuses) btnBonuses.style.display = 'block';
-
-    // 2. Hide restricted buttons by default
-    if (btnSystem) btnSystem.style.display = 'none';
+    // 2. Hide EVERYTHING by default to be safe
+    if (btnMyOrders) btnMyOrders.style.display = 'none';
     if (btnMonitor) btnMonitor.style.display = 'none';
+    if (btnBonuses) btnBonuses.style.display = 'none';
     if (btnAssignation) btnAssignation.style.display = 'none';
+    if (btnSystem) btnSystem.style.display = 'none';
     if (btnCallCenter) btnCallCenter.style.display = 'none';
-    if (btnSettings) btnSettings.style.display = 'none'; // <-- NEW
+    if (btnSettings) btnSettings.style.display = 'none';
+    if (btnWarehouse) btnWarehouse.style.display = 'none';
+    if (btnAccounting) btnAccounting.style.display = 'none';
+    if (btnTracking) btnTracking.style.display = 'none';
 
-    // 3. Show restricted buttons based on roles
-    if (!role.includes('technician')) {
-        if (btnSystem) btnSystem.style.display = 'block';
-        if (btnMonitor) btnMonitor.style.display = 'block';
-        if (btnAssignation) btnAssignation.style.display = 'block';
-    }
-    
-    if (role === 'cc' || role.includes('manager') || role.includes('supervisor') || role.includes('coordinator')) {
-        if (btnCallCenter) btnCallCenter.style.display = 'block';
+    // 3. Fetch this specific role's permissions from the database
+    const { data: perms, error } = await supabaseClient
+        .from('role_permissions')
+        .select('*')
+        .eq('role', userRole)
+        .single();
+
+    if (error || !perms) {
+        console.error("Could not load permissions for role:", userRole);
+        return; // If they have no permissions mapped, they stay safely hidden
     }
 
-    // Settings is STRICTLY for Managers and Supervisors
-    if (role.includes('manager') || role.includes('supervisor')) {
-        if (btnSettings) btnSettings.style.display = 'block';
-    }
+    // 4. Show buttons based EXACTLY on what the database says
+    if (btnMyOrders && perms.can_view_my_orders) btnMyOrders.style.display = 'block';
+    if (btnMonitor && perms.can_view_monitor) btnMonitor.style.display = 'block';
+    if (btnBonuses && perms.can_view_bonuses) btnBonuses.style.display = 'block';
+    if (btnAssignation && perms.can_view_assignation) btnAssignation.style.display = 'block';
+    if (btnSystem && perms.can_view_system) btnSystem.style.display = 'block';
+    if (btnCallCenter && perms.can_view_call_center) btnCallCenter.style.display = 'block';
+    if (btnSettings && perms.can_view_settings) btnSettings.style.display = 'block';
+    if (btnWarehouse && perms.can_view_warehouse) btnWarehouse.style.display = 'block';
+    if (btnAccounting && perms.can_view_accounting) btnAccounting.style.display = 'block';
+    if (btnTracking && perms.can_view_tracking) btnTracking.style.display = 'block';
 }
 // ---------------------------------------------------
 document.getElementById('btnSystem').addEventListener('click', () => {
@@ -5837,23 +5850,11 @@ function downloadGroupedVisibleText(tableBodyId, memoryMap, allColsArray, filena
 
 // Bind System Export
 document.getElementById('btnDownloadVisibleSystem').addEventListener('click', () => {
-    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
-    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
-        alert("Access Denied: You do not have permission to download grouped exports.");
-        return;
-    }
     downloadGroupedVisibleText('tableBody', editedOrders, ALL_COLUMNS, 'System_Visible_Export');
 });
 
 // --- EXCEL EXPORT FOR SYSTEM PAGE ---
 document.getElementById('btnDownloadExcelSystem').addEventListener('click', () => {
-    // 1. Check permissions (matches the rules of the button next to it)
-    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
-    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
-        alert("Access Denied: You do not have permission to download Excel exports.");
-        return;
-    }
-
     const tableBody = document.getElementById('tableBody');
     if (!tableBody || tableBody.children.length === 0) {
         alert("No visible data to export.");
@@ -5904,11 +5905,6 @@ document.getElementById('btnDownloadExcelSystem').addEventListener('click', () =
 
 // Bind Assignation Export
 document.getElementById('assignDownloadVisibleBtn').addEventListener('click', () => {
-    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
-    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
-        alert("Access Denied: You do not have permission to download grouped exports.");
-        return;
-    }
     downloadGroupedVisibleText('assignTableBody', editedAssignations, ALL_COLUMNS, 'Assignation_Visible_Export');
 });
 

@@ -3466,7 +3466,7 @@ document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
     if (orderError) {
         alert("Log was saved, but error updating main order table: " + orderError.message);
     } else {
-        alert(`Coordination agreement logged and order updated for SO: ${activeSo}`);
+        alert(`Sucess : Coordination agreement logged and order updated for SO: ${activeSo}`);
     }
 });
 

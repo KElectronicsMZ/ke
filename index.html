@@ -201,9 +201,14 @@
             </div>
 
             <!-- Hidden Send to CC Container -->
-            <div id="systemSendToCCContainer" style="display: none; width: 100%; gap: 10px; align-items: flex-start; margin-top: 10px; background: var(--card-bg); border: 2px solid #ffb300; padding: 10px; border-radius: 4px; box-sizing: border-box;">
+            <div id="systemSendToCCContainer" style="display: none; width: 100%; gap: 10px; align-items: stretch; margin-top: 10px; background: var(--card-bg); border: 2px solid #ffb300; padding: 10px; border-radius: 4px; box-sizing: border-box;">
                 <textarea id="systemCcSoInput" placeholder="Paste SOs here to manually send them to the Call Center Queue..." rows="3" style="flex-grow: 1; padding: 10px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></textarea>
-                <button id="btnSubmitSendToCC" style="background-color: #ffb300; color: #000; border: 1px solid #ff8f00; padding: 10px 20px; font-weight: bold; cursor: pointer; border-radius: 4px; height: 100%;">Send to Queue</button>
+                
+                <!-- Grouped Buttons -->
+                <div style="display: flex; flex-direction: column; gap: 8px; justify-content: space-between;">
+                    <button id="btnSubmitSendToCC" style="background-color: #ffb300; color: #000; border: 1px solid #ff8f00; padding: 10px 20px; font-weight: bold; cursor: pointer; border-radius: 4px; flex-grow: 1;">Send as General</button>
+                    <button id="btnSubmitSendToCCQA" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; padding: 10px 20px; font-weight: bold; cursor: pointer; border-radius: 4px; flex-grow: 1;">Send as QA</button>
+                </div>
             </div>
             
             <!-- BOTTOM ROW: Master Edit Tracker (Hidden unless clicking a cell) -->

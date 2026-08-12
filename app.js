@@ -165,11 +165,14 @@ let availableTechnicians = [];
 let editedAssignations = {};
 let stagedOrders = [];
 let editedStagedOrders = {};
-const STAGED_COLUMNS = ["so", "assigned_tech", "rout", "remark", "status_comment"];
+const STAGED_COLUMNS = [
+    "so", "assigned_tech", "rout", "remark", "status_comment", 
+    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5"
+];
 const ASSIGN_COLUMNS = [
     "so", "date", "days", "status", "service_type", "address", "rout", 
     "assigned_tech", "model", "remark", "status_comment", 
-    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3"
+    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5"
 ];
 
 // --- 3. DOM ELEMENTS ELEMENT SELECTORS ---
@@ -204,7 +207,7 @@ document.getElementById('assignResetLayoutBtn').addEventListener('click', () => 
     
     // 2. Restore factory defaults
     ASSIGN_COLUMNS.length = 0;
-    ASSIGN_COLUMNS.push("so", "date", "days", "status", "service_type", "address", "rout", "assigned_tech", "model", "remark", "status_comment", "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3");
+    ASSIGN_COLUMNS.push("so", "date", "days", "status", "service_type", "address", "rout", "assigned_tech", "model", "remark", "status_comment", "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5");
     
     // 3. Redraw table
     renderAssignationTable();
@@ -2938,8 +2941,18 @@ document.getElementById('stageTomorrowBtn').addEventListener('click', async () =
         so: record.so,
         assigned_tech: record.assigned_tech || '',
         rout: record.rout || '',
-        remark: record.remark || '',                // <-- NEW
-        status_comment: record.status_comment || '' // <-- NEW
+        remark: record.remark || '',
+        status_comment: record.status_comment || '',
+        part_1: record.part_1 || '',
+        qty_1: record.qty_1 || '',
+        part_2: record.part_2 || '',
+        qty_2: record.qty_2 || '',
+        part_3: record.part_3 || '',
+        qty_3: record.qty_3 || '',
+        part_4: record.part_4 || '',
+        qty_4: record.qty_4 || '',
+        part_5: record.part_5 || '',
+        qty_5: record.qty_5 || ''
     }));
 
     // Upsert into tomorrow_schedule (Safely overwrites if the SO is already staged)
@@ -2993,8 +3006,18 @@ document.getElementById('assignNowInstantBtn').addEventListener('click', async (
         let orderUpdate = {
             assigned_tech: record.assigned_tech || '',
             rout: record.rout || '',
-            remark: record.remark || '',                  // <-- NEW
-            status_comment: record.status_comment || ''   // <-- NEW
+            remark: record.remark || '',
+            status_comment: record.status_comment || '',
+            part_1: record.part_1 || '',
+            qty_1: record.qty_1 || '',
+            part_2: record.part_2 || '',
+            qty_2: record.qty_2 || '',
+            part_3: record.part_3 || '',
+            qty_3: record.qty_3 || '',
+            part_4: record.part_4 || '',
+            qty_4: record.qty_4 || '',
+            part_5: record.part_5 || '',
+            qty_5: record.qty_5 || ''
         };
         
         // Force the ticket to hit their active queue
@@ -3146,8 +3169,18 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
         let orderUpdate = {
             assigned_tech: record.assigned_tech || '',
             rout: record.rout || '',
-            remark: record.remark || '',                // <-- NEW
-            status_comment: record.status_comment || '' // <-- NEW
+            remark: record.remark || '',
+            status_comment: record.status_comment || '',
+            part_1: record.part_1 || '',
+            qty_1: record.qty_1 || '',
+            part_2: record.part_2 || '',
+            qty_2: record.qty_2 || '',
+            part_3: record.part_3 || '',
+            qty_3: record.qty_3 || '',
+            part_4: record.part_4 || '',
+            qty_4: record.qty_4 || '',
+            part_5: record.part_5 || '',
+            qty_5: record.qty_5 || ''
         };
         
         // Auto-update status so it hits the technicians' screens
@@ -4127,7 +4160,7 @@ async function loadActiveTickets(managerOverrideUser = null) {
     if (!currentUser) return;
 
     const role = currentUser.role.toLowerCase();
-    const isManager = role.includes('manager') || role.includes('supervisor');
+    const isManager = role.includes('manager') || role.includes('admin');
     let targetRole = role; // Default to your own role
 
     // FORCE HIDE THE DROPDOWN FIRST (Fixes the bug for non-managers)

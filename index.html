@@ -204,8 +204,11 @@
             <div id="systemSendToCCContainer" style="display: none; width: 100%; gap: 10px; align-items: stretch; margin-top: 10px; background: var(--card-bg); border: 2px solid #ffb300; padding: 10px; border-radius: 4px; box-sizing: border-box;">
                 <textarea id="systemCcSoInput" placeholder="Paste SOs here to manually send them to the Call Center Queue..." rows="3" style="flex-grow: 1; padding: 10px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></textarea>
                 
-                <!-- Grouped Buttons -->
+                <!-- Grouped Buttons & Assign User Dropdown -->
                 <div style="display: flex; flex-direction: column; gap: 8px; justify-content: space-between;">
+                    <select id="systemCcAssignUserSelect" style="padding: 10px; font-size: 14px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                        <option value="">-- Assign To (Optional) --</option>
+                    </select>
                     <button id="btnSubmitSendToCC" style="background-color: #ffb300; color: #000; border: 1px solid #ff8f00; padding: 10px 20px; font-weight: bold; cursor: pointer; border-radius: 4px; flex-grow: 1;">Send as General</button>
                     <button id="btnSubmitSendToCCQA" style="background-color: #1976d2; color: white; border: 1px solid #1565c0; padding: 10px 20px; font-weight: bold; cursor: pointer; border-radius: 4px; flex-grow: 1;">Send as QA</button>
                 </div>
@@ -631,7 +634,7 @@
                             </select>
 
                             <div class="input-group" style="margin-top: 10px; margin-bottom: 0;">
-                                <label style="font-size: 14px; opacity: 0.8;">Add a Comment (Optional):</label>
+                                <label style="font-size: 16px; margin-bottom: 10px;">Add a Comment (Required):</label>
                                 <textarea id="coordCommentInput" rows="2" placeholder="Type back office notes here..." style="width: 100%; padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></textarea>
                             </div>
 

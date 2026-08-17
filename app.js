@@ -1374,6 +1374,10 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
                             // Keep the existing live route instead of deleting it
                             rowObj.rout = liveMatch.rout; 
                         }
+                        if (liveMatch.assigned_tech && String(liveMatch.assigned_tech).trim() !== '') {
+                            // Keep the existing assigned technician instead of deleting it
+                            rowObj.assigned_tech = liveMatch.assigned_tech; 
+                        }
 
                         if (!editedOrders[rowObj.so]) editedOrders[rowObj.so] = {};
                         editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
@@ -2269,7 +2273,7 @@ document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
     showGlobalLoader("Verifying Order...");
     const { data: foundOrder, error: fetchErr } = await supabaseClient
         .from('orders')
-        .select('so, agree_coord') // <-- UPDATED: Fetch the agree_coord column
+        .select('so, agree_coord, status, assigned_tech') // <-- FETCH REQUIRED STATUSES
         .eq('so', activeSo)
         .single();
     hideGlobalLoader();
@@ -2292,12 +2296,12 @@ document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
     // 1. Prepare history log payload
     const payload = {
         so: activeSo,
-        status: 'Technician',
+        status: foundOrder.status || 'Unknown',
         assigned_by: currentUsername,
         agree_coord: currentUsername,
         assign_date: date,
         assign_time: time,
-        assigned_tech: '' 
+        assigned_tech: foundOrder.assigned_tech || '' 
     };
 
     // 2. Execute history log
@@ -3767,14 +3771,19 @@ function validateCoordForm() {
     const status = coordStatusSelect.value;
     const tech = coordTechSelect.value;
     
+    // --- NEW: Grab the comment text ---
+    const coordComment = document.getElementById('coordCommentInput').value.trim();
+    
     let isValid = false;
     
     if (status === 'Re-Assign') {
         coordTechSelect.style.display = 'block'; // Show tech list
-        if (tech !== '') isValid = true;         // Only valid if tech is chosen
+        // Require BOTH a technician and a comment
+        if (tech !== '' && coordComment !== '') isValid = true;         
     } else if (status !== '') {
         coordTechSelect.style.display = 'none';  // Hide tech list
-        isValid = true;
+        // Require a comment for all other statuses
+        if (coordComment !== '') isValid = true;
     } else {
         coordTechSelect.style.display = 'none';
     }
@@ -3816,6 +3825,8 @@ coordStatusSelect.addEventListener('change', async (e) => {
 });
 
 coordTechSelect.addEventListener('change', validateCoordForm);
+// Trigger validation every time they type in the comment box
+document.getElementById('coordCommentInput').addEventListener('input', validateCoordForm);
 
 // Submit Coord Changes
 confirmCoordBtn.addEventListener('click', async () => {

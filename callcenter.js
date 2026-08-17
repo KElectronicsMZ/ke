@@ -111,10 +111,39 @@
         followUps.forEach(fu => {
             const order = ordersData.find(o => String(o.so) === String(fu.so)) || {};
             
-            // Find the latest comment for this SO using the passed logs
+            // Build the complete Ticket History log exactly like the main system pages
             const orderLogs = (logs || []).filter(l => String(l.so) === String(fu.so));
-            const latestLog = orderLogs.length > 0 ? orderLogs[orderLogs.length - 1] : null;
-            const techCommentHtml = latestLog ? `<div style="background: rgba(25, 118, 210, 0.1); padding: 8px; border-left: 3px solid #1976d2; margin-top: 8px; font-size: 13px;"><strong>Tech Comment (${latestLog.assigned_by}):</strong> ${latestLog.comment}</div>` : '';
+            
+            // Sort logs newest first
+            orderLogs.sort((a, b) => {
+                const parseDate = (d) => d ? d.split('-').reverse().join('-') : '1970-01-01';
+                const timeA = new Date(`${parseDate(a.assign_date)}T${a.assign_time || '00:00'}`);
+                const timeB = new Date(`${parseDate(b.assign_date)}T${b.assign_time || '00:00'}`);
+                return timeB - timeA; 
+            });
+
+            let techCommentHtml = '';
+            if (orderLogs.length > 0) {
+                let commentsList = '';
+                orderLogs.forEach(log => {
+                    commentsList += `
+                        <div style="background: rgba(25, 118, 210, 0.05); border: 1px solid #1976d2; border-radius: 4px; padding: 8px; margin-bottom: 6px; border-left: 3px solid #1976d2;">
+                            <strong style="color: #4caf50;">${log.assigned_by || 'Unknown'}</strong> 
+                            <span style="font-size: 11px; opacity: 0.7;">(${log.assign_date || 'N/A'} at ${log.assign_time || 'N/A'}):</span><br>
+                            <span style="margin-top: 4px; display: inline-block; font-size: 13px;">${log.comment}</span>
+                        </div>
+                    `;
+                });
+
+                techCommentHtml = `
+                    <div style="background: var(--card-bg); padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; margin-top: 10px;">
+                        <div style="font-weight: bold; margin-bottom: 8px; color: #1976d2; font-size: 13px;">Previous Comments تعليقات : </div>
+                        <div style="max-height: 150px; overflow-y: auto; display: flex; flex-direction: column; padding-right: 5px;">
+                            ${commentsList}
+                        </div>
+                    </div>
+                `;
+            }
 
             const card = document.createElement('div');
             card.className = 'ticket-card';
@@ -142,6 +171,9 @@
                     <span><strong style="color: #ffb300; font-size: 16px;">[Call Center]</strong> SO: <span style="font-size: 16px;">${fu.so}</span></span>
                     <span style="color:#ffb300; font-size: 13px; font-weight: bold;">Type: ${fu.call_type}</span>
                 </div>
+                <!-- NEW: Show Assigned To right below the header -->
+                <div class="ticket-row" style="margin-top: 5px; margin-bottom: 5px; font-size: 14px;"><strong>Assigned To:</strong> <span style="color: #d32f2f; font-weight: bold;">${fu.call_assigned_to || 'Unassigned'}</span></div>
+                
                 <div class="ticket-row"><span><strong>Name:</strong> ${order.name || 'N/A'}</span> <span>${p1}</span></div>
                 <div class="ticket-row"><span><strong>Date:</strong> ${order.date || 'N/A'}</span> <span>${p2}</span></div>
                 <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${order.address || 'N/A'}</div>
@@ -280,6 +312,7 @@
         const CC_FILTER_COLS = [
             { key: 'so', label: 'SO' },
             { key: 'call_type', label: 'Type' },
+            { key: 'call_assigned_to', label: 'Assigned To' }, // NEW COLUMN ADDED HERE
             { key: 'date', label: 'Date' },
             { key: 'rout', label: 'Rout' },
             { key: 'phone', label: 'Phone' }
@@ -294,27 +327,51 @@
             th.innerHTML = `<span style="font-weight:bold; font-size: 13px; color: #1976d2;">${col.label}</span>`;
             headerRow.appendChild(th);
 
-            // 2. Build Input Box
+            // 2. Build Input Box with Autocomplete
             const td = document.createElement('th');
             td.style.padding = "2px";
             td.style.borderRight = "1px solid var(--border-color)";
 
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.dataset.column = col.key;
-            input.style.width = '100%';
-            input.style.boxSizing = 'border-box';
-            input.style.padding = '4px 2px';
-            input.style.fontSize = '12px';
-            input.style.background = 'var(--bg-color)';
-            input.style.color = 'var(--text-color)';
-            input.style.border = '1px solid var(--border-color)';
-            input.style.borderRadius = '2px';
+            const inputElement = document.createElement('input');
+            inputElement.type = 'text';
+            inputElement.dataset.column = col.key;
+            inputElement.style.width = '100%';
+            inputElement.style.boxSizing = 'border-box';
+            inputElement.style.padding = '4px 2px';
+            inputElement.style.fontSize = '12px';
+            inputElement.style.background = 'var(--bg-color)';
+            inputElement.style.color = 'var(--text-color)';
+            inputElement.style.border = '1px solid var(--border-color)';
+            inputElement.style.borderRadius = '2px';
 
-            // Trigger the filter function when the user types
-            input.addEventListener('input', runCCFilters);
+            // NEW: Add the datalist (autocomplete) for Type and Assigned To
+            if (col.key === 'call_type' || col.key === 'call_assigned_to') {
+                const datalistId = `cc_list_${col.key}`;
+                inputElement.setAttribute('list', datalistId);
+                inputElement.setAttribute('autocomplete', 'off');
 
-            td.appendChild(input);
+                const datalist = document.createElement('datalist');
+                datalist.id = datalistId;
+                
+                const uniqueValues = new Set();
+                ccOriginalFollowUps.forEach(fu => {
+                    const val = fu[col.key];
+                    if (val && String(val).trim() !== '') uniqueValues.add(String(val).trim());
+                });
+
+                Array.from(uniqueValues).sort().forEach(val => {
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    datalist.appendChild(opt);
+                });
+                
+                td.appendChild(datalist);
+            }
+
+            // Bind the filter trigger
+            inputElement.addEventListener('input', runCCFilters);
+
+            td.appendChild(inputElement);
             inputRow.appendChild(td);
         });
     }
@@ -332,7 +389,8 @@
                     const order = ccOriginalOrdersData.find(o => String(o.so) === String(fu.so)) || {};
 
                     let cellValue = '';
-                    if (colKey === 'so' || colKey === 'call_type') {
+                    // Included call_assigned_to so it knows where to look for the data
+                    if (colKey === 'so' || colKey === 'call_type' || colKey === 'call_assigned_to') {
                         // Data stored in the follow_up table
                         cellValue = String(fu[colKey] || '').toLowerCase();
                     } else if (colKey === 'phone') {
@@ -350,6 +408,13 @@
 
         // Instantly redraw the tickets with the filtered results!
         renderCCTickets(filteredFollowUps, ccOriginalOrdersData, ccOriginalLogs);
+
+        // NEW: Update the badge at the top to match the filtered count
+        const badge = document.getElementById('ccQueueCountBadge');
+        if (badge) {
+            badge.textContent = filteredFollowUps.length;
+            badge.style.display = filteredFollowUps.length > 0 ? 'inline-block' : 'none';
+        }
     }
 
     // --- FORM SUBMISSION ENGINE ---
@@ -521,9 +586,24 @@
     const systemCcSoInput = document.getElementById('systemCcSoInput');
 
     if (btnToggleSendToCC && systemSendToCCContainer) {
-        btnToggleSendToCC.addEventListener('click', () => {
+        btnToggleSendToCC.addEventListener('click', async () => {
             if (systemSendToCCContainer.style.display === 'none') {
                 systemSendToCCContainer.style.display = 'flex';
+                
+                // NEW: Populate the users dropdown if it's empty
+                const assignSelect = document.getElementById('systemCcAssignUserSelect');
+                if (assignSelect && assignSelect.children.length <= 1) {
+                    const { data } = await supabaseClient.from('profiles').select('username');
+                    if (data) {
+                        // Sort alphabetically for easy reading
+                        data.sort((a,b) => a.username.localeCompare(b.username)).forEach(p => {
+                            const opt = document.createElement('option');
+                            opt.value = p.username;
+                            opt.textContent = p.username;
+                            assignSelect.appendChild(opt);
+                        });
+                    }
+                }
             } else {
                 systemSendToCCContainer.style.display = 'none';
             }
@@ -539,6 +619,10 @@
             alert("Please paste at least one SO number.");
             return;
         }
+
+        // NEW: Grab the selected user from our new dropdown
+        const assignSelect = document.getElementById('systemCcAssignUserSelect');
+        const selectedUser = assignSelect ? assignSelect.value : '';
 
         // Save original text to restore it if needed
         const originalText = buttonElement.textContent;
@@ -556,7 +640,8 @@
         const insertPayload = soList.map(so => ({
             so: String(so),
             call_type: callType, 
-            call_status: 'pending'
+            call_status: 'pending',
+            call_assigned_to: selectedUser // NEW: Push the assigned user to the database
         }));
 
         // Insert fresh records

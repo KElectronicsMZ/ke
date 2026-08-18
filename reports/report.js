@@ -5,6 +5,9 @@
 const savedTheme = localStorage.getItem('ke_saved_theme');
 if (savedTheme) {
     document.body.setAttribute('data-theme', savedTheme);
+} else {
+    // Failsafe: If no theme is saved in memory yet, force the default
+    document.body.setAttribute('data-theme', 'greenish');
 }
 
 // ==========================================

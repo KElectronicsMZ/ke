@@ -3431,14 +3431,37 @@ function openDetailsModal(ticket, viewMode = 'technician') {
         document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
             input.value = ''; 
             const labelBtn = input.parentElement;
-            labelBtn.style.backgroundColor = ''; 
-            labelBtn.style.color = ''; 
-            if (labelBtn.childNodes[0].nodeValue) {
-                const originalIcon = input.accept.includes('video') ? '📹' : '📷';
-                labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('✅', originalIcon);
+            
+            // Figure out which property this button represents (e.g., 'img1Input' -> 'img1')
+            const mediaKey = input.id.replace('Input', '');
+            const hasExistingMedia = ticket[mediaKey] && ticket[mediaKey].trim() !== '';
+
+            // ALWAYS ensure the button is clickable
+            input.disabled = false;
+            labelBtn.style.cursor = 'pointer';
+
+            if (hasExistingMedia) {
+                // Turn it green to show a file exists, but leave it open for clicking
+                labelBtn.style.backgroundColor = '#2e7d32'; 
+                labelBtn.style.color = 'white';
+                labelBtn.title = "File already exists. Click to overwrite.";
+                
+                if (labelBtn.childNodes[0].nodeValue) {
+                    labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('📷', '✅').replace('📹', '✅');
+                }
+            } else {
+                // Reset the button for completely empty slots
+                labelBtn.style.backgroundColor = ''; 
+                labelBtn.style.color = ''; 
+                labelBtn.title = "";
+                
+                if (labelBtn.childNodes[0].nodeValue) {
+                    const originalIcon = input.accept.includes('video') ? '📹' : '📷';
+                    labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('✅', originalIcon);
+                }
             }
         });
-        validateTechForm(); 
+        validateTechForm();
     }
 
     detailsModal.style.display = 'flex';
@@ -3454,22 +3477,36 @@ document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
         // Find the label that wraps this specific input
         const labelBtn = this.parentElement; 
         
+        // Determine if the database already has a file for this specific slot
+        const mediaKey = this.id.replace('Input', '');
+        const hasExistingMedia = currentlyViewedTicket && currentlyViewedTicket[mediaKey] && currentlyViewedTicket[mediaKey].trim() !== '';
+        
         if (this.files && this.files.length > 0) {
-            // A file was selected! Change color safely
+            // A NEW file was selected! Change color safely
             labelBtn.style.backgroundColor = '#2e7d32'; // Green
             labelBtn.style.color = 'white';
             
-            // Safely update ONLY the text node (child 0), leaving the hidden input untouched
+            // Safely update ONLY the text node
             if (labelBtn.childNodes[0].nodeValue) {
                 labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('📷', '✅').replace('📹', '✅');
             }
         } else {
-            // They cancelled the selection, revert it safely
-            labelBtn.style.backgroundColor = '';
-            labelBtn.style.color = '';
-            
-            if (labelBtn.childNodes[0].nodeValue) {
-                labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('✅', this.accept.includes('video') ? '📹' : '📷');
+            // They cancelled the file selection window
+            if (hasExistingMedia) {
+                // An old file still exists in the DB, so keep the button green
+                labelBtn.style.backgroundColor = '#2e7d32'; 
+                labelBtn.style.color = 'white';
+                if (labelBtn.childNodes[0].nodeValue) {
+                    labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('📷', '✅').replace('📹', '✅');
+                }
+            } else {
+                // No old file exists, AND they didn't pick a new one, so revert to normal
+                labelBtn.style.backgroundColor = '';
+                labelBtn.style.color = '';
+                
+                if (labelBtn.childNodes[0].nodeValue) {
+                    labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('✅', this.accept.includes('video') ? '📹' : '📷');
+                }
             }
         }
     });
@@ -3727,8 +3764,13 @@ confirmTechBtn.addEventListener('click', async () => {
         collected_reason: reasonSelect.value || '',
         comment: finalComment,
         
-        img1: urlImg1, img2: urlImg2, img3: urlImg3,
-        vid1: urlVid1, vid2: urlVid2, vid3: urlVid3
+        // NEW: If no new file was uploaded, keep the old link in the history log
+        img1: urlImg1 || activeTechTicket.img1, 
+        img2: urlImg2 || activeTechTicket.img2, 
+        img3: urlImg3 || activeTechTicket.img3,
+        vid1: urlVid1 || activeTechTicket.vid1, 
+        vid2: urlVid2 || activeTechTicket.vid2, 
+        vid3: urlVid3 || activeTechTicket.vid3
     };
 
     const { error: logErr } = await supabaseClient.from('repair_log').insert(logPayload);
@@ -3743,8 +3785,13 @@ confirmTechBtn.addEventListener('click', async () => {
         .from('orders')
         .update({ 
             status: 'back_office',
-            img1: urlImg1, img2: urlImg2, img3: urlImg3,
-            vid1: urlVid1, vid2: urlVid2, vid3: urlVid3
+            //Protect the existing media URLs in the main order table from being overwritten
+            img1: urlImg1 || activeTechTicket.img1, 
+            img2: urlImg2 || activeTechTicket.img2, 
+            img3: urlImg3 || activeTechTicket.img3,
+            vid1: urlVid1 || activeTechTicket.vid1, 
+            vid2: urlVid2 || activeTechTicket.vid2, 
+            vid3: urlVid3 || activeTechTicket.vid3
         })
         .eq('so', activeTechTicket.so);
 

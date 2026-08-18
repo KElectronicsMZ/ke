@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Performance Report</title>
+    
+    <!-- Inherit your global styles -->
+    <link rel="stylesheet" href="../style.css">
+    
+    <!-- Required Libraries: Supabase, Excel (SheetJS), and PDF (html2pdf) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body style="padding: 20px;">
+
+    <!-- Header -->
+    <div class="system-header" style="max-width: 1000px; margin: 0 auto;">
+        <h2>📊 Detailed Performance Report</h2>
+        <button onclick="window.close()" class="details-btn" style="width: auto; padding: 8px 30px; margin-top: 0;">Close Window</button>
+    </div>
+
+    <!-- Date & Time Controls -->
+    <div style="max-width: 1000px; margin: 20px auto; background: var(--card-bg); padding: 20px; border-radius: 8px; border: 1px solid var(--border-color);">
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+            
+            <!-- Start Date & Time Split -->
+            <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1;">
+                <label style="font-weight: bold; font-size: 14px;">Start Range:</label>
+                <div style="display: flex; gap: 5px;">
+                    <input type="date" id="reportStartDate" style="flex: 2; padding: 10px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px; font-family: inherit;">
+                    <input type="time" id="reportStartTime" style="flex: 1; padding: 10px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px; font-family: inherit;">
+                </div>
+            </div>
+            
+            <!-- End Date & Time Split -->
+            <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1;">
+                <label style="font-weight: bold; font-size: 14px;">End Range:</label>
+                <div style="display: flex; gap: 5px;">
+                    <input type="date" id="reportEndDate" style="flex: 2; padding: 10px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px; font-family: inherit;">
+                    <input type="time" id="reportEndTime" style="flex: 1; padding: 10px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px; font-family: inherit;">
+                </div>
+            </div>
+            
+            <button id="btnRunReport" class="primary-btn" style="height: 40px; padding: 0 20px; background: #1976d2;">Run Report</button>
+            <button id="btnExportExcel" class="secondary-btn" style="height: 40px; padding: 0 20px; background: #2e7d32; display: none;">⬇️ Excel</button>
+            <button id="btnExportPDF" class="secondary-btn" style="height: 40px; padding: 0 20px; background: #d32f2f; display: none;">⬇️ PDF</button>
+        
+        </div>
+    </div>
+
+    <!-- Container where the data will be injected -->
+    <div id="reportContent" style="max-width: 1000px; margin: 0 auto; display: none;">
+        <!-- Data rendering happens in Phase 4 -->
+    </div>
+
+    <!-- REPORT VIEW ONLY MODAL -->
+    <div id="reportDetailsModal" class="modal-overlay" style="z-index: 1050;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="reportModalHeader">Order Details</h3>
+                <button onclick="document.getElementById('reportDetailsModal').style.display='none'" class="close-btn">X</button>
+            </div>
+            <div class="modal-body">
+                <div id="reportModalBody" class="read-only-box"></div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="document.getElementById('reportDetailsModal').style.display='none'" class="secondary-btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- REPORT METRIC LIST MODAL -->
+    <div id="reportMetricListModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 id="reportMetricModalTitle">Details</h3>
+                <button onclick="document.getElementById('reportMetricListModal').style.display='none'" class="close-btn">X</button>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                <div id="reportMetricList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- The script file we will build next -->
+    <script src="report.js"></script>
+</body>
+</html>

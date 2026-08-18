@@ -266,6 +266,7 @@
                     <button id="monitorFilterDateBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px;">Apply Filter</button>
                     <button id="monitorClearDateBtn" style="background: transparent; color: #d32f2f; border: 1px solid #d32f2f; padding: 5px; cursor: pointer;">Clear Filter</button>
                     <button id="monitorDownloadCsvBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px; background: #1976d2; color: white; margin-top: 10px;">Download CSV</button>
+                    <button id="monitorReportBtn" onclick="window.open('./reports/index.html', '_blank')" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px; background: #8e24aa; color: white; margin-top: 10px; font-weight: bold;">📊 Generate Report</button>
                     </div>
                     
                     <button id="monitorHubBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 10px; width: 100%; font-size: 14px;">Back to HUB</button>
@@ -516,7 +517,7 @@
             </div>
         </div>
 
-        <div id="detailsModal" class="modal-overlay">
+        <div id="detailsModal" class="modal-overlay" style="z-index: 1050;">
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 id="modalSoHeader">Order Details</h3>

@@ -233,4 +233,106 @@
             }
         });
     }
+    // 8. Supervisor Assignment Logic
+    const supervisorSelectDropdown = document.getElementById('supervisorSelectDropdown');
+    const supervisorTeamContainer = document.getElementById('supervisorTeamContainer');
+    const saveSupervisorTeamBtn = document.getElementById('save-supervisor-team-btn');
+    const supervisorTeamSavedMsg = document.getElementById('supervisorTeamSavedMsg');
+
+    if (supervisorSelectDropdown && btnSettings) {
+        btnSettings.addEventListener('click', async () => {
+            // Populate supervisors dropdown
+            const { data: supervisorsData } = await supabaseClient
+                .from('profiles')
+                .select('username')
+                .ilike('role', '%supervisor%')
+                .order('username');
+
+            if (supervisorsData) {
+                supervisorSelectDropdown.innerHTML = '<option value="">-- Choose Supervisor --</option>';
+                supervisorsData.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.username;
+                    opt.textContent = s.username;
+                    supervisorSelectDropdown.appendChild(opt);
+                });
+            }
+        });
+
+        // Show technicians when a supervisor is selected
+        supervisorSelectDropdown.addEventListener('change', async (e) => {
+            const selectedSupervisor = e.target.value;
+            if (!selectedSupervisor) {
+                supervisorTeamContainer.style.display = 'none';
+                saveSupervisorTeamBtn.style.display = 'none';
+                return;
+            }
+
+            supervisorTeamContainer.innerHTML = '<span style="color: gray;">Loading technicians...</span>';
+            supervisorTeamContainer.style.display = 'flex';
+
+            // Fetch ALL technicians to display as checkboxes
+            const { data: techsData } = await supabaseClient
+                .from('profiles')
+                .select('username, supervisor_name')
+                .ilike('role', '%technician%')
+                .order('username');
+
+            supervisorTeamContainer.innerHTML = '';
+
+            if (techsData && techsData.length > 0) {
+                techsData.forEach(tech => {
+                    const label = document.createElement('label');
+                    label.style.cssText = 'display: flex; align-items: center; gap: 10px; cursor: pointer; border-bottom: 1px dashed var(--border-color); padding-bottom: 8px;';
+                    // Check if this technician is currently assigned to the selected supervisor
+                    const isChecked = (tech.supervisor_name === selectedSupervisor) ? 'checked' : '';
+                    label.innerHTML = `
+                        <input type="checkbox" data-tech="${tech.username}" style="width: 18px; height: 18px;" ${isChecked}>
+                        <span style="font-weight: bold;">${tech.username}</span>
+                    `;
+                    supervisorTeamContainer.appendChild(label);
+                });
+                saveSupervisorTeamBtn.style.display = 'block';
+            } else {
+                supervisorTeamContainer.innerHTML = '<span style="color: gray;">No technicians found.</span>';
+                saveSupervisorTeamBtn.style.display = 'none';
+            }
+        });
+
+        // Save supervisor assignment
+        saveSupervisorTeamBtn.addEventListener('click', async () => {
+            const selectedSupervisor = supervisorSelectDropdown.value;
+            if (!selectedSupervisor) return;
+
+            saveSupervisorTeamBtn.disabled = true;
+            saveSupervisorTeamBtn.textContent = 'Saving...';
+            supervisorTeamSavedMsg.style.display = 'none';
+
+            const checkboxes = supervisorTeamContainer.querySelectorAll('input[type="checkbox"]');
+            let updatePromises = [];
+
+            // Bulk update each technician's profile
+            checkboxes.forEach(box => {
+                const techName = box.dataset.tech;
+                if (box.checked) {
+                    updatePromises.push(supabaseClient.from('profiles').update({ supervisor_name: selectedSupervisor }).eq('username', techName));
+                } else {
+                    // Only nullify if they were assigned to THIS supervisor to prevent overwriting others
+                    updatePromises.push(
+                        supabaseClient.from('profiles')
+                        .update({ supervisor_name: null })
+                        .eq('username', techName)
+                        .eq('supervisor_name', selectedSupervisor) 
+                    );
+                }
+            });
+
+            await Promise.all(updatePromises);
+
+            saveSupervisorTeamBtn.disabled = false;
+            saveSupervisorTeamBtn.textContent = '💾 Save Team Assignment';
+            supervisorTeamSavedMsg.style.display = 'block';
+            setTimeout(() => supervisorTeamSavedMsg.style.display = 'none', 3000);
+        });
+    }
 })();

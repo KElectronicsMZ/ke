@@ -50,13 +50,11 @@ document.getElementById('btnAssignation').addEventListener('click', async () => 
     menuPage.classList.remove('active');
     assignationPage.classList.add('active');
     
-    // FETCH UPDATE: The '%' symbols tell the database to look for the word 
-    // "technician" even if there are accidental spaces before or after it.
-    const { data, error } = await supabaseClient
-        .from('profiles')
-        .select('username')
-        .ilike('role', '%technician%'); 
-        
+    // FETCH UPDATE: Expanded to include both technicians and supervisors
+    const { data, error } = await supabaseClient  
+        .from('profiles')  
+        .select('username')  
+        .or('role.ilike.%technician%,role.ilike.%supervisor%');
     if (!error && data) {
         availableTechnicians = data.map(d => d.username);
         

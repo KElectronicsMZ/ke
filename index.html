@@ -120,6 +120,7 @@
             <button class="menu-btn" id="btnWarehouse">Warehouse</button>
             <button class="menu-btn" id="btnAccounting">Accounting</button>
             <button class="menu-btn" id="btnTracking">Tracking</button>
+            <button class="menu-btn" id="btnMyTeam">My Team</button>
             
         </div>
         <div class="center-cancel">
@@ -446,7 +447,10 @@
                 </ul>
             </div>
 
-            <button id="techHubBtn" class="details-btn" style="width: auto; padding: 8px 30px; margin-top: 0;">Back</button>
+            <div style="display: flex; gap: 10px;">
+                <button id="btnOpenTechParts" class="primary-btn" style="width: auto; padding: 8px 20px; margin-top: 0; background-color: #8e24aa; border-color: #6a1b9a;">📦 My Parts</button>
+                <button id="techHubBtn" class="details-btn" style="width: auto; padding: 8px 30px; margin-top: 0;">Back</button>
+            </div>
         </div>
         
         <!-- MANAGER SELECTOR -->
@@ -773,7 +777,87 @@
             <button id="ccBackToQueueBtn" class="secondary-btn" style="width: 100%; max-width: 300px;">🔙 Back to Queue</button>
         </div>
     </div>
-    
+    <!-- MY TEAM PAGE -->
+    <div id="myTeamPage" class="page">
+        <div class="system-header" style="flex-direction: column; align-items: center; gap: 10px;">
+            <h2 style="margin: 0;">👥 My Team Dashboard</h2>
+            <button id="myTeamHubBtn" class="details-btn" style="width: auto; padding: 8px 30px; margin-top: 0;">Back to HUB</button>
+        </div>
+
+        <!-- MANAGER OVERRIDE -->
+        <div id="myTeamManagerSelectContainer" style="display: none; width: 100%; max-width: 800px; margin: 0 auto 15px auto; flex-direction: column; gap: 5px;">
+            <label style="font-weight: bold; font-size: 14px; color: var(--text-color);">View Supervisor's Team (Manager Only):</label>
+            <select id="myTeamSupervisorSelect" style="padding: 10px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); border-radius: 4px; font-size: 14px;">
+                <option value="">-- Select a Supervisor --</option>
+            </select>
+        </div>
+
+        <!-- DATE FILTERS -->
+        <div class="date-filter-group" style="width: 100%; max-width: 800px; margin: 0 auto 20px auto; display: flex; flex-direction: column; gap: 10px; background: var(--card-bg); padding: 15px; border-radius: 5px; border: 1px solid var(--border-color); box-sizing: border-box;">
+            <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+                <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1;">
+                    <label style="font-size: 12px; font-weight: bold;">Start Date:</label>
+                    <input type="date" id="myTeamStartDate" style="padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1;">
+                    <label style="font-size: 12px; font-weight: bold;">End Date:</label>
+                    <input type="date" id="myTeamEndDate" style="padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                </div>
+                <button id="btnFetchMyTeam" class="primary-btn" style="padding: 8px 15px; height: 36px; white-space: nowrap;">📊 Generate Report</button>
+            </div>
+        </div>
+
+        <!-- REPORT CONTAINERS -->
+        <div style="width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
+            
+            <!-- WORKLOAD SECTION -->
+            <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
+                <h3 style="margin-top: 0; color: #1976d2; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">📋 Team Workload</h3>
+                <div class="table-container" style="max-height: 300px;">
+                    <table id="myTeamWorkloadTable">
+                        <thead><tr><th>Technician</th><th>Assigned Orders</th><th>Actions Submitted</th><th>Pending (Left Out)</th><th>Finished</th><th>Total Collected</th></tr></thead>
+                        <tbody id="myTeamWorkloadBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- CURRENT STOCK SECTION -->
+            <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
+                <h3 style="margin-top: 0; color: #8e24aa; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">📦 Current Parts Stock</h3>
+                <div class="table-container" style="max-height: 300px;">
+                    <table id="myTeamStockTable">
+                        <thead><tr><th>Technician</th><th>SO</th><th>Part Name</th><th>Qty on Hand</th></tr></thead>
+                        <tbody id="myTeamStockBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- INVENTORY LOGS SECTION -->
+            <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
+                <h3 style="margin-top: 0; color: #fbc02d; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">🔄 Inventory Logs</h3>
+                <div class="table-container" style="max-height: 300px;">
+                    <table id="myTeamLogsTable">
+                        <thead><tr><th>Date</th><th>Technician</th><th>SO</th><th>Part</th><th>Qty</th><th>Direction</th><th>Comment</th></tr></thead>
+                        <tbody id="myTeamLogsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div id="myTeamDetailsModal" class="modal-overlay" style="z-index: 1100; display: none;">
+            <div class="modal-content" style="max-width: 500px;">
+                <div class="modal-header">
+                    <h3 id="myTeamModalTitle">Team Metric Details</h3>
+                    <button id="closeMyTeamModalBtn" class="close-btn">X</button>
+                </div>
+                <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                    <p id="myTeamModalSubtitle" style="font-size: 13px; opacity: 0.8; margin-top: 0; margin-bottom: 15px;"></p>
+                    <div id="myTeamModalList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
     <!-- SETTINGS PAGE (Managers Only) -->
     <div id="settingsPage" class="page">
         <div class="system-header" style="width: 100%; max-width: 800px; flex-direction: column; align-items: center; gap: 10px;">
@@ -855,6 +939,25 @@
                 <button id="save-user-role-btn" class="primary-btn" style="width: 100%; display: none; background: #8e24aa;">💾 Update User Role</button>
                 <div id="userRoleSavedMsg" style="display: none; color: #4caf50; font-weight: bold; margin-top: 10px; text-align: center;">User Role Updated Successfully!</div>
             </div>
+            <!-- SECTION 4: Supervisor Assignment -->
+            <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #fbc02d; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">👥 Supervisor Team Assignment</h3>
+                <p style="font-size: 13px; opacity: 0.8; margin-bottom: 15px;">Select a supervisor, then check the boxes for the technicians assigned to their team.</p>
+                
+                <div class="input-group" style="margin-bottom: 15px;">
+                    <label>Select Supervisor:</label>
+                    <select id="supervisorSelectDropdown" style="padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                        <option value="">-- Choose Supervisor --</option>
+                    </select>
+                </div>
+
+                <div id="supervisorTeamContainer" style="display: none; flex-direction: column; gap: 12px; margin-bottom: 20px; background: rgba(0,0,0,0.05); padding: 15px; border-radius: 4px; border: 1px dashed var(--border-color); max-height: 250px; overflow-y: auto;">
+                    <!-- Checkboxes injected by JS -->
+                </div>
+
+                <button id="save-supervisor-team-btn" class="primary-btn" style="width: 100%; display: none; background: #fbc02d; color: black;">💾 Save Team Assignment</button>
+                <div id="supervisorTeamSavedMsg" style="display: none; color: #4caf50; font-weight: bold; margin-top: 10px; text-align: center;">Team Assigned Successfully!</div>
+            </div>
 
         </div>
     </div>
@@ -864,24 +967,51 @@
         <div class="system-header" style="width: 100%; max-width: 800px; text-align: center;">
             <h2>Warehouse Management</h2>
         </div>
-        <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 40px; border-radius: 8px; width: 100%; max-width: 800px; text-align: center;">
-            <h3 style="opacity: 0.8;">this is warehouse place holder</h3>
+        
+        <!-- NEW WAREHOUSE INTERFACE -->
+        <div style="width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; padding: 10px;">
+            
+            <!-- Search Bar & Global View -->
+            <div style="display: flex; flex-direction: column; gap: 15px; background: var(--card-bg); padding: 15px; border: 1px solid var(--border-color); border-radius: 8px;">
+                <!-- Row 1: Search -->
+                <div style="display: flex; gap: 10px; width: 100%;">
+                    <input type="text" id="whSearchInput" placeholder="Enter or Scan SO Number..." style="padding: 10px; flex-grow: 1; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px; font-size: 16px;">
+                    <button id="btnWhSearch" class="primary-btn" style="padding: 10px 20px; white-space: nowrap;">🔍 Search Order</button>
+                </div>
+                <!-- Row 2: Actions -->
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; border-top: 1px dashed var(--border-color); padding-top: 15px;">
+                    <button id="btnWhViewAll" class="secondary-btn" style="flex: 1; padding: 10px; background-color: #8e24aa; color: white; border: none; font-weight: bold; min-width: 150px;">📦 View All Pending Parts</button>
+                    <button id="btnWhOrphaned" class="secondary-btn" style="flex: 1; padding: 10px; background-color: #d32f2f; color: white; border: none; font-weight: bold; min-width: 150px;">⚠️ View Orphaned Parts</button>
+                    <button id="btnWhReports" class="secondary-btn" style="flex: 1; padding: 10px; background-color: #fbc02d; color: black; border: none; font-weight: bold; min-width: 150px;">📊 Reports & Waste</button>
+                </div>
+            </div>
+
+            <!-- Target Container for the Ticket & Parts -->
+            <div id="whOrderContainer" style="display: none; flex-direction: column; gap: 15px;"></div>
+
+            <!-- Warehouse Reports Container -->
+            <div id="whReportsContainer" style="display: none; flex-direction: column; gap: 15px; background: var(--card-bg); padding: 15px; border: 1px solid var(--border-color); border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #fbc02d; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">Warehouse Dashboard</h3>
+                <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+                    <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <label style="font-size: 12px; font-weight: bold;">Start Date:</label>
+                        <input type="date" id="whReportStart" style="padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <label style="font-size: 12px; font-weight: bold;">End Date:</label>
+                        <input type="date" id="whReportEnd" style="padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                    </div>
+                    <button id="btnFetchWhReport" class="primary-btn" style="padding: 8px 15px;">Fetch Ledger</button>
+                    <button id="btnExportWhExcel" class="primary-btn" style="padding: 8px 15px; background: #2e7d32; border: none; display: none;">⬇️ Export Excel</button>
+                </div>
+                <div id="whReportResults" style="max-height: 400px; overflow-y: auto; display: none;"></div>
+            </div>
+
         </div>
+        <!-- END NEW WAREHOUSE INTERFACE -->
+
         <div class="button-group" style="margin-top: 20px;">
             <button id="warehouseHubBtn" style="padding: 10px 30px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color);">Back to HUB</button>
-        </div>
-    </div>
-
-    <!-- ACCOUNTING PAGE -->
-    <div id="accountingPage" class="page">
-        <div class="system-header" style="width: 100%; max-width: 800px; text-align: center;">
-            <h2>Accounting Management</h2>
-        </div>
-        <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 40px; border-radius: 8px; width: 100%; max-width: 800px; text-align: center;">
-            <h3 style="opacity: 0.8;">Accounting module coming soon...</h3>
-        </div>
-        <div class="button-group" style="margin-top: 20px;">
-            <button id="accountingHubBtn" style="padding: 10px 30px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color);">Back to HUB</button>
         </div>
     </div>
 
@@ -898,6 +1028,52 @@
         </div>
     </div>
 
+    <!-- TECHNICIAN "MY PARTS" MODAL -->
+    <div id="techPartsModal" class="modal-overlay" style="z-index: 1050;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>📦 My Parts Inventory</h3>
+                <button id="closeTechPartsBtn" class="close-btn">X</button>
+            </div>
+            <div class="modal-body">
+                <div style="background: var(--card-bg); padding: 15px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px; margin-bottom: 15px;">
+                    <p style="margin: 0; opacity: 0.8;">A live view of the parts you are currently holding, compared to the parts you need for your active orders.</p>
+                </div>
+                <div id="techPartsListContainer" style="display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto;">
+                    <!-- Parts list will be injected here by Javascript -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelTechPartsBtn" class="secondary-btn">Close</button>
+            </div>
+        </div>
+    </div>
+    <!-- WAREHOUSE ACTION MODAL -->
+    <div id="whActionModal" class="modal-overlay" style="z-index: 1060; display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 id="whActionTitle">Warehouse Action</h3>
+                <button onclick="document.getElementById('whActionModal').style.display='none'" class="close-btn">X</button>
+            </div>
+            <div class="modal-body">
+                <p id="whActionSubtitle" style="font-size: 13px; opacity: 0.8; margin-top: 0; margin-bottom: 15px;"></p>
+                <div class="input-group">
+                    <label>Quantity:</label>
+                    <input type="number" id="whActionQty" value="1" min="1" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                </div>
+                <div class="input-group">
+                    <label>Comment (Optional):</label>
+                    <textarea id="whActionComment" rows="2" placeholder="Leave a comment..." style="width: 100%; padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content: flex-end; gap: 10px;">
+                <button onclick="document.getElementById('whActionModal').style.display='none'" class="secondary-btn">Cancel</button>
+                <button id="whActionConfirmBtn" class="primary-btn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+
     <script src="app.js"></script>
     <script src="warehouse.js"></script>
     <script src="callcenter.js"></script>
@@ -905,6 +1081,7 @@
     <script src="accounting.js"></script>
     <script src="tracking.js"></script>
     <script src="assignation.js"></script>
+    <script src="myteam.js"></script>
 
     <!-- USER HISTORY SIDE PANEL -->
     <div id="historyPanel" class="history-panel">

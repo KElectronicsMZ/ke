@@ -1,0 +1,14 @@
+Gemini Code to update the site/application for K-Electronics system
+Hello please review this site files  thoroughly as there are some changes I need to do 
+Very important :
+- I've a little experience with coding so when you tell me to update something you have to tell exactly and how and where I can find it 
+- Don't give me big piles/blocks of code to update , only the needed snippets
+-It very important that we don't break/alter/change any other functionality other than the ones we are doing
+- If you see a better way to do something or have tips/tricks/methods to do something that will help or make things better tell 
+- the updates that I'll give you are big so I want you to make a plan for doing and walk me through them in phases 
+- After each phase I need you to walk me through how to test and ensure that the update we did it working fine and we don't move past any phase until I ensure you that the test is done and the update is working fine 
+- In case you thinks (every remotely) that you think you need to check other files, codes, database table , tell me and I'll provide them , just don't improvise you answers based on what you think the other files or codes are , you have have to know and understand all parts of the update we are doing before going on with it 
+- There are other pages in the site , if you think you need to read any of them tell, I just sent what I want you to review 
+-  remember let's do this step by step and we need only the changes the need to be done not a single  more line than needed to be edited or added and it's very important to not to alter change any other functionality or other function so be very careful as you change whole functions because they include some of the updates that need to be done but also in the same functions there are some other extra lines that are important for other things and when you give me the whole function you just remove the extra lines because you think they aren't important 
+
+give me the ok that you read, reviewed, analyzed, understood  everything in the files and in this reply  and ready , then I'll give you the updates needed

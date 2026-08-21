@@ -447,6 +447,7 @@ async function applyRoleBasedMenuVisibility() {
     const btnWarehouse = document.getElementById('btnWarehouse');
     const btnAccounting = document.getElementById('btnAccounting');
     const btnTracking = document.getElementById('btnTracking');
+    const btnMyTeam = document.getElementById('btnMyTeam');
 
     // 2. Hide EVERYTHING by default to be safe
     if (btnMyOrders) btnMyOrders.style.display = 'none';
@@ -459,6 +460,7 @@ async function applyRoleBasedMenuVisibility() {
     if (btnWarehouse) btnWarehouse.style.display = 'none';
     if (btnAccounting) btnAccounting.style.display = 'none';
     if (btnTracking) btnTracking.style.display = 'none';
+    if (btnMyTeam) btnMyTeam.style.display = 'none';
 
     // 3. Fetch this specific role's permissions from the database
     const { data: perms, error } = await supabaseClient
@@ -483,6 +485,10 @@ async function applyRoleBasedMenuVisibility() {
     if (btnWarehouse && perms.can_view_warehouse) btnWarehouse.style.display = 'block';
     if (btnAccounting && perms.can_view_accounting) btnAccounting.style.display = 'block';
     if (btnTracking && perms.can_view_tracking) btnTracking.style.display = 'block';
+    // Hardcoded fallback for My Team to avoid requiring an immediate database schema change in role_permissions
+    if (btnMyTeam && (userRole.includes('supervisor') || userRole.includes('manager') || userRole.includes('admin'))) {
+        btnMyTeam.style.display = 'block';
+    }
 }
 // ---------------------------------------------------
 document.getElementById('btnSystem').addEventListener('click', () => {
@@ -2339,7 +2345,7 @@ document.getElementById('btnCompleteTech').addEventListener('click', async () =>
         const { data, error } = await supabaseClient
             .from('profiles')
             .select('username')
-            .ilike('role', '%technician%'); 
+            .or('role.ilike.%technician%,role.ilike.%supervisor%');
         
         if (data && !error) {
             availableTechnicians = data.map(d => d.username);
@@ -2982,6 +2988,8 @@ async function loadActiveTickets(managerOverrideUser = null) {
 
     const role = currentUser.role.toLowerCase();
     const isManager = role.includes('manager') || role.includes('admin');
+    const isSupervisor = role.includes('supervisor');
+    const canSelectUser = isManager || isSupervisor;
     let targetRole = role; // Default to your own role
 
     // FORCE HIDE THE DROPDOWN FIRST (Fixes the bug for non-managers)
@@ -2989,14 +2997,26 @@ async function loadActiveTickets(managerOverrideUser = null) {
     if (managerContainer) managerContainer.style.display = 'none';
 
 
-    // --- MANAGER INTERCEPTOR ---
-    if (isManager) {
+    // --- MANAGER/SUPERVISOR INTERCEPTOR ---
+    if (canSelectUser) {
         document.getElementById('managerUserSelectContainer').style.display = 'flex';
+        // Adjust Label Dynamically
+        document.querySelector('#managerUserSelectContainer label').textContent = isSupervisor && !isManager 
+            ? "View Your Team's Orders:" 
+            : "View User's Orders (Manager Only):";
+        
         const userSelect = document.getElementById('managerUserSelect');
         
         if (userSelect.children.length <= 1) {
-            // UPDATED: Fetch roles as well as usernames!
-            const { data } = await supabaseClient.from('profiles').select('username, role'); 
+            let query = supabaseClient.from('profiles').select('username, role');
+            
+            // If they are ONLY a supervisor, strictly limit to their assigned team
+            if (isSupervisor && !isManager) {
+                // Fetch anyone assigned to this supervisor OR the supervisor themselves
+                query = query.or(`supervisor_name.eq.${currentUser.username},username.eq.${currentUser.username}`);
+            }
+
+            const { data } = await query; 
             if (data) {
                 data.sort((a,b) => a.username.localeCompare(b.username)).forEach(p => {
                     const opt = document.createElement('option');
@@ -3852,7 +3872,7 @@ coordStatusSelect.addEventListener('change', async (e) => {
             const { data, error } = await supabaseClient
                 .from('profiles')
                 .select('username')
-                .ilike('role', '%technician%'); 
+                .or('role.ilike.%technician%,role.ilike.%supervisor%');
             
             if (data && !error) {
                 availableTechnicians = data.map(d => d.username);
@@ -3910,11 +3930,15 @@ confirmCoordBtn.addEventListener('click', async () => {
     }
 
     // 1. Log the action in repair_log
+    const previousTech = activeTechTicket.assigned_tech || ''; // Capture before wiping
+    
     const logPayload = {
         so: activeTechTicket.so,
         status: finalOrderStatus, 
         assigned_by: currentUser.username, 
         assigned_tech: finalAssignedTech,
+        end_tech: newStatus === 'Complete' ? previousTech : '',
+        complete_coord: newStatus === 'Complete' ? currentUser.username : '',
         comment: coordComment, // <-- Push the Back Office comment to the history log!
         assign_date: `${dd}-${mm}-${yyyy}`,
         assign_time: `${hh}:${min}`
@@ -3934,6 +3958,11 @@ confirmCoordBtn.addEventListener('click', async () => {
         status: finalOrderStatus,
         assigned_tech: finalAssignedTech
     };
+
+    if (newStatus === 'Complete') {
+        orderUpdatePayload.complete_tech = previousTech;
+        orderUpdatePayload.complete_coord = currentUser.username;
+    }
 
     const { error: orderErr } = await supabaseClient
         .from('orders')
@@ -5821,3 +5850,121 @@ document.getElementById('toggleFollowUpBtn').addEventListener('click', () => {
         arrow.textContent = '▼';
     }
 });
+
+// ==========================================
+// --- TECHNICIAN "MY PARTS" MODAL LOGIC ---
+// ==========================================
+const btnOpenTechParts = document.getElementById('btnOpenTechParts');
+const techPartsModal = document.getElementById('techPartsModal');
+const closeTechPartsBtn = document.getElementById('closeTechPartsBtn');
+const cancelTechPartsBtn = document.getElementById('cancelTechPartsBtn');
+const techPartsListContainer = document.getElementById('techPartsListContainer');
+
+if (btnOpenTechParts) {
+    btnOpenTechParts.addEventListener('click', async () => {
+        // Fallback for offline mode or missing user
+        if (!currentUser) return;
+        if (!navigator.onLine) {
+            alert("You must have an active internet connection to check live inventory.");
+            return;
+        }
+        
+        techPartsModal.style.display = 'flex';
+        techPartsListContainer.innerHTML = '<div style="text-align:center; padding: 20px; opacity: 0.8;">⏳ Reconciling your inventory...</div>';
+
+        const techName = currentUser.username;
+
+        // 1. Fetch current active orders for this tech to see what they NEED
+        const { data: activeOrders } = await supabaseClient
+            .from('orders')
+            .select('*')
+            .eq('status', 'Technician')
+            .ilike('assigned_tech', techName);
+
+        let requiredPartsMap = {}; 
+        
+        if (activeOrders) {
+            activeOrders.forEach(order => {
+                // Use our global utility function from warehouse.js
+                const parts = window.parseRequiredParts(order);
+                parts.forEach(p => {
+                    if (!requiredPartsMap[p.part_name]) {
+                        requiredPartsMap[p.part_name] = { qty: 0, soList: [] };
+                    }
+                    requiredPartsMap[p.part_name].qty += p.required_qty;
+                    requiredPartsMap[p.part_name].soList.push(order.so);
+                });
+            });
+        }
+
+        // 2. Fetch the tech's actual liability from the Warehouse view to see what they HAVE
+        const { data: stockData } = await supabaseClient
+            .from('inventory_current_stock_view')
+            .select('*')
+            .eq('tech_id', techName);
+
+        let heldPartsMap = {};
+        if (stockData) {
+            stockData.forEach(stock => {
+                if (!heldPartsMap[stock.part_name]) {
+                    heldPartsMap[stock.part_name] = { qty: 0, soList: [] };
+                }
+                heldPartsMap[stock.part_name].qty += stock.qty_on_hand;
+                heldPartsMap[stock.part_name].soList.push(stock.so);
+            });
+        }
+
+        // 3. Reconcile and build the UI
+        let html = '';
+        const allPartNames = new Set([...Object.keys(requiredPartsMap), ...Object.keys(heldPartsMap)]);
+
+        if (allPartNames.size === 0) {
+            techPartsListContainer.innerHTML = '<div style="text-align:center; padding: 20px; opacity: 0.8;">You currently have no parts assigned or required.</div>';
+            return;
+        }
+
+        allPartNames.forEach(partName => {
+            const req = requiredPartsMap[partName] || { qty: 0, soList: [] };
+            const held = heldPartsMap[partName] || { qty: 0, soList: [] };
+            
+            let statusBadge = '';
+            let bgColor = 'var(--bg-color)';
+            
+            if (held.qty === 0 && req.qty > 0) {
+                // Need it but don't have it
+                statusBadge = `<span style="color: #d32f2f; font-weight: bold; background: rgba(211, 47, 47, 0.1); padding: 3px 8px; border-radius: 4px;">Pick Up Needed (0 / ${req.qty})</span>`;
+            } else if (held.qty < req.qty) {
+                // Have some, but not enough
+                statusBadge = `<span style="color: #fbc02d; font-weight: bold; background: rgba(251, 192, 45, 0.1); padding: 3px 8px; border-radius: 4px;">Partial (${held.qty} / ${req.qty})</span>`;
+            } else if (held.qty >= req.qty && req.qty > 0) {
+                // Have exactly what's needed (or more)
+                statusBadge = `<span style="color: #2e7d32; font-weight: bold; background: rgba(46, 125, 50, 0.1); padding: 3px 8px; border-radius: 4px;">Ready to Use (${held.qty} / ${req.qty})</span>`;
+            } else if (held.qty > 0 && req.qty === 0) {
+                // Held but NOT required anymore (Orphaned!)
+                statusBadge = `<span style="color: #d32f2f; font-weight: bold; background: rgba(211, 47, 47, 0.1); padding: 3px 8px; border-radius: 4px;">⚠️ Orphaned (${held.qty}) - Return to WH!</span>`;
+                bgColor = 'rgba(211, 47, 47, 0.05)';
+            }
+
+            // Build clickable links for the SO numbers
+            const soLinks = [...new Set([...req.soList, ...held.soList])].map(so => 
+                `<a href="#" onclick="window.openWhViewModal('${so}'); return false;" style="color: #1976d2; font-weight: bold; text-decoration: underline;">${so}</a>`
+            ).join(', ');
+
+            html += `
+                <div style="background: ${bgColor}; border: 1px solid var(--border-color); border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong style="font-size: 15px; color: #8e24aa;">⚙️ ${partName}</strong>
+                        ${statusBadge}
+                    </div>
+                    <div style="font-size: 12px; opacity: 0.8;"><strong>Related SOs:</strong> ${soLinks || 'None'}</div>
+                </div>
+            `;
+        });
+
+        techPartsListContainer.innerHTML = html;
+    });
+}
+
+// Close Triggers
+if (closeTechPartsBtn) closeTechPartsBtn.addEventListener('click', () => techPartsModal.style.display = 'none');
+if (cancelTechPartsBtn) cancelTechPartsBtn.addEventListener('click', () => techPartsModal.style.display = 'none');

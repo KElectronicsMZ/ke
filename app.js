@@ -123,6 +123,31 @@ function loadTicketsFromVault() {
 }
 
 // --- 2. APPLICATION STATE CONFIGURATION ---
+
+// --- PHASE 5: AUTO-VERSION ENGINE (UPGRADED) ---
+// Directly queries the browser's Cache Storage to prove exactly which version is running
+async function displaySystemVersion() {
+    const versionDisplay = document.getElementById('appVersionDisplay');
+    if (!versionDisplay) return;
+    try {
+        // Ask the browser directly what caches are actively installed
+        const cacheNames = await caches.keys();
+        // Find the one that belongs to our system
+        const systemCache = cacheNames.find(name => name.startsWith('ke-tech-cache-'));
+        
+        if (systemCache) {
+            // Extract just the "vX.X" part (e.g., "ke-tech-cache-v4.5" becomes "v4.5")
+            const version = systemCache.replace('ke-tech-cache-', '');
+            versionDisplay.textContent = version;
+        } else {
+            versionDisplay.textContent = 'vUnknown';
+        }
+    } catch (e) {
+        versionDisplay.textContent = 'vOffline';
+    }
+}
+// ------------------------------------
+
 let activeInputTarget = null; // Tracks the currently selected table cell input
 let sortDirection = {}; // Tracks if column is sorting 'asc' or 'desc'
 let currentUser = null;
@@ -198,7 +223,123 @@ if (savedTheme) {
 }
 
 
+// --- 4.4 REALTIME BACK OFFICE ALARM ENGINE ---
+let backOfficeChannel = null;
+let unreadAlarmCount = 0; // Tracks new tickets during this session
 
+function showAlarmToast(soNumber, techName = 'Unknown') {
+    let container = document.getElementById('alarmToastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'alarmToastContainer';
+        container.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 10px;';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.style.cssText = 'background: #d32f2f; color: white; padding: 15px 20px; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.4); font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-width: 260px; border-left: 5px solid #ffeb3b;';
+    toast.innerHTML = `<span>🚨 New Back Office Ticket: <br>SO <strong>${soNumber}</strong> <span style="font-size: 13px; font-weight: normal; opacity: 0.9;">(By: ${techName})</span></span><span style="font-size: 20px; margin-left: 15px;">&times;</span>`;
+
+    // --- PHASE 3.5: CLICK TO OPEN TICKET ---
+    toast.addEventListener('click', async () => {
+        toast.remove();
+        
+        // 1. Navigate to My Orders page visually
+        document.querySelectorAll('.page.active').forEach(p => p.classList.remove('active'));
+        const techPage = document.getElementById('techPage');
+        if (techPage) techPage.classList.add('active');
+        
+        // 2. Fetch the specific ticket from the database
+        if (typeof showGlobalLoader === 'function') showGlobalLoader("Opening Ticket...");
+        const { data, error } = await supabaseClient.from('orders').select('*').eq('so', soNumber).single();
+        if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
+        
+        // 3. Open the Coordinator Modal
+        if (data && !error) {
+            if (typeof openDetailsModal === 'function') openDetailsModal(data, 'coordinator');
+        } else {
+            alert("Could not load ticket details. It may have been reassigned.");
+        }
+    });
+
+    // Auto-remove after 15 seconds to prevent screen clutter
+    setTimeout(() => { if(toast.parentElement) toast.remove(); }, 15000);
+
+    container.appendChild(toast);
+}
+
+function initializeBackOfficeAlarm(userRole) {
+    if (!userRole) return;
+    const roleStr = userRole.toLowerCase();
+    
+    // Strict Gate: Only initialize WebSockets for authorized roles
+    if (!roleStr.includes('coordinator') && !roleStr.includes('manager') && !roleStr.includes('admin')) {
+        return;
+    }
+
+    // --- PHASE 3.5: INJECT NOTIFICATION BELL ---
+    let bellContainer = document.getElementById('alarmBellContainer');
+    if (!bellContainer) {
+        const leftSideBar = document.getElementById('bannerLeftSide');
+        if (leftSideBar) {
+            bellContainer = document.createElement('div');
+            bellContainer.id = 'alarmBellContainer';
+            bellContainer.style.cssText = 'position: relative; cursor: pointer; display: flex; align-items: center;';
+            bellContainer.innerHTML = `
+                <span style="font-size: 18px;" title="New Back Office Tickets">🔔</span>
+                <span id="alarmBellBadge" style="display: none; position: absolute; top: -5px; right: -8px; background: #d32f2f; color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; font-weight: bold;">0</span>
+            `;
+            
+            // Click Bell to clear count and view queue
+            bellContainer.addEventListener('click', () => {
+                unreadAlarmCount = 0;
+                document.getElementById('alarmBellBadge').style.display = 'none';
+                
+                document.querySelectorAll('.page.active').forEach(p => p.classList.remove('active'));
+                const techPage = document.getElementById('techPage');
+                if (techPage) techPage.classList.add('active');
+                
+                if (typeof loadActiveTickets === 'function') loadActiveTickets();
+            });
+            
+            // Insert it directly into the left sidebar next to the version
+            leftSideBar.appendChild(bellContainer);
+        }
+    }
+
+    // Prevent duplicate zombie subscriptions
+    if (backOfficeChannel) {
+        supabaseClient.removeChannel(backOfficeChannel);
+    }
+
+    backOfficeChannel = supabaseClient
+        .channel('back-office-alerts')
+        .on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'orders',
+                filter: 'status=eq.back_office' // Cost-Optimization restored since RLS was the blocker
+            },
+            (payload) => {
+                // Defensive Check: Ensure it wasn't ALREADY in the back office pool
+                if (payload.old && payload.old.status === 'back_office') return;
+                
+                // --- PHASE 3.5: INCREMENT BELL BADGE ---
+                unreadAlarmCount++;
+                const badge = document.getElementById('alarmBellBadge');
+                if (badge) {
+                    badge.textContent = unreadAlarmCount;
+                    badge.style.display = 'block';
+                }
+                
+                // --- PHASE 6: PASS TECHNICIAN NAME TO TOAST ---
+                showAlarmToast(payload.new.so, payload.new.assigned_tech);
+            }
+        )
+        .subscribe();
+}
 
 // --- 4.5 SESSION MANAGEMENT (AUTO-LOGIN) ---
 const SESSION_DURATION_MS = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
@@ -216,6 +357,7 @@ function checkExistingSession() {
             // Show top banner
             document.getElementById('bannerUsername').textContent = currentUser.username;
             document.getElementById('bannerRole').textContent = currentUser.role;
+            displaySystemVersion(); // Auto-fetches from sw.js
             document.getElementById('globalUserBanner').style.display = 'block';
             
             // --- RESTORE COLUMN PREFERENCES ON AUTO-LOGIN ---
@@ -235,6 +377,10 @@ function checkExistingSession() {
             }
             // ------------------------------------------------
             applyRoleBasedMenuVisibility(); //This lines make the buttons invisible for the user if they aren't allowed to see them when they refresh the page
+            
+            // --- PHASE 3: START ALARM ON AUTO-LOGIN ---
+            initializeBackOfficeAlarm(currentUser.role);
+            
             // Hide the login screen and show the HUB menu
             loginPage.classList.remove('active');
             menuPage.classList.add('active');
@@ -311,6 +457,7 @@ function executeLoginSequence(userData) {
 
     document.getElementById('bannerUsername').textContent = currentUser.username;
     document.getElementById('bannerRole').textContent = currentUser.role;
+    displaySystemVersion(); // Auto-fetches from sw.js
     document.getElementById('globalUserBanner').style.display = 'block';
     
     const sessionPayload = { user: currentUser, timestamp: Date.now() };
@@ -327,6 +474,9 @@ function executeLoginSequence(userData) {
     } else hiddenColumns = [];
 
     applyRoleBasedMenuVisibility();
+    
+    // --- PHASE 3: START ALARM ON STANDARD LOGIN ---
+    initializeBackOfficeAlarm(currentUser.role);
     
     document.getElementById('loginPage').classList.remove('active');
     document.getElementById('newPasswordPage').classList.remove('active');
@@ -419,6 +569,12 @@ document.getElementById('menuCancelBtn').addEventListener('click', () => {
     document.getElementById('globalUserBanner').style.display = 'none'; //hide the banner on logout
     // --- DESTROY SESSION TICKET ---
     localStorage.removeItem('ke_user_session');
+
+    // --- PHASE 3: DESTROY WEBSOCKET CONNECTION ---
+    if (backOfficeChannel) {
+        supabaseClient.removeChannel(backOfficeChannel);
+        backOfficeChannel = null;
+    }
 
     hiddenColumns = [];
     activeColumns = [...ALL_COLUMNS];
@@ -3316,9 +3472,75 @@ function fetchAndRenderTicketHistory(soNumber) {
         });
 }
 
-function openDetailsModal(ticket, viewMode = 'technician') {
+// --- PHASE 4: PESSIMISTIC LOCKING ENGINE ---
+const LOCK_TIMEOUT_MINUTES = 15;
+const LOCK_TIMEOUT_MS = LOCK_TIMEOUT_MINUTES * 60 * 1000;
+
+async function checkAndAcquireLock(soNumber) {
+    if (!navigator.onLine || !currentUser) return { isLocked: false, message: "" };
+
+    if (typeof showGlobalLoader === 'function') showGlobalLoader("Acquiring Ticket Lock...");
+    
+    const { data: lockData } = await supabaseClient
+        .from('orders')
+        .select('locked_by, locked_at')
+        .eq('so', soNumber)
+        .single();
+        
+    if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
+
+    let isLockedByOther = false;
+    let lockMessage = "";
+
+    if (lockData && lockData.locked_by && lockData.locked_at) {
+        const lockTime = new Date(lockData.locked_at).getTime();
+        const nowTime = new Date().getTime();
+        const timeDiff = nowTime - lockTime;
+
+        if (lockData.locked_by !== currentUser.username && timeDiff < LOCK_TIMEOUT_MS) {
+            isLockedByOther = true;
+            const lockDateObj = new Date(lockData.locked_at);
+            const unlockDateObj = new Date(lockTime + LOCK_TIMEOUT_MS);
+            const formatTime = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            lockMessage = `
+                <div style="background: #d32f2f; color: white; padding: 10px; border-radius: 4px; margin-bottom: 10px; font-weight: bold; border-left: 5px solid #ffb300;">
+                    🔒 This ticket is currently locked and being edited by: <span style="color:#ffeb3b;">${lockData.locked_by}</span><br>
+                    <span style="font-size: 13px; font-weight: normal;">
+                        Locked at: ${formatTime(lockDateObj)}<br>
+                        Automatically unlocks at: ${formatTime(unlockDateObj)}
+                    </span>
+                </div>
+            `;
+        }
+    }
+
+    if (!isLockedByOther) {
+        // Acquire or extend the lock
+        await supabaseClient.from('orders')
+            .update({ locked_by: currentUser.username, locked_at: new Date().toISOString() })
+            .eq('so', soNumber);
+    }
+
+    return { isLocked: isLockedByOther, message: lockMessage };
+}
+
+async function releaseTicketLock(soNumber) {
+    if (!soNumber || !currentUser || !navigator.onLine) return;
+    await supabaseClient.from('orders')
+        .update({ locked_by: null, locked_at: null })
+        .eq('so', soNumber)
+        .eq('locked_by', currentUser.username); // Strict safety: only unlock if WE hold the lock
+}
+// -------------------------------------------
+
+async function openDetailsModal(ticket, viewMode = 'technician') {
     currentlyViewedTicket = ticket;
     activeTechTicket = ticket;
+    
+    // --- PHASE 4: CHECK LOCK ---
+    const lockStatus = await checkAndAcquireLock(ticket.so);
+
     // --- UPDATE THE MODAL HEADER WITH THE SO NUMBER ---
     const modalHeaders = document.querySelectorAll('#modalSoHeader');
     modalHeaders.forEach(header => {
@@ -3367,7 +3589,7 @@ function openDetailsModal(ticket, viewMode = 'technician') {
         : `<strong>Parts:</strong> N/A<br>`;
     // -------------------------------------------------------
 
-    document.getElementById('modalReadOnlyDetails').innerHTML = `
+    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + `
         <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
             <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
         </div>
@@ -3404,7 +3626,13 @@ function openDetailsModal(ticket, viewMode = 'technician') {
     fetchAndRenderFollowUpHistory(ticket.so);
 
 
-    if (viewMode === 'coordinator') {
+    if (lockStatus.isLocked) {
+        // --- PHASE 4: LOCK OVERRIDE (FORCE READ-ONLY) ---
+        document.getElementById('techActionSection').style.display = 'none';
+        document.getElementById('confirmTechBtn').style.display = 'none';
+        document.getElementById('coordActionSection').style.display = 'none';
+        document.getElementById('confirmCoordBtn').style.display = 'none';
+    } else if (viewMode === 'coordinator') {
         // Hide Tech Zone
         document.getElementById('techActionSection').style.display = 'none';
         document.getElementById('confirmTechBtn').style.display = 'none';
@@ -3712,6 +3940,9 @@ confirmTechBtn.addEventListener('click', async () => {
                 detailsModal.style.display = 'none';
                 document.querySelectorAll('.media-grid input[type="file"]').forEach(input => input.value = '');
                 
+                // --- PHASE 4: RELEASE LOCK ---
+                releaseTicketLock(activeTechTicket.so);
+                
                 loadActiveTickets(); // Redraws the UI (the ticket is now gone!)
             };
         }
@@ -3824,7 +4055,11 @@ confirmTechBtn.addEventListener('click', async () => {
     alert("Ticket Successfully Submitted with Media!");
     detailsModal.style.display = 'none';
     document.querySelectorAll('.media-grid input[type="file"]').forEach(input => input.value = '');
-    loadActiveTickets(); 
+    
+    // --- PHASE 4: RELEASE LOCK ---
+    releaseTicketLock(activeTechTicket.so);
+    
+    loadActiveTickets();
 });
 
 
@@ -3985,7 +4220,17 @@ confirmCoordBtn.addEventListener('click', async () => {
     
     // Close modal and refresh the list (ticket vanishes because status is no longer back_office)
     detailsModal.style.display = 'none';
-    loadActiveTickets(); 
+    
+    // --- PHASE 4: RELEASE LOCK ---
+    releaseTicketLock(activeTechTicket.so);
+    
+    // --- PHASE 2: CONTEXT-AWARE REFRESH ---
+    // Detect which screen the user is currently on and reload the appropriate dataset
+    if (document.getElementById('systemPage').classList.contains('active')) {
+        if (typeof loadDatabaseData === 'function') loadDatabaseData();
+    } else {
+        if (typeof loadActiveTickets === 'function') loadActiveTickets(); 
+    }
 });
 
 
@@ -4925,8 +5170,12 @@ document.getElementById('modalCopyBtn').addEventListener('click', () => {
     });
 });
 
-function openViewOnlyModal(ticket) {
+async function openViewOnlyModal(ticket) {
     currentlyViewedTicket = ticket;
+    
+    // --- PHASE 4: CHECK LOCK ---
+    const lockStatus = await checkAndAcquireLock(ticket.so);
+    
     const modal = document.getElementById('detailsModal');
     
     // 1. Set Header
@@ -4968,7 +5217,7 @@ function openViewOnlyModal(ticket) {
         : `<strong>Parts:</strong> N/A<br>`;
     // -------------------------------------------------------
 
-    document.getElementById('modalReadOnlyDetails').innerHTML = `
+    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + `
         <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
             <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
         </div>
@@ -4990,14 +5239,37 @@ function openViewOnlyModal(ticket) {
         <strong>Call Details:</strong> ${ticket.call_details || 'N/A'}
     `;
 
-    // 6. Force View-Only Mode (Hide all action sections!)
+    // 6. Force View-Only Mode (Hide all action sections by default)
     document.getElementById('techActionSection').style.display = 'none';
-    document.getElementById('coordActionSection').style.display = 'none';
-    fetchAndRenderTicketHistory(ticket.so);
-    
-    // Hide Confirm buttons, leaving only the "Cancel / X" button active
     document.getElementById('confirmTechBtn').style.display = 'none';
-    document.getElementById('confirmCoordBtn').style.display = 'none';
+    
+    // --- PHASE 2: MANAGER/ADMIN GLOBAL SEARCH EDITING ---
+    const userRole = currentUser && currentUser.role ? currentUser.role.toLowerCase() : '';
+    const isManagerOrAdmin = userRole.includes('manager') || userRole.includes('admin');
+
+    if (isManagerOrAdmin && !lockStatus.isLocked) {
+        // Link the active ticket so the confirm button knows what to update in the database
+        activeTechTicket = ticket;
+        
+        // Expose the Coordinator panel for authorized management
+        document.getElementById('coordActionSection').style.display = 'block';
+        const confirmCoordBtn = document.getElementById('confirmCoordBtn');
+        confirmCoordBtn.style.display = 'block';
+        
+        // Reset form fields to ensure a clean slate
+        document.getElementById('coordStatusSelect').value = '';
+        document.getElementById('coordTechSelect').style.display = 'none';
+        document.getElementById('coordTechSelect').value = '';
+        document.getElementById('coordCommentInput').value = '';
+        confirmCoordBtn.disabled = true;
+        confirmCoordBtn.textContent = 'Confirm (Coord) 🔒';
+    } else {
+        // Strict View-Only enforcement for standard users
+        document.getElementById('coordActionSection').style.display = 'none';
+        document.getElementById('confirmCoordBtn').style.display = 'none';
+    }
+    
+    fetchAndRenderTicketHistory(ticket.so);
 
     // 7. Show the Modal
     modal.style.display = 'flex';
@@ -5966,5 +6238,11 @@ if (btnOpenTechParts) {
 }
 
 // Close Triggers
-if (closeTechPartsBtn) closeTechPartsBtn.addEventListener('click', () => techPartsModal.style.display = 'none');
-if (cancelTechPartsBtn) cancelTechPartsBtn.addEventListener('click', () => techPartsModal.style.display = 'none');
+document.getElementById('closeModalBtn').addEventListener('click', () => {
+    detailsModal.style.display = 'none';
+    if (currentlyViewedTicket) releaseTicketLock(currentlyViewedTicket.so);
+});
+document.getElementById('cancelModalBtn').addEventListener('click', () => {
+    detailsModal.style.display = 'none';
+    if (currentlyViewedTicket) releaseTicketLock(currentlyViewedTicket.so);
+});

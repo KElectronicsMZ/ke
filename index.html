@@ -30,8 +30,11 @@
         <h3 id="loaderText" style="margin-top: 15px; letter-spacing: 1px;">Loading Data...</h3>
     </div>
     <div id="globalUserBanner" style="display: none; background: var(--btn-bg); color: var(--text-color); padding: 8px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid var(--border-color); z-index: 9999; position: sticky; top: 0;">
-        
-        
+
+        <!--Left Side (Version & Notifications) -->
+        <div id="bannerLeftSide" style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); display: flex; gap: 15px; align-items: center;">
+            <span id="appVersionDisplay" style="font-size: 12px; font-family: monospace; opacity: 0.8; font-weight: normal; background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 4px;" title="Current System Version"></span>
+        </div>
         
         <!-- Center: User Info -->
         <span style="line-height: 24px;">User: <span id="bannerUsername"></span> - <span id="bannerRole"></span></span>

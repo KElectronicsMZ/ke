@@ -447,10 +447,12 @@
                     <li style="margin-bottom: 8px;">لازم نتصل بكل العملاء اللى فخط السير حتى لو مش هنروح وننسق معاهم على ثانى يوم وذلك لان الاتصال بالعملاء يدخل فى تقييم المركز ونريد تحسين الاداء فى هذه النقطة</li>
                     <li style="margin-bottom: 8px;">سيتم عمل مراجعة على جميع الاوردرات التى يتم الانتهاء منها للتحقق من مستوى الخدمة المقدمة للعميل او الشكاوى التى لدى العميل</li>
                     <li>ضرورى جداً الالتزام بجميع النقاط المذكورة والمخالفة لها ستعود على المخالف بجزاء كما يتراءى للادارة</li>
+                    <li> رقم الحساب البنكى للدفع عن طريق الفيزا هو - 4100001000004159 -وهذا فى حالة طلب العميل للدفع اون لاين </li>
                 </ul>
             </div>
 
             <div style="display: flex; gap: 10px;">
+                <button id="btnOpenRoutePlanner" class="primary-btn" style="width: auto; padding: 8px 20px; margin-top: 0; background-color: #2e7d32; border-color: #1b5e20;">📍 Route Planner</button>
                 <button id="btnOpenTechParts" class="primary-btn" style="width: auto; padding: 8px 20px; margin-top: 0; background-color: #8e24aa; border-color: #6a1b9a;">📦 My Parts</button>
                 <button id="techHubBtn" class="details-btn" style="width: auto; padding: 8px 30px; margin-top: 0;">Back</button>
             </div>
@@ -1030,6 +1032,27 @@
             <button id="trackingHubBtn" style="padding: 10px 30px; cursor: pointer; background: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color);">Back to HUB</button>
         </div>
     </div>
+
+    <!-- --- ROUTE PLANNER MODAL --- -->
+    <div id="routePlannerModal" class="modal-overlay" style="z-index: 1050; display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>📍 Daily Route Planner</h3>
+                <button id="closeRoutePlannerBtn" class="close-btn">X</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13px; opacity: 0.8; margin-top: 0; margin-bottom: 15px;">Enter a unique number for each order to set your visit sequence. Orders without numbers will automatically fall to the bottom.</p>
+                <div id="routePlannerListContainer" style="display: flex; flex-direction: column; gap: 10px; max-height: 50vh; overflow-y: auto; padding-right: 5px;">
+                    <!-- List injected by JS -->
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content: flex-end; gap: 10px;">
+                <button id="cancelRoutePlannerBtn" class="secondary-btn">Cancel</button>
+                <button id="saveRoutePlannerBtn" class="primary-btn">💾 Save Sequence</button>
+            </div>
+        </div>
+    </div>
+    <!-- -------------------------------- -->
 
     <!-- TECHNICIAN "MY PARTS" MODAL -->
     <div id="techPartsModal" class="modal-overlay" style="z-index: 1050;">

@@ -168,7 +168,7 @@ const ALL_COLUMNS = [
     "remark", "status_comment", "change_log", "return", 
     "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
     "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3", "history", 
-    "assigned_tech", "service_type", "agree_coord", "complete_coord", "complete_tech"
+    "assigned_tech", "service_type", "agree_coord", "complete_coord", "complete_tech", "visit_sequence"
 ];
 
 // 2. THE TRANSLATOR (Strictly for External Samsung/IPAAS Export Files)
@@ -708,7 +708,7 @@ document.getElementById('btnMonitor').addEventListener('click', () => {
     // -----------------------------------------------
 
     // Call the engine once. It will automatically read the default "This Month" dates we just set!
-    loadMonitorDataEngine();
+    //loadMonitorDataEngine(); //this line is cmmmented to prevent the page from loading the table when it is opened 
 });
 
 
@@ -744,7 +744,13 @@ document.getElementById('systemHubBtn').addEventListener('click', () => {
     
     // Clear out any unsaved edits so they don't linger
     editedOrders = {};
-    
+
+    // ---Garbage (unwanted records or tables saved to the browser) Collection ---
+    databaseOrders = [];
+    const tableBody = document.getElementById('tableBody');
+    if (tableBody) tableBody.innerHTML = '';
+    // -------------------------------
+
     // Hide the system page and show the menu (HUB) page
     systemPage.classList.remove('active');
     menuPage.classList.add('active');
@@ -776,6 +782,13 @@ document.getElementById('btnMyOrders').addEventListener('click', () => {
     // 1. Hide the main menu and show the technician page
     menuPage.classList.remove('active');
     techPage.classList.add('active');
+
+    // ---Reset Manager Dropdown State ---
+    const managerSelect = document.getElementById('managerUserSelect');
+    if (managerSelect) {
+        managerSelect.value = '';
+    }
+    // -----------------------------------------
     
     // 2. Trigger the fetch logic to load their active tickets
     loadActiveTickets();
@@ -783,6 +796,17 @@ document.getElementById('btnMyOrders').addEventListener('click', () => {
 
 // Wire up the Logout/Back button inside the Tech Page
 document.getElementById('techHubBtn').addEventListener('click', () => {
+
+    // ---Garbage (unwanted records or tables saved to the browser) Collection ---
+    originalMyOrders = [];
+    currentMyOrders = [];
+    const ticketContainer = document.getElementById('ticketContainer');
+    if (ticketContainer) ticketContainer.innerHTML = '';
+    const countBadge = document.getElementById('myOrdersCountBadge');
+    if (countBadge) countBadge.style.display = 'none';
+    // -------------------------------
+
+
     // Go back to the HUB menu
     techPage.classList.remove('active');
     menuPage.classList.add('active');
@@ -2302,6 +2326,19 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
 document.getElementById('monitorHubBtn').addEventListener('click', () => {
     document.getElementById('monitorTableArea').style.display = 'none';
     document.getElementById('activeMonitorStatusHeader').textContent = 'Select a Status or Technician from the Left';
+
+    // ---Garbage (unwanted records or tables saved to the browser) Collection ---
+    monitorTrackingRows = [];
+    currentFilteredMonitorRows = [];
+    techLeaderboardData = [];
+    coordLeaderboardData = [];
+    const monitorTbody = document.getElementById('monitorTableBody');
+    if (monitorTbody) monitorTbody.innerHTML = '';
+    const coordTbody = document.getElementById('coordTableBody');
+    if (coordTbody) coordTbody.innerHTML = '';
+    // -------------------------------
+
+
     monitorPage.classList.remove('active');
     menuPage.classList.add('active');
 });
@@ -2332,7 +2369,7 @@ function getCurrentDateTime() {
     return { date: `${dd}-${mm}-${yyyy}`, time: `${hh}:${min}` };
 }
 
-// --- NEW: SEARCH ORDER LOGIC ---
+// --- SEARCH ORDER LOGIC ---
 document.getElementById('btnSearchOrder').addEventListener('click', async () => {
     const searchInput = document.getElementById('systemSearchSoInput').value.trim();
     if (!searchInput) {
@@ -2657,6 +2694,14 @@ document.getElementById('btnBonuses').addEventListener('click', () => {
 });
 
 document.getElementById('bonusesHubBtn').addEventListener('click', () => {
+
+    // ---Garbage (unwanted records or tables saved to the browser) Collection ---
+    bonusesTrackingRows = [];
+    const bonusesTbody = document.getElementById('bonusesTableBody');
+    if (bonusesTbody) bonusesTbody.innerHTML = '';
+    const bonusesSummary = document.getElementById('bonusesSummaryContent');
+    if (bonusesSummary) bonusesSummary.innerHTML = '';
+    // -------------------------------
     bonusesPage.classList.remove('active');
     menuPage.classList.add('active');
 });
@@ -3139,6 +3184,26 @@ document.getElementById('managerUserSelect').addEventListener('change', (e) => {
     loadActiveTickets(e.target.value);
 });
 
+// ---Universal Sequence Sorting Engine ---
+function applySequenceSort(dataArray) {
+    dataArray.sort((a, b) => {
+        const hasSeqA = a.visit_sequence !== null && a.visit_sequence !== '' && a.visit_sequence !== undefined;
+        const hasSeqB = b.visit_sequence !== null && b.visit_sequence !== '' && b.visit_sequence !== undefined;
+
+        if (hasSeqA && hasSeqB) {
+            return Number(a.visit_sequence) - Number(b.visit_sequence); // 1, 2, 3...
+        } else if (hasSeqA && !hasSeqB) {
+            return -1; // Sequenced items float to the top
+        } else if (!hasSeqA && hasSeqB) {
+            return 1;  // Non-sequenced items sink
+        } else {
+            // If neither has a sequence, fallback to the original default (highest days first)
+            return Number(b.days || 0) - Number(a.days || 0);
+        }
+    });
+}
+// ----------------------------------------------
+
 async function loadActiveTickets(managerOverrideUser = null) {
     if (!currentUser) return;
 
@@ -3220,7 +3285,8 @@ async function loadActiveTickets(managerOverrideUser = null) {
                 return;
             }
 
-            data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
+            // data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
+            applySequenceSort(ordersData);
             originalMyOrders = [...data];
             currentMyOrders = [...data];
             buildMyOrdersFilterTable();
@@ -3246,7 +3312,8 @@ async function loadActiveTickets(managerOverrideUser = null) {
                 return;
             }
 
-            data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
+            // data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
+            applySequenceSort(ordersData);
             originalMyOrders = [...data];
             currentMyOrders = [...data];
             buildMyOrdersFilterTable();
@@ -3283,7 +3350,8 @@ async function loadActiveTickets(managerOverrideUser = null) {
             return;
         }
 
-        ordersData.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
+        //  data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
+        applySequenceSort(ordersData);
         originalMyOrders = [...ordersData];
         currentMyOrders = [...ordersData];
         buildMyOrdersFilterTable();
@@ -3323,7 +3391,9 @@ function renderTickets(tickets, viewMode = 'technician') {
             const safePhone2 = ticket.phone_2 ? String(ticket.phone_2).replace(/\s+/g, '') : '';
 
             const p1 = ticket.phone ? `<a class="phone-link" href="tel:${safePhone1}">📞 ${ticket.phone}</a>` : 'N/A';
-            const p2 = ticket.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${ticket.phone_2}</a>` : 'N/A';
+            // --- MODIFIED: Remove 'N/A' fallback for secondary phone ---
+            const p2 = ticket.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${ticket.phone_2}</a>` : '';
+            // -----------------------------------------------------------
 
             // --- NEW: EXTRACT AND FORMAT PARTS FOR THE OUTSIDE CARD ---
             let partsArray = [];
@@ -3345,7 +3415,14 @@ function renderTickets(tickets, viewMode = 'technician') {
                 <div class="ticket-row"><span>Name: ${ticket.name || 'N/A'}</span> <span>${p1}</span></div>
                 <div class="ticket-row"><span>Date: ${ticket.date || 'N/A'}</span> <span>${p2}</span></div>
                 <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
-                <div class="ticket-row"><span><strong>Model:</strong> ${ticket.model || 'N/A'}</span> <span><strong>SN:</strong> ${ticket.serial || 'N/A'}</span></div>
+
+                <!-- --- Model, SN, and I/O on the same flex-wrapped line --- -->
+                <div class="ticket-row" style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 5px;">
+                    <span><strong>Model:</strong> ${ticket.model || 'N/A'}</span> 
+                    <span><strong>SN:</strong> ${ticket.serial || 'N/A'}</span>
+                    <span><strong>I/O:</strong> <span style="color: #e65100; font-weight: bold;">${ticket.io || 'N/A'}</span></span>
+                </div>
+                <!-- ------------------------------------------------------------------- -->
 
                 <!-- NEW: Added the Status Comment line here so it shows on the outside ticket -->
                 <div class="ticket-row" style="margin-top: 5px;"><strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}</div>
@@ -4042,7 +4119,10 @@ confirmTechBtn.addEventListener('click', async () => {
             img3: urlImg3 || activeTechTicket.img3,
             vid1: urlVid1 || activeTechTicket.vid1, 
             vid2: urlVid2 || activeTechTicket.vid2, 
-            vid3: urlVid3 || activeTechTicket.vid3
+            vid3: urlVid3 || activeTechTicket.vid3,
+            // --- NEW: Wipe visit sequence upon taking action ---
+            visit_sequence: null
+            // ---------------------------------------------------
         })
         .eq('so', activeTechTicket.so);
 
@@ -4191,7 +4271,8 @@ confirmCoordBtn.addEventListener('click', async () => {
     // 2. Update the main orders table
     const orderUpdatePayload = { 
         status: finalOrderStatus,
-        assigned_tech: finalAssignedTech
+        assigned_tech: finalAssignedTech,
+        visit_sequence: null // --- Wipe visit sequence upon taking action ---
     };
 
     if (newStatus === 'Complete') {
@@ -6246,3 +6327,92 @@ document.getElementById('cancelModalBtn').addEventListener('click', () => {
     detailsModal.style.display = 'none';
     if (currentlyViewedTicket) releaseTicketLock(currentlyViewedTicket.so);
 });
+
+// ==========================================
+// --- PHASE 2: DAILY ROUTE PLANNER LOGIC ---
+// ==========================================
+const btnOpenRoutePlanner = document.getElementById('btnOpenRoutePlanner');
+const routePlannerModal = document.getElementById('routePlannerModal');
+const routePlannerListContainer = document.getElementById('routePlannerListContainer');
+
+if (btnOpenRoutePlanner) {
+    btnOpenRoutePlanner.addEventListener('click', () => {
+        if (!currentMyOrders || currentMyOrders.length === 0) {
+            alert("No active orders found to plan.");
+            return;
+        }
+        
+        routePlannerListContainer.innerHTML = '';
+        
+        // Build the isolated UI list focusing strictly on Name, Rout, and Address
+        currentMyOrders.forEach(order => {
+            const item = document.createElement('div');
+            item.style.cssText = "display: flex; align-items: center; justify-content: space-between; background: var(--card-bg); border: 1px solid var(--border-color); padding: 10px; border-radius: 4px; gap: 10px;";
+            
+            item.innerHTML = `
+                <div style="flex-grow: 1; font-size: 13px;">
+                    <strong style="color: #1976d2;">SO: ${order.so}</strong> - ${order.name || 'N/A'}<br>
+                    <span style="opacity: 0.8;"><strong>Rout:</strong> ${order.rout || 'N/A'} | <strong>Address:</strong> ${order.address || 'N/A'}</span>
+                </div>
+                <div>
+                    <input type="number" class="route-seq-input" data-so="${order.so}" value="${order.visit_sequence || ''}" placeholder="#" style="width: 60px; padding: 8px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-color); color: var(--text-color);">
+                </div>
+            `;
+            routePlannerListContainer.appendChild(item);
+        });
+        
+        routePlannerModal.style.display = 'flex';
+    });
+}
+
+document.getElementById('closeRoutePlannerBtn')?.addEventListener('click', () => routePlannerModal.style.display = 'none');
+document.getElementById('cancelRoutePlannerBtn')?.addEventListener('click', () => routePlannerModal.style.display = 'none');
+
+document.getElementById('saveRoutePlannerBtn')?.addEventListener('click', async () => {
+    const inputs = document.querySelectorAll('.route-seq-input');
+    const updates = [];
+    let hasDuplicates = false;
+    const usedNumbers = new Set();
+
+    // Data Aggregation & Duplicate Validation
+    inputs.forEach(input => {
+        const val = input.value.trim();
+        if (val) {
+            if (usedNumbers.has(val)) {
+                hasDuplicates = true;
+            }
+            usedNumbers.add(val);
+        }
+        
+        // Push all inputs to ensure we nullify any sequences the tech decided to erase
+        updates.push({
+            so: input.dataset.so,
+            visit_sequence: val ? Number(val) : null
+        });
+    });
+
+    if (hasDuplicates) {
+        alert("Error: Sequence numbers must be strictly unique. Please fix any duplicate numbers before saving.");
+        return;
+    }
+
+    const saveBtn = document.getElementById('saveRoutePlannerBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    // Execute bulk update safely using isolated update promises to avoid full-row overwrites
+    const updatePromises = updates.map(update => 
+        supabaseClient.from('orders').update({ visit_sequence: update.visit_sequence }).eq('so', update.so)
+    );
+    
+    await Promise.all(updatePromises);
+    
+    saveBtn.disabled = false;
+    saveBtn.textContent = '💾 Save Sequence';
+    routePlannerModal.style.display = 'none';
+    
+    // Globally reload the tickets. The manager override dropdown value is passed to ensure it reloads the correct target.
+    const managerSelect = document.getElementById('managerUserSelect');
+    loadActiveTickets(managerSelect && managerSelect.value !== '' ? managerSelect.value : null);
+});
+// ==========================================

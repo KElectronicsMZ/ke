@@ -3286,7 +3286,7 @@ async function loadActiveTickets(managerOverrideUser = null) {
             }
 
             // data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
-            applySequenceSort(ordersData);
+            applySequenceSort(data);
             originalMyOrders = [...data];
             currentMyOrders = [...data];
             buildMyOrdersFilterTable();
@@ -3313,7 +3313,7 @@ async function loadActiveTickets(managerOverrideUser = null) {
             }
 
             // data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
-            applySequenceSort(ordersData);
+            applySequenceSort(data);
             originalMyOrders = [...data];
             currentMyOrders = [...data];
             buildMyOrdersFilterTable();

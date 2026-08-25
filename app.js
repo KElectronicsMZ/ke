@@ -1564,6 +1564,15 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
                             // Keep the existing assigned technician instead of deleting it
                             rowObj.assigned_tech = liveMatch.assigned_tech; 
                         }
+                        
+                        // Prevents blank TXT cells from wiping historical links in the Order entity
+                        const mediaFields = ['img1', 'img2', 'img3', 'vid1', 'vid2', 'vid3'];
+                        mediaFields.forEach(field => {
+                            if (liveMatch[field] && String(liveMatch[field]).trim() !== '') {
+                                rowObj[field] = liveMatch[field];
+                            }
+                        });
+                        // ------------------------------------
 
                         if (!editedOrders[rowObj.so]) editedOrders[rowObj.so] = {};
                         editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };

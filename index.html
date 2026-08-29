@@ -542,9 +542,8 @@
                     <div id="modalReadOnlyDetails" class="read-only-box"></div>
 
                     <h4>Existing Media Files</h4>
-                    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 10px; font-size: 14px; background: var(--card-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color);">
-                        <span id="linkImg1"></span> <span id="linkImg2"></span> <span id="linkImg3"></span>
-                        <span id="linkVid1"></span> <span id="linkVid2"></span> <span id="linkVid3"></span>
+                    <div id="dynamicMediaViewer" style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 10px; font-size: 14px; background: var(--card-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color);">
+                        <!-- Existing JSON media links will be injected here. Container remains empty if no media exists. -->
                     </div>
                     
                     <!-- INLINE THEATER VIEWER -->
@@ -569,13 +568,13 @@
 
                     <div id="techActionSection">
                         <h4>Media Capture</h4>
-                        <div class="media-grid">
-                            <label class="media-btn">📷 Img  قبل صيانة <input type="file" id="img1Input" accept="image/*" hidden></label>
-                            <label class="media-btn">📷 Img  بعد صيانة <input type="file" id="img2Input" accept="image/*" hidden></label>
-                            <label class="media-btn">📷 Img اخرى <input type="file" id="img3Input" accept="image/*" hidden></label>
-                            <label class="media-btn vid-btn">📹 Vid قبل صيانة <input type="file" id="vid1Input" accept="video/*" hidden></label>
-                            <label class="media-btn vid-btn">📹 Vid بعد صيانة <input type="file" id="vid2Input" accept="video/*" hidden></label>
-                            <label class="media-btn vid-btn">📹 Vid أخرى <input type="file" id="vid3Input" accept="video/*" hidden></label>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button id="btnAddImageRow" type="button" class="secondary-btn" style="flex: 1; border: 1px dashed #2e7d32; color: #2e7d32; font-weight: bold; background: rgba(46, 125, 50, 0.05);">+ Image 📷</button>
+                            <button id="btnAddVideoRow" type="button" class="secondary-btn" style="flex: 1; border: 1px dashed #d32f2f; color: #d32f2f; font-weight: bold; background: rgba(211, 47, 47, 0.05);">+ Video 📹</button>
+                            <button id="btnAddCallRow" type="button" class="secondary-btn" style="flex: 1; border: 1px dashed #1976d2; color: #1976d2; font-weight: bold; background: rgba(25, 118, 210, 0.05);">+ Call 📞</button>
+                        </div>
+                        <div id="mediaStagingArea" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
+                            <!-- Dynamic upload rows injected via JS -->
                         </div>
 
                         <h4>System Config</h4>

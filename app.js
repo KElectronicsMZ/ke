@@ -2,6 +2,10 @@
 const SUPABASE_URL = "https://nltzapfwhuidmjlnjwgy.supabase.co"; 
 const SUPABASE_KEY = "sb_publishable_9uEZtAWURjryzdCaVwH2Eg_OaW1MmpC"; 
 
+// --- DYNAMIC UPLOAD SESSION TRACKERS ---
+let currentSessionUploads = []; // Tracks { url, type, rowId } for the currently open ticket
+let activeUploadsCount = 0;     // Locks the Confirm button while > 0
+
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- OFFLINE DATABASE (INDEXEDDB) SETUP ---
@@ -167,7 +171,7 @@ const ALL_COLUMNS = [
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
     "remark", "status_comment", "change_log", "return", 
     "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
-    "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3", "history", 
+    "call_details", "img1", "calls", "img3", "vid1", "vid2", "vid3", "history", 
     "assigned_tech", "service_type", "agree_coord", "complete_coord", "complete_tech", "visit_sequence"
 ];
 
@@ -177,10 +181,9 @@ const IMPORT_COLUMNS = [
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
     "remark", "status_comment", "change_log", "return", 
     "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
-    "call_details", "img1", "img2", "img3", "vid1", "vid2", "vid3", "history", 
+    "call_details", "img1", "calls", "img3", "vid1", "vid2", "vid3", "history", 
     "assigned_tech", "agree_coord", "complete_coord", "complete_tech"
 ];
-
 
 let activeColumns = [...ALL_COLUMNS];
 
@@ -1566,7 +1569,7 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
                         }
                         
                         // Prevents blank TXT cells from wiping historical links in the Order entity
-                        const mediaFields = ['img1', 'img2', 'img3', 'vid1', 'vid2', 'vid3'];
+                        const mediaFields = ['img1', 'calls', 'img3', 'vid1', 'vid2', 'vid3'];
                         mediaFields.forEach(field => {
                             if (liveMatch[field] && String(liveMatch[field]).trim() !== '') {
                                 rowObj[field] = liveMatch[field];
@@ -3458,16 +3461,41 @@ const reasonSelect = document.getElementById('reasonSelect');
 const commentInput = document.getElementById('commentInput');
 const confirmTechBtn = document.getElementById('confirmTechBtn');
 
-// Helper to generate the Download or Greyed-out link
-function renderMediaLink(elementId, url, label) {
-    const el = document.getElementById(elementId);
-    if (url && url.trim() !== '') {
-        el.innerHTML = `
-            <a href="#" onclick="viewMediaInline('${url}', '${label}'); return false;" style="color: #1976d2; font-weight: bold; text-decoration: underline; margin-right: 8px;">👁️ ${label}</a>
-            <a href="${url}" target="_blank" style="text-decoration: none;" title="Open natively / Download">🔗</a>
-        `;
-    } else {
-        el.innerHTML = `<span style="color: #9e9e9e; text-decoration: line-through;">${label}</span>`;
+// Helper to parse JSON media payloads and render dynamic links
+function renderDynamicMediaLinks(imgPayload, vidPayload, callPayload) {
+    const container = document.getElementById('dynamicMediaViewer');
+    if (!container) return;
+    container.innerHTML = ''; // Clear previous ticket's media
+
+    const processPayload = (payload, baseLabel) => {
+        if (!payload || payload.trim() === '') return;
+        try {
+            // Backward compatibility: If it's a raw URL from the old system, wrap it in our new format
+            const isJson = payload.trim().startsWith('[');
+            const mediaArray = isJson ? JSON.parse(payload) : [{ url: payload, label: `Legacy ${baseLabel}`, uploader: 'System' }];
+
+            mediaArray.forEach((media) => {
+                const el = document.createElement('span');
+                el.style.cssText = "display: inline-flex; align-items: center; background: var(--bg-color); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color);";
+                el.innerHTML = `
+                    <a href="#" onclick="viewMediaInline('${media.url}', '${media.label}'); return false;" style="color: #1976d2; font-weight: bold; text-decoration: underline; margin-right: 8px;">👁️ ${media.label} <span style="font-size: 10px; color: gray;">(${media.uploader})</span></a>
+                    <a href="${media.url}" target="_blank" style="text-decoration: none;" title="Open natively / Download">🔗</a>
+                `;
+                container.appendChild(el);
+            });
+        } catch (e) {
+            console.error(`Failed to parse ${baseLabel} JSON payload:`, e);
+        }
+    };
+
+    processPayload(imgPayload, 'Image');
+    processPayload(vidPayload, 'Video');
+    processPayload(callPayload, 'Call Record');
+
+
+    // If no files were generated, show a clean fallback
+    if (container.children.length === 0) {
+        container.innerHTML = '<span style="color: #9e9e9e; font-style: italic;">No media attached to this ticket.</span>';
     }
 }
 
@@ -3559,7 +3587,7 @@ function fetchAndRenderTicketHistory(soNumber) {
 }
 
 // --- PHASE 4: PESSIMISTIC LOCKING ENGINE ---
-const LOCK_TIMEOUT_MINUTES = 15;
+const LOCK_TIMEOUT_MINUTES = 5;
 const LOCK_TIMEOUT_MS = LOCK_TIMEOUT_MINUTES * 60 * 1000;
 
 async function checkAndAcquireLock(soNumber) {
@@ -3641,13 +3669,8 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
     }
     // ---------------------------------
     
-    // 1. Render Media Links (Shared for both roles)
-    renderMediaLink('linkImg1', ticket.img1, 'Img 1');
-    renderMediaLink('linkImg2', ticket.img2, 'Img 2');
-    renderMediaLink('linkImg3', ticket.img3, 'Img 3');
-    renderMediaLink('linkVid1', ticket.vid1, 'Vid 1');
-    renderMediaLink('linkVid2', ticket.vid2, 'Vid 2');
-    renderMediaLink('linkVid3', ticket.vid3, 'Vid 3');
+    // 1. Render Dynamic Media Links (Shared for both roles)
+    renderDynamicMediaLinks(ticket.img1, ticket.vid1, ticket.calls);
 
     // --- Generate Clickable Phone Links for Modal ---
     const safePhone1 = ticket.phone ? String(ticket.phone).replace(/\s+/g, '') : '';
@@ -3762,48 +3785,20 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
         confirmTechBtn.disabled = true;
         confirmTechBtn.textContent = 'Confirm 🔒';
 
-        document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
-            input.value = ''; 
-            const labelBtn = input.parentElement;
-            
-            // Figure out which property this button represents (e.g., 'img1Input' -> 'img1')
-            const mediaKey = input.id.replace('Input', '');
-            const hasExistingMedia = ticket[mediaKey] && ticket[mediaKey].trim() !== '';
-
-            // ALWAYS ensure the button is clickable
-            input.disabled = false;
-            labelBtn.style.cursor = 'pointer';
-
-            if (hasExistingMedia) {
-                // Turn it green to show a file exists, but leave it open for clicking
-                labelBtn.style.backgroundColor = '#2e7d32'; 
-                labelBtn.style.color = 'white';
-                labelBtn.title = "File already exists. Click to overwrite.";
-                
-                if (labelBtn.childNodes[0].nodeValue) {
-                    labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('📷', '✅').replace('📹', '✅');
-                }
-            } else {
-                // Reset the button for completely empty slots
-                labelBtn.style.backgroundColor = ''; 
-                labelBtn.style.color = ''; 
-                labelBtn.title = "";
-                
-                if (labelBtn.childNodes[0].nodeValue) {
-                    const originalIcon = input.accept.includes('video') ? '📹' : '📷';
-                    labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('✅', originalIcon);
-                }
-            }
-        });
+        // Reset dynamic media staging area and session trackers
+        const stagingArea = document.getElementById('mediaStagingArea');
+        if (stagingArea) stagingArea.innerHTML = '';
+        
+        currentSessionUploads = [];
+        activeUploadsCount = 0;
+        
         validateTechForm();
     }
 
     detailsModal.style.display = 'flex';
 }
 
-// Close Triggers
-document.getElementById('closeModalBtn').addEventListener('click', () => detailsModal.style.display = 'none');
-document.getElementById('cancelModalBtn').addEventListener('click', () => detailsModal.style.display = 'none');
+
 
 // --- MEDIA BUTTON VISUAL FEEDBACK (FIXED) ---
 document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
@@ -3879,11 +3874,14 @@ function validateTechForm() {
         reasonSelect.value = ''; // Automatically reset reason if they clear the money/checkbox
     }
 
-    // 2. Unlock logic for the Confirm Button
+    // 2. Unlock logic for the Confirm Button (Pessimistic Upload Lock applied)
     // The comment box remains permanently visible, so we only handle the button state here.
-    if (reasonSelect.value !== '') {
+    if (reasonSelect.value !== '' && activeUploadsCount === 0) {
         confirmTechBtn.disabled = false;
         confirmTechBtn.textContent = 'Confirm ✅';
+    } else if (activeUploadsCount > 0) {
+        confirmTechBtn.disabled = true;
+        confirmTechBtn.textContent = 'Uploading... ⏳';
     } else {
         confirmTechBtn.disabled = true;
         confirmTechBtn.textContent = 'Confirm 🔒';
@@ -3938,15 +3936,35 @@ confirmTechBtn.addEventListener('click', async () => {
 
     // Lock button to prevent double-clicks and update text to show progress
     confirmTechBtn.disabled = true;
-    confirmTechBtn.textContent = 'Uploading Media...';
+    confirmTechBtn.textContent = 'Saving Ticket...';
 
-    // 1. Grab files from inputs
-    const fileImg1 = document.getElementById('img1Input').files[0];
-    const fileImg2 = document.getElementById('img2Input').files[0];
-    const fileImg3 = document.getElementById('img3Input').files[0];
-    const fileVid1 = document.getElementById('vid1Input').files[0];
-    const fileVid2 = document.getElementById('vid2Input').files[0];
-    const fileVid3 = document.getElementById('vid3Input').files[0];
+    // 1. Harvest dynamic JSON payloads (Files are already uploaded!)
+    let newImagePayloads = [];
+    let newVideoPayloads = [];
+    let newCallPayloads = [];
+    let offlineFiles = {}; // Staged for the future Offline Sync Engine Update
+
+    Array.from(document.querySelectorAll('.dynamic-media-row')).forEach((row, index) => {
+        const rowId = row.id;
+        const type = row.dataset.type;
+        const labelSelect = row.querySelector(`#sel_${rowId}`);
+        const label = labelSelect && labelSelect.value !== '' ? labelSelect.value : 'اخرى';
+
+        const uploadedItem = currentSessionUploads.find(u => u.rowId === rowId);
+        
+        if (uploadedItem) {
+            const payload = { url: uploadedItem.url, label: label, uploader: currentUser.username };
+            if (type === 'image') newImagePayloads.push(payload);
+            else if (type === 'video') newVideoPayloads.push(payload);
+            else if (type === 'call') newCallPayloads.push(payload);
+        } else {
+            // Track un-uploaded files for offline packaging
+            const fileInput = row.querySelector(`#file_${rowId}`);
+            if (fileInput && fileInput.files.length > 0) {
+                offlineFiles[`dynamic_${type}_${index}`] = { file: fileInput.files[0], label: label, type: type };
+            }
+        }
+    });
 
     // 2. Prepare the visual checklist box
     const progressBox = document.getElementById('uploadProgressContainer');
@@ -3989,7 +4007,14 @@ confirmTechBtn.addEventListener('click', async () => {
             hass: document.getElementById('hassCheck').checked ? 'yes' : '',
             collected: validatedMoney,
             collected_reason: reasonSelect.value || '',
-            comment: finalComment
+            comment: finalComment,
+            // Preserve legacy media state for the sync engine JSON compiler
+            img1: activeTechTicket.img1,
+            calls: activeTechTicket.calls,
+            img3: activeTechTicket.img3,
+            vid1: activeTechTicket.vid1,
+            vid2: activeTechTicket.vid2,
+            vid3: activeTechTicket.vid3
         };
 
         // Package the raw File objects and text into one bundle
@@ -3997,7 +4022,7 @@ confirmTechBtn.addEventListener('click', async () => {
             so: activeTechTicket.so,
             timestamp: Date.now(), // Helps us upload the oldest tickets first later
             textData: textData,
-            files: { img1: fileImg1, img2: fileImg2, img3: fileImg3, vid1: fileVid1, vid2: fileVid2, vid3: fileVid3 }
+            files: offlineFiles // Passed to the Offline Sync Engine
         };
 
         if (localDB) {
@@ -4037,49 +4062,22 @@ confirmTechBtn.addEventListener('click', async () => {
     // -------------------------------------------
 
 
-    // --- 4. EXISTING ONLINE SEQUENCE ---
-    // Upload sequentially, updating the UI for each existing file
-    let urlImg1 = '', urlImg2 = '', urlImg3 = '', urlVid1 = '', urlVid2 = '', urlVid3 = '';
-
-    if (fileImg1) {
-        setProgressLine('step-img1', 'Uploading Img 1');
-        urlImg1 = await uploadMediaToSupabase(fileImg1, activeTechTicket.so, 'img1');
-        setProgressLine('step-img1', 'Img 1 Complete', true);
-    }
-    if (fileImg2) {
-        setProgressLine('step-img2', 'Uploading Img 2');
-        urlImg2 = await uploadMediaToSupabase(fileImg2, activeTechTicket.so, 'img2');
-        setProgressLine('step-img2', 'Img 2 Complete', true);
-    }
-    if (fileImg3) {
-        setProgressLine('step-img3', 'Uploading Img 3');
-        urlImg3 = await uploadMediaToSupabase(fileImg3, activeTechTicket.so, 'img3');
-        setProgressLine('step-img3', 'Img 3 Complete', true);
-    }
-    if (fileVid1) {
-        setProgressLine('step-vid1', 'Uploading Vid 1 (This may take a moment)');
-        urlVid1 = await uploadMediaToSupabase(fileVid1, activeTechTicket.so, 'vid1');
-        
-        if (urlVid1 === '') {
-            setProgressLine('step-vid1', 'Vid 1 FAILED to Upload', false);
-            confirmTechBtn.disabled = false;
-            confirmTechBtn.textContent = 'Confirm ✅';
-            return; // Stops the rest of the ticket from submitting!
+    // --- 4. JSON METADATA CONCATENATION ---
+    const parseLegacyMedia = (mediaString, baseLabel) => {
+        if (!mediaString || mediaString.trim() === '') return [];
+        if (mediaString.trim().startsWith('[')) {
+            try { return JSON.parse(mediaString); } catch(e) { return []; }
         }
-        
-        setProgressLine('step-vid1', 'Vid 1 Complete', true);
-    }
-    if (fileVid2) {
-        setProgressLine('step-vid2', 'Uploading Vid 2');
-        urlVid2 = await uploadMediaToSupabase(fileVid2, activeTechTicket.so, 'vid2');
-        setProgressLine('step-vid2', 'Vid 2 Complete', true);
-    }
-    if (fileVid3) {
-        setProgressLine('step-vid3', 'Uploading Vid 3');
-        urlVid3 = await uploadMediaToSupabase(fileVid3, activeTechTicket.so, 'vid3');
-        setProgressLine('step-vid3', 'Vid 3 Complete', true);
-    }
+        return [{ url: mediaString, label: `Legacy ${baseLabel}`, uploader: 'System' }];
+    };
 
+    const finalImageArray = [...parseLegacyMedia(activeTechTicket.img1, 'Image'), ...newImagePayloads];
+    const finalVideoArray = [...parseLegacyMedia(activeTechTicket.vid1, 'Video'), ...newVideoPayloads];
+    const finalCallArray = [...parseLegacyMedia(activeTechTicket.calls, 'Call Record'), ...newCallPayloads];
+
+    const finalImg1Str = finalImageArray.length > 0 ? JSON.stringify(finalImageArray) : '';
+    const finalVid1Str = finalVideoArray.length > 0 ? JSON.stringify(finalVideoArray) : '';
+    const finalCallsStr = finalCallArray.length > 0 ? JSON.stringify(finalCallArray) : '';
     setProgressLine('step-db', 'Saving text to database');
 
     const now = new Date();
@@ -4101,13 +4099,13 @@ confirmTechBtn.addEventListener('click', async () => {
         collected_reason: reasonSelect.value || '',
         comment: finalComment,
         
-        // NEW: If no new file was uploaded, keep the old link in the history log
-        img1: urlImg1 || activeTechTicket.img1, 
-        img2: urlImg2 || activeTechTicket.img2, 
-        img3: urlImg3 || activeTechTicket.img3,
-        vid1: urlVid1 || activeTechTicket.vid1, 
-        vid2: urlVid2 || activeTechTicket.vid2, 
-        vid3: urlVid3 || activeTechTicket.vid3
+        // Consolidated JSON payloads target img1, vid1, and calls exclusively
+        img1: finalImg1Str, 
+        calls: finalCallsStr, 
+        img3: activeTechTicket.img3,
+        vid1: finalVid1Str, 
+        vid2: activeTechTicket.vid2, 
+        vid3: activeTechTicket.vid3
     };
 
     const { error: logErr } = await supabaseClient.from('repair_log').insert(logPayload);
@@ -4122,13 +4120,13 @@ confirmTechBtn.addEventListener('click', async () => {
         .from('orders')
         .update({ 
             status: 'back_office',
-            //Protect the existing media URLs in the main order table from being overwritten
-            img1: urlImg1 || activeTechTicket.img1, 
-            img2: urlImg2 || activeTechTicket.img2, 
-            img3: urlImg3 || activeTechTicket.img3,
-            vid1: urlVid1 || activeTechTicket.vid1, 
-            vid2: urlVid2 || activeTechTicket.vid2, 
-            vid3: urlVid3 || activeTechTicket.vid3,
+            // Consolidated JSON payloads target img1, vid1, and calls exclusively
+            img1: finalImg1Str, 
+            calls: finalCallsStr, 
+            img3: activeTechTicket.img3,
+            vid1: finalVid1Str, 
+            vid2: activeTechTicket.vid2, 
+            vid3: activeTechTicket.vid3,
             // --- NEW: Wipe visit sequence upon taking action ---
             visit_sequence: null
             // ---------------------------------------------------
@@ -4526,34 +4524,68 @@ offlineSyncBanner.addEventListener('click', async () => {
         for (const bundle of pendingOrders) {
             console.log(`Syncing offline SO: ${bundle.so}...`);
 
-            // A. Upload the media (the function automatically skips if the file is missing)
-            const urlImg1 = await uploadMediaToSupabase(bundle.files.img1, bundle.so, 'img1');
-            const urlImg2 = await uploadMediaToSupabase(bundle.files.img2, bundle.so, 'img2');
-            const urlImg3 = await uploadMediaToSupabase(bundle.files.img3, bundle.so, 'img3');
-            const urlVid1 = await uploadMediaToSupabase(bundle.files.vid1, bundle.so, 'vid1');
-            const urlVid2 = await uploadMediaToSupabase(bundle.files.vid2, bundle.so, 'vid2');
-            const urlVid3 = await uploadMediaToSupabase(bundle.files.vid3, bundle.so, 'vid3');
+            // A. Iterate dynamic offline files and upload sequentially
+            let newImagePayloads = [];
+            let newVideoPayloads = [];
+            let newCallPayloads = [];
 
-            // B. Attach the generated URLs to the text payload we saved earlier
-            const finalLogPayload = {
-                ...bundle.textData,
-                img1: urlImg1, img2: urlImg2, img3: urlImg3,
-                vid1: urlVid1, vid2: urlVid2, vid3: urlVid3
+            for (const [key, fileData] of Object.entries(bundle.files)) {
+                // fileData contains { file: File, label: string, type: string }
+                const url = await uploadMediaToSupabase(fileData.file, bundle.so, key);
+                if (url) {
+                    const payload = { url: url, label: fileData.label, uploader: bundle.textData.assigned_by };
+                    if (fileData.type === 'image') newImagePayloads.push(payload);
+                    else if (fileData.type === 'video') newVideoPayloads.push(payload);
+                    else if (fileData.type === 'call') newCallPayloads.push(payload);
+                }
+            }
+
+            // B. JSON Compilation
+            const parseLegacyMedia = (mediaString, baseLabel) => {
+                if (!mediaString || mediaString.trim() === '') return [];
+                if (mediaString.trim().startsWith('[')) {
+                    try { return JSON.parse(mediaString); } catch(e) { return []; }
+                }
+                return [{ url: mediaString, label: `Legacy ${baseLabel}`, uploader: 'System' }];
             };
 
-            // C. Push the combined data to the repair_log table
+            const finalImageArray = [...parseLegacyMedia(bundle.textData.img1, 'Image'), ...newImagePayloads];
+            const finalVideoArray = [...parseLegacyMedia(bundle.textData.vid1, 'Video'), ...newVideoPayloads];
+            const finalCallArray  = [...parseLegacyMedia(bundle.textData.calls, 'Call Record'), ...newCallPayloads];
+
+            const finalImg1Str = finalImageArray.length > 0 ? JSON.stringify(finalImageArray) : '';
+            const finalVid1Str = finalVideoArray.length > 0 ? JSON.stringify(finalVideoArray) : '';
+            const finalCallsStr = finalCallArray.length > 0 ? JSON.stringify(finalCallArray) : '';
+
+            // C. Attach the compiled JSON payloads to the text data
+            const finalLogPayload = {
+                ...bundle.textData,
+                img1: finalImg1Str, 
+                calls: finalCallsStr, 
+                img3: bundle.textData.img3,
+                vid1: finalVid1Str, 
+                vid2: bundle.textData.vid2, 
+                vid3: bundle.textData.vid3
+            };
+
+            // D. Push the combined data to the repair_log table
             const { error: logErr } = await supabaseClient.from('repair_log').insert(finalLogPayload);
             if (logErr) {
                 console.error("Failed to sync log for " + bundle.so, logErr);
                 continue; // Skip deleting this ticket so we can try syncing it again later!
             }
 
-            // D. Push the status change to the orders table
+            // E. Push the status change to the orders table
             const { error: orderErr } = await supabaseClient.from('orders')
                 .update({ 
                     status: 'back_office',
-                    img1: urlImg1, img2: urlImg2, img3: urlImg3,
-                    vid1: urlVid1, vid2: urlVid2, vid3: urlVid3
+                    img1: finalImg1Str, 
+                    calls: finalCallsStr, 
+                    img3: bundle.textData.img3,
+                    vid1: finalVid1Str, 
+                    vid2: bundle.textData.vid2, 
+                    vid3: bundle.textData.vid3,
+                    visit_sequence: null // Ensure sequence resets on action
                 })
                 .eq('so', bundle.so);
 
@@ -5276,13 +5308,8 @@ async function openViewOnlyModal(ticket) {
     const progressBox = document.getElementById('uploadProgressContainer');
     if (progressBox) progressBox.style.display = 'none';
 
-    // 3. Render Media Links
-    renderMediaLink('linkImg1', ticket.img1, 'Img 1');
-    renderMediaLink('linkImg2', ticket.img2, 'Img 2');
-    renderMediaLink('linkImg3', ticket.img3, 'Img 3');
-    renderMediaLink('linkVid1', ticket.vid1, 'Vid 1');
-    renderMediaLink('linkVid2', ticket.vid2, 'Vid 2');
-    renderMediaLink('linkVid3', ticket.vid3, 'Vid 3');
+    // 3. Render Dynamic Media Links
+    renderDynamicMediaLinks(ticket.img1, ticket.vid1, ticket.calls);
 
     // 4. Generate Phone Links
     const safePhone1 = ticket.phone ? String(ticket.phone).replace(/\s+/g, '') : '';
@@ -5821,11 +5848,15 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', (e) => {
         // If the user clicked directly on the dark overlay background (outside modal-content)
         if (e.target === overlay) {
-            overlay.style.display = 'none';
+            // Route detailsModal through the safe close engine to drop locks and clear orphaned files
+            if (overlay.id === 'detailsModal' && typeof executeModalClose === 'function') {
+                executeModalClose();
+            } else {
+                overlay.style.display = 'none';
+            }
         }
     });
 });
-
 
 // --- USER HISTORY PANEL LOGIC (FIXED) ---
 
@@ -6327,15 +6358,17 @@ if (btnOpenTechParts) {
     });
 }
 
-// Close Triggers
-document.getElementById('closeModalBtn').addEventListener('click', () => {
+// Close Triggers (Consolidated with Garbage Collection & Lock Release)
+const executeModalClose = () => {
+    cleanupOrphanedUploads(); // Destroy any unconfirmed file uploads
+    activeUploadsCount = 0;   // Reset the upload lock
+    
     detailsModal.style.display = 'none';
     if (currentlyViewedTicket) releaseTicketLock(currentlyViewedTicket.so);
-});
-document.getElementById('cancelModalBtn').addEventListener('click', () => {
-    detailsModal.style.display = 'none';
-    if (currentlyViewedTicket) releaseTicketLock(currentlyViewedTicket.so);
-});
+};
+
+document.getElementById('closeModalBtn').addEventListener('click', executeModalClose);
+document.getElementById('cancelModalBtn').addEventListener('click', executeModalClose);
 
 // ==========================================
 // --- PHASE 2: DAILY ROUTE PLANNER LOGIC ---
@@ -6425,3 +6458,142 @@ document.getElementById('saveRoutePlannerBtn')?.addEventListener('click', async 
     loadActiveTickets(managerSelect && managerSelect.value !== '' ? managerSelect.value : null);
 });
 // ==========================================
+
+// Helper to delete orphaned files from Supabase if the user cancels the ticket
+async function cleanupOrphanedUploads() {
+    if (currentSessionUploads.length === 0) return;
+    
+    // Extract filenames from the Supabase public URLs
+    const fileNames = currentSessionUploads.map(file => file.url.split('/').pop());
+    
+    // Fire and forget deletion
+    supabaseClient.storage.from('repair_media').remove(fileNames).then(({error}) => {
+        if (error) console.error("Failed to clean up orphaned media:", error);
+    });
+    
+    currentSessionUploads = []; // Reset the session
+}
+
+// ==========================================
+// --- DYNAMIC MEDIA CAPTURE ENGINE ---
+// ==========================================
+function createMediaStagingRow(type) {
+    const stagingArea = document.getElementById('mediaStagingArea');
+    if (!stagingArea) return;
+
+    const rowId = `media_${Date.now()}`;
+    let acceptType = 'image/*';
+    let icon = '📷';
+    
+    if (type === 'video') { acceptType = 'video/*'; icon = '📹'; }
+    if (type === 'call') { acceptType = 'audio/*'; icon = '📞'; }
+
+    const row = document.createElement('div');
+    row.id = rowId;
+    row.className = 'dynamic-media-row';
+    row.dataset.type = type;
+    // Updated flex layout to stack the progress bar below the controls
+    row.style.cssText = "display: flex; flex-direction: column; gap: 5px; background: var(--bg-color); padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;";
+
+    row.innerHTML = `
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <label id="lbl_${rowId}" class="secondary-btn" style="cursor: pointer; min-width: 110px; text-align: center; margin: 0; flex-shrink: 0; padding: 6px;">
+                ${icon} Upload
+                <input type="file" id="file_${rowId}" class="dynamic-media-input" data-type="${type}" accept="${acceptType}" hidden>
+            </label>
+            <select id="sel_${rowId}" class="dynamic-media-label" style="padding: 8px; flex-grow: 1; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-color);">
+                <option value="">-- Select Label --</option>
+                <option value="قبل صيانة">قبل صيانة</option>
+                <option value="بعد صيانة">بعد صيانة</option>
+                <option value="ليبل">ليبل</option>
+                <option value="اوبن سيل قديم">اوبن سيل قديم</option>
+                <option value="اوبن سيل جديد">اوبن سيل جديد</option>
+                <option value="اخرى">اخرى</option>
+            </select>
+            <button type="button" style="background: #d32f2f; color: white; padding: 8px 12px; font-size: 14px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; flex-shrink: 0;" id="del_${rowId}">X</button>
+        </div>
+        <!-- Localized Progress Bar Target -->
+        <div id="step-${rowId}" style="width: 100%; font-size: 13px;"></div>
+    `;
+
+    stagingArea.appendChild(row);
+
+    const fileInput = row.querySelector(`#file_${rowId}`);
+    const delBtn = row.querySelector(`#del_${rowId}`);
+    const lblBtn = row.querySelector(`#lbl_${rowId}`);
+    const stepContainer = row.querySelector(`#step-${rowId}`);
+
+    // Auto-Upload Trigger
+    fileInput.addEventListener('change', async function() {
+        if (this.files && this.files.length > 0) {
+            const file = this.files[0];
+            
+            // 1. Lock UI
+            activeUploadsCount++;
+            validateTechForm();
+            
+            // 2. Prevent duplicate clicks during upload
+            lblBtn.style.pointerEvents = 'none';
+            lblBtn.style.opacity = '0.5';
+            
+            // 3. Execute Upload (Repurposing rowId as the target label for the progress bar text)
+            const uploadedUrl = await uploadMediaToSupabase(file, activeTechTicket.so, rowId);
+            
+            // 4. Network Resolution Handle
+            if (uploadedUrl) {
+                // Critical Safety Check: Did the user close the ticket or delete this row mid-upload?
+                if (!document.getElementById(rowId)) {
+                    const fileName = uploadedUrl.split('/').pop();
+                    supabaseClient.storage.from('repair_media').remove([fileName]).then(({error}) => {
+                        if (error) console.error("Failed to destroy orphaned mid-upload file:", error);
+                    });
+                } else {
+                    currentSessionUploads.push({ url: uploadedUrl, type: type, rowId: rowId });
+                    lblBtn.style.backgroundColor = '#2e7d32';
+                    lblBtn.style.color = 'white';
+                    lblBtn.style.opacity = '1';
+                    lblBtn.childNodes[0].nodeValue = '✅ Uploaded ';
+                    stepContainer.innerHTML = `
+                        <div style="margin-bottom: 4px; font-size: 13px;">
+                            <span style="color: #2e7d32; font-weight: bold;">✅ Upload Complete</span>
+                        </div>
+                        <div style="width: 100%; background: var(--border-color); border-radius: 4px; overflow: hidden; height: 12px;">
+                            <div style="width: 100%; background: #2e7d32; height: 100%;"></div>
+                        </div>
+                    `;
+                }
+            } else {
+                lblBtn.style.pointerEvents = 'auto';
+                lblBtn.style.opacity = '1';
+                stepContainer.innerHTML = '<span style="color: #d32f2f;">⚠️ Upload failed. Please try again.</span>';
+            }
+            
+            // 5. Unlock UI
+            activeUploadsCount--;
+            validateTechForm();
+        }
+    });
+
+    // Row Deletion with Targeted Garbage Collection
+    delBtn.addEventListener('click', () => {
+        // Destroy the file in Supabase if it already finished uploading
+        const uploadIndex = currentSessionUploads.findIndex(u => u.rowId === rowId);
+        if (uploadIndex > -1) {
+            const urlObj = currentSessionUploads[uploadIndex];
+            const fileName = urlObj.url.split('/').pop();
+            supabaseClient.storage.from('repair_media').remove([fileName]).then(({error}) => {
+                if (error) console.error("Failed to delete removed row media:", error);
+            });
+            currentSessionUploads.splice(uploadIndex, 1);
+        }
+        
+        row.remove();
+        validateTechForm(); // Re-validate in case an active upload was destroyed
+    });
+}
+// Bind the HTML buttons to the row generator
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('btnAddImageRow')?.addEventListener('click', () => createMediaStagingRow('image'));
+    document.getElementById('btnAddVideoRow')?.addEventListener('click', () => createMediaStagingRow('video'));
+    document.getElementById('btnAddCallRow')?.addEventListener('click', () => createMediaStagingRow('call'));
+});

@@ -171,7 +171,7 @@ const ALL_COLUMNS = [
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
     "remark", "status_comment", "change_log", "return", 
     "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
-    "call_details", "img1", "calls", "img3", "vid1", "vid2", "vid3", "history", 
+    "call_details", "img1", "calls", "location_link", "vid1", "arrived_at", "left_at", "history", 
     "assigned_tech", "service_type", "agree_coord", "complete_coord", "complete_tech", "visit_sequence"
 ];
 
@@ -181,7 +181,7 @@ const IMPORT_COLUMNS = [
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
     "remark", "status_comment", "change_log", "return", 
     "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
-    "call_details", "img1", "calls", "img3", "vid1", "vid2", "vid3", "history", 
+    "call_details", "img1", "calls", "location_link", "vid1", "arrived_at", "left_at", "history", 
     "assigned_tech", "agree_coord", "complete_coord", "complete_tech"
 ];
 
@@ -1569,7 +1569,7 @@ document.getElementById('txtFileInput').addEventListener('change', (e) => {
                         }
                         
                         // Prevents blank TXT cells from wiping historical links in the Order entity
-                        const mediaFields = ['img1', 'calls', 'img3', 'vid1', 'vid2', 'vid3'];
+                        const mediaFields = ['img1', 'calls', 'location_link', 'vid1', 'arrived_at', 'left_at'];
                         mediaFields.forEach(field => {
                             if (liveMatch[field] && String(liveMatch[field]).trim() !== '') {
                                 rowObj[field] = liveMatch[field];
@@ -4011,10 +4011,10 @@ confirmTechBtn.addEventListener('click', async () => {
             // Preserve legacy media state for the sync engine JSON compiler
             img1: activeTechTicket.img1,
             calls: activeTechTicket.calls,
-            img3: activeTechTicket.img3,
+            location_link: activeTechTicket.location_link,
             vid1: activeTechTicket.vid1,
-            vid2: activeTechTicket.vid2,
-            vid3: activeTechTicket.vid3
+            arrived_at: activeTechTicket.arrived_at,
+            left_at: activeTechTicket.left_at
         };
 
         // Package the raw File objects and text into one bundle
@@ -4102,14 +4102,13 @@ confirmTechBtn.addEventListener('click', async () => {
         // Consolidated JSON payloads target img1, vid1, and calls exclusively
         img1: finalImg1Str, 
         calls: finalCallsStr, 
-        img3: activeTechTicket.img3,
+        location_link: activeTechTicket.location_link,
         vid1: finalVid1Str, 
-        vid2: activeTechTicket.vid2, 
-        vid3: activeTechTicket.vid3
+        arrived_at: activeTechTicket.arrived_at, 
+        left_at: activeTechTicket.left_at
     };
 
     const { error: logErr } = await supabaseClient.from('repair_log').insert(logPayload);
-
     if (logErr) {
         alert("Sync Failed (Logs): " + logErr.message);
         validateTechForm(); 
@@ -4123,10 +4122,10 @@ confirmTechBtn.addEventListener('click', async () => {
             // Consolidated JSON payloads target img1, vid1, and calls exclusively
             img1: finalImg1Str, 
             calls: finalCallsStr, 
-            img3: activeTechTicket.img3,
+            location_link: activeTechTicket.location_link,
             vid1: finalVid1Str, 
-            vid2: activeTechTicket.vid2, 
-            vid3: activeTechTicket.vid3,
+            arrived_at: activeTechTicket.arrived_at, 
+            left_at: activeTechTicket.left_at,
             // --- NEW: Wipe visit sequence upon taking action ---
             visit_sequence: null
             // ---------------------------------------------------
@@ -4562,10 +4561,10 @@ offlineSyncBanner.addEventListener('click', async () => {
                 ...bundle.textData,
                 img1: finalImg1Str, 
                 calls: finalCallsStr, 
-                img3: bundle.textData.img3,
+                location_link: bundle.textData.location_link,
                 vid1: finalVid1Str, 
-                vid2: bundle.textData.vid2, 
-                vid3: bundle.textData.vid3
+                arrived_at: bundle.textData.arrived_at, 
+                left_at: bundle.textData.left_at
             };
 
             // D. Push the combined data to the repair_log table
@@ -4581,10 +4580,10 @@ offlineSyncBanner.addEventListener('click', async () => {
                     status: 'back_office',
                     img1: finalImg1Str, 
                     calls: finalCallsStr, 
-                    img3: bundle.textData.img3,
+                    location_link: bundle.textData.location_link,
                     vid1: finalVid1Str, 
-                    vid2: bundle.textData.vid2, 
-                    vid3: bundle.textData.vid3,
+                    arrived_at: bundle.textData.arrived_at, 
+                    left_at: bundle.textData.left_at,
                     visit_sequence: null // Ensure sequence resets on action
                 })
                 .eq('so', bundle.so);

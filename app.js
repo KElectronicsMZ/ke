@@ -55,39 +55,62 @@ dbRequest.onerror = function(event) {
     console.error("IndexedDB Error:", event.target.error);
 };
 
-// --- UNIVERSAL PAGINATION ENGINE ---
-// This safely downloads entire tables by looping in chunks of 1,000 rows to bypass server limits.
-// --- UNIVERSAL PAGINATION ENGINE ---
-// This safely downloads tables in chunks of 1,000, and now supports targeted filtering!
+// --- UNIVERSAL PAGINATION ENGINE (UPGRADED) ---
+// Safely downloads tables in chunks and protects against URL-length crashes for large filters
 async function fetchAllRecords(tableName, filterColumn = null, filterValues = null) {
     let allData = [];
-    let from = 0;
-    const step = 999; 
-    let keepFetching = true;
-
-    while (keepFetching) {
-        let query = supabaseClient.from(tableName).select('*');
+    
+    // SCENARIO 1: We are looking for a specific, massive list of items (e.g., 500+ SOs)
+    if (filterColumn && filterValues && filterValues.length > 0) {
+        const URL_SAFE_CHUNK_SIZE = 150; // Max items Supabase can comfortably handle in one URL string
         
-        // NEW: If we provided a specific list to look for, apply it before downloading!
-        if (filterColumn && filterValues && filterValues.length > 0) {
-            query = query.in(filterColumn, filterValues);
+        for (let i = 0; i < filterValues.length; i += URL_SAFE_CHUNK_SIZE) {
+            const chunk = filterValues.slice(i, i + URL_SAFE_CHUNK_SIZE);
+            let from = 0;
+            const step = 999;
+            let keepFetching = true;
+            
+            while (keepFetching) {
+                const { data, error } = await supabaseClient
+                    .from(tableName)
+                    .select('*')
+                    .in(filterColumn, chunk)
+                    .range(from, from + step);
+                    
+                if (error) { 
+                    console.error(`Error fetching ${tableName}: ${error.message}`); 
+                    break; 
+                }
+                
+                allData = allData.concat(data);
+                if (data.length <= step) keepFetching = false;
+                else from += step + 1;
+            }
         }
+    } 
+    // SCENARIO 2: We are just downloading a whole table normally
+    else {
+        let from = 0;
+        const step = 999; 
+        let keepFetching = true;
 
-        const { data, error } = await query.range(from, from + step);
-
-        if (error) {
-            console.error("Error fetching " + tableName + ": " + error.message);
-            break;
-        }
-
-        allData = allData.concat(data);
-
-        if (data.length <= step) {
-            keepFetching = false;
-        } else {
-            from += step + 1; 
+        while (keepFetching) {
+            const { data, error } = await supabaseClient
+                .from(tableName)
+                .select('*')
+                .range(from, from + step);
+                
+            if (error) { 
+                console.error(`Error fetching ${tableName}: ${error.message}`); 
+                break; 
+            }
+            
+            allData = allData.concat(data);
+            if (data.length <= step) keepFetching = false;
+            else from += step + 1; 
         }
     }
+    
     return allData;
 }
 
@@ -160,10 +183,8 @@ let editedOrders = {};
 let hiddenColumns = [];
 let selectedSystemOrders = new Set(); //to track the selected order in system page
 let selectedAssignationOrders = new Set();  //to track the selected order in assignation page
-// NEW TRACKING DATASETS FOR MONITOR SPLIT
-let monitorTrackingRows = []; 
-let editedMonitorRows = {};   
-const MONITOR_TABLE_NAME = 'repair_log'; // Your secondary table name in Supabase
+ 
+
 
 // 1. MASTER DATABASE SCHEMA (Matches your exact Supabase SQL list)
 const ALL_COLUMNS = [
@@ -688,54 +709,8 @@ document.getElementById('systemCancelBtn').addEventListener('click', () => {
     menuPage.classList.add('active');
 });
 
-// Open Monitor Page from HUB Menu
-document.getElementById('btnMonitor').addEventListener('click', () => {
-    menuPage.classList.remove('active');
-    monitorPage.classList.add('active');
-    
-    // --- NEW: SET DEFAULT DATES TO CURRENT MONTH ---
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-
-    
-    const formatInputDate = (dateObj) => {
-        const y = dateObj.getFullYear();
-        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-        const d = String(dateObj.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
-    };
-
-    document.getElementById('monitorStartDate').value = formatInputDate(firstDay);
-    document.getElementById('monitorEndDate').value = formatInputDate(now);
-    // -----------------------------------------------
-
-    // Call the engine once. It will automatically read the default "This Month" dates we just set!
-    //loadMonitorDataEngine(); //this line is cmmmented to prevent the page from loading the table when it is opened 
-});
 
 
-// Back to HUB button inside Monitor Page
-document.getElementById('monitorHubBtn').addEventListener('click', () => {
-    if (Object.keys(editedMonitorRows).length > 0) {
-        if (!confirm("You have unsaved monitoring changes. Are you sure you want to discard them?")) {
-            return;
-        }
-    }
-    editedMonitorRows = {};
-    document.getElementById('monitorTableArea').style.display = 'none';
-    document.getElementById('monitorSubmitBtn').style.display = 'none';
-    document.getElementById('activeMonitorStatusHeader').textContent = 'Select a Status from the Left';
-    monitorPage.classList.remove('active');
-    menuPage.classList.add('active');
-});
-
-// Close Action Table inside Monitor Page
-document.getElementById('closeMonitorTableBtn').addEventListener('click', () => {
-    document.getElementById('monitorTableArea').style.display = 'none';
-    document.getElementById('monitorSubmitBtn').style.display = 'none';
-    document.getElementById('activeMonitorStatusHeader').textContent = 'Select a Status from the Left';
-});
 
 document.getElementById('systemHubBtn').addEventListener('click', () => {
     // Safety check: Don't let the user accidentally lose their work
@@ -1082,6 +1057,13 @@ function populateTableRows(dataToDisplay) {
         const tr = document.createElement('tr');
         const currentSO = row.so;
 
+        // --- PHASE 2: EXTRACT SLA FLAG ---
+        const returnVal = (editedOrders[currentSO] && editedOrders[currentSO]['return'] !== undefined) 
+            ? editedOrders[currentSO]['return'] 
+            : (row['return'] || '');
+        const returnValStr = returnVal ? String(returnVal).toLowerCase() : '';
+        // ---------------------------------
+
         // --- Inject Row Number Cell ---
         const indexTd = document.createElement('td');
         indexTd.textContent = index + 1; // +1 so it starts at 1 instead of 0
@@ -1124,10 +1106,17 @@ function populateTableRows(dataToDisplay) {
             if (colKey === 'so') {
                 input.readOnly = true; // Protects the primary key from accidental typing
                 input.style.cursor = 'pointer';
-                // Uses your CSS theme colors and makes it extra bold!
                 input.style.color = 'var(--text-color)'; 
                 input.style.textDecoration = 'none';
                 input.style.fontWeight = '900';
+
+                // --- PHASE 2: CELL-LEVEL SLA STYLING ---
+                if (returnValStr.startsWith('return')) {
+                    input.style.backgroundColor = 'rgba(211, 47, 47, 0.2)'; // Light Red
+                } else if (returnValStr.startsWith('redo')) {
+                    input.style.backgroundColor = 'rgba(245, 124, 0, 0.2)'; // Light Yellowish/Orange
+                }
+                // ---------------------------------------
                 
                 input.addEventListener('click', () => {
                     openViewOnlyModal(row); // Opens the ticket!
@@ -1816,13 +1805,8 @@ async function loadMonitorDataEngine() {
     hideGlobalLoader(); // Hide when finished rendering
 }
 
-let currentFilteredMonitorRows = [];
 
-// --- NEW: LEADERBOARD & SORTING MEMORY ---
-let globalUserProfiles = {}; // Caches roles so we know who is a tech vs coord
-let techLeaderboardData = []; // Holds the active tech data for sorting
-let coordLeaderboardData = []; // Holds the active coord data for sorting
-let monitorSortConfig = { table: '', col: '', dir: 'desc' }; // Remembers what column you clicked
+
 
 // --- FAST DATE BUTTONS ---
 const formatHtmlDate = (dateObj) => {
@@ -3276,67 +3260,47 @@ async function loadActiveTickets(managerOverrideUser = null) {
         }
     }
 
-    const targetName = managerOverrideUser || currentUser.username;
+    let targetName = managerOverrideUser || currentUser.username;
     
-    // Managers, coordinators, AND tracking users all get the coordinator tools.
-    currentMyOrdersViewMode = (isManager || targetRole.includes('coordinator') || targetRole.includes('tracking')) ? 'coordinator' : 'technician';
+    // --- PHASE 2: FLEET PAIRING INTERCEPTOR ---
+    if (!isManager && !managerOverrideUser && (role.includes('driver') || currentUser.is_driver)) {
+        document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Checking Fleet Pairing...</h3>";
+        
+        // Establish today's exact date for strict matching
+        const now = new Date();
+        const dd = String(now.getDate()).padStart(2, '0');
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const yyyy = now.getFullYear();
+        const todayStr = `${dd}-${mm}-${yyyy}`; 
+
+        const { data: pairData, error: pairErr } = await supabaseClient
+            .from('fleet_pairing')
+            .select('tech_username')
+            .ilike('driver_username', currentUser.username)
+            .eq('date', todayStr)
+            .single();
+
+        if (pairErr || !pairData || !pairData.tech_username) {
+            document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>No paired Technician found for today. Contact Coordination.</h3>";
+            if(document.getElementById('myOrdersCountBadge')) document.getElementById('myOrdersCountBadge').style.display = 'none';
+            return;
+        }
+        
+        // Reroute the database fetch target to the paired technician
+        targetName = pairData.tech_username;
+    }
+    // ------------------------------------------
+    
+    // Set precise View Mode routing logic
+    if (isManager || targetRole.includes('coordinator') || targetRole.includes('tracking')) {
+        currentMyOrdersViewMode = 'coordinator';
+    } else if (role.includes('driver') || currentUser.is_driver) {
+        currentMyOrdersViewMode = 'driver';
+    } else {
+        currentMyOrdersViewMode = 'technician';
+    }
 
     // --- TRACKING ROUTE ---
-    if (targetRole.includes('tracking')) {
-        document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Loading Tracking Pool...</h3>";
-        try {
-            // Fetch all orders where the status is currently 'Tracking'
-            const { data, error } = await supabaseClient.from('orders').select('*').ilike('status', 'tracking');
-            if (error) throw error;
-
-            if (!data || data.length === 0) {
-                document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>No orders in the Tracking pool! 🎉</h3>";
-                originalMyOrders = [];
-                buildMyOrdersFilterTable();
-                if(document.getElementById('myOrdersCountBadge')) document.getElementById('myOrdersCountBadge').style.display = 'none';
-                return;
-            }
-
-            // data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
-            applySequenceSort(data);
-            originalMyOrders = [...data];
-            currentMyOrders = [...data];
-            buildMyOrdersFilterTable();
-            renderTickets(currentMyOrders, currentMyOrdersViewMode); 
-        } catch (err) {
-            alert("Error loading tracking tickets: " + err.message);
-        }
-        return; 
-    }
-
-    // --- EXISTING: COORDINATOR ROUTE (Also triggers if a Manager selects a Coordinator!) ---
-    if (targetRole.includes('coordinator')) {
-        document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Loading Back Office Pool...</h3>";
-        try {
-            const { data, error } = await supabaseClient.from('orders').select('*').eq('status', 'back_office');
-            if (error) throw error;
-
-            if (!data || data.length === 0) {
-                document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>No orders in the Back Office pool! 🎉</h3>";
-                originalMyOrders = [];
-                buildMyOrdersFilterTable();
-                if(document.getElementById('myOrdersCountBadge')) document.getElementById('myOrdersCountBadge').style.display = 'none';
-                return;
-            }
-
-            // data.sort((a, b) => Number(b.days || 0) - Number(a.days || 0));
-            applySequenceSort(data);
-            originalMyOrders = [...data];
-            currentMyOrders = [...data];
-            buildMyOrdersFilterTable();
-            renderTickets(currentMyOrders, currentMyOrdersViewMode); // Passed the view mode!
-        } catch (err) {
-            alert("Error loading coordinator tickets: " + err.message);
-        }
-        return; 
-    }
-
-    // --- TECHNICIAN ROUTE ---
     if (!navigator.onLine) {
         if (isManager) return alert("Managers must have an active internet connection to view other users' tickets.");
         loadTicketsFromVault();
@@ -3398,6 +3362,21 @@ function renderTickets(tickets, viewMode = 'technician') {
             const card = document.createElement('div');
             card.className = 'ticket-card';
             
+            // --- PHASE 2: RETURN & REDO ORDER CARD STYLING ---
+            let returnBadgeHtml = '';
+            const returnValStr = ticket.return ? String(ticket.return).toLowerCase() : '';
+
+            if (returnValStr.startsWith('return')) {
+                card.style.border = '2px solid #d32f2f'; // Prominent red border
+                card.style.backgroundColor = 'rgba(211, 47, 47, 0.05)'; // Faint red background
+                returnBadgeHtml = `<div style="background-color: #d32f2f; color: white; text-align: center; font-weight: bold; padding: 4px; border-radius: 4px 4px 0 0; margin: -15px -15px 10px -15px; font-size: 14px;">⚠️ RETURN ORDER / ${ticket.return} ⚠️</div>`;
+            } else if (returnValStr.startsWith('redo')) {
+                card.style.border = '2px solid #f57c00'; // Yellowish/Orange border
+                card.style.backgroundColor = 'rgba(245, 124, 0, 0.05)'; // Faint yellowish background
+                returnBadgeHtml = `<div style="background-color: #f57c00; color: white; text-align: center; font-weight: bold; padding: 4px; border-radius: 4px 4px 0 0; margin: -15px -15px 10px -15px; font-size: 14px;">⚠️ REDO ORDER / ${ticket.return} ⚠️</div>`;
+            }
+            // ------------------------------------------
+
             // ARMORED: We use String() to force numbers into text so .replace() never crashes!
             const safePhone1 = ticket.phone ? String(ticket.phone).replace(/\s+/g, '') : '';
             const safePhone2 = ticket.phone_2 ? String(ticket.phone_2).replace(/\s+/g, '') : '';
@@ -3419,7 +3398,26 @@ function renderTickets(tickets, viewMode = 'technician') {
             let partsHtml = partsArray.length > 0 ? `<div style="color: #8e24aa; font-size: 13px; font-weight: bold; margin-top: 8px; padding-top: 5px; border-top: 1px dashed var(--border-color);">🛠️ Parts: ${partsArray.join(', ')}</div>` : '';
             // ----------------------------------------------------------
 
+            // --- PHASE 4.1: DRIVER UI WITH PERSISTENT (ACTIVE) STATE ---
+            let actionButtonsHtml = '';
+            if (viewMode === 'driver') {
+                const arrivedText = ticket.arrived_at ? `🟢 Arrived ${ticket.arrived_at} ${ticket.location_link ? '📍' : ''}` : '🟢 Arrive وصلت';
+                const leftText = ticket.left_at ? `🔴 Left ${ticket.left_at}` : '🔴 Leave تحركت';
+                
+                // Unified button colors to primary blue (#1976d2)
+                actionButtonsHtml = `
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button class="btn-driver-arrive" style="flex: 1; background-color: #1976d2; color: white; border: none; padding: 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">${arrivedText}</button>
+                        <button class="btn-driver-leave" style="flex: 1; background-color: #1976d2; color: white; border: none; padding: 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">${leftText}</button>
+                    </div>
+                `;
+            } else {
+                actionButtonsHtml = `<button class="details-btn">Details & Action</button>`;
+            }
+            // ------------------------------------
+
             card.innerHTML = `
+                ${returnBadgeHtml}
                 <div class="ticket-header">
                     <span>SO: ${ticket.so}</span>
                     <span style="color:#ffb300;">Days: ${ticket.days || 0}</span>
@@ -3441,10 +3439,21 @@ function renderTickets(tickets, viewMode = 'technician') {
                 <!-- NEW: Assigned Tech on outer card -->
                 <div class="ticket-row" style="margin-top: 5px;"><strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${ticket.assigned_tech || 'N/A'}</span></div>
                 ${partsHtml}
-                <button class="details-btn">Details & Action</button>
+                ${actionButtonsHtml}
             `;
 
-            card.querySelector('.details-btn').addEventListener('click', () => openDetailsModal(ticket, viewMode));
+            // --- PHASE 4.1: BIND DRIVER ACTION EVENTS WITH DOM CONTEXT ---
+            if (viewMode === 'driver') {
+                card.querySelector('.btn-driver-arrive').addEventListener('click', function() {
+                    if (typeof handleDriverAction === 'function') handleDriverAction(ticket, 'arrive', this);
+                });
+                card.querySelector('.btn-driver-leave').addEventListener('click', function() {
+                    if (typeof handleDriverAction === 'function') handleDriverAction(ticket, 'leave', this);
+                });
+            } else {
+                card.querySelector('.details-btn').addEventListener('click', () => openDetailsModal(ticket, viewMode));
+            }
+            
             container.appendChild(card);
         });
     } catch (err) {
@@ -3681,7 +3690,7 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
 
     // 2. Populate Read-Only Details
 
-    // --- NEW: DYNAMIC PURPLE PARTS FOR INSIDE THE TICKET ---
+    // ---DYNAMIC PURPLE PARTS FOR INSIDE THE TICKET ---
     // We build the parts list exactly like the outside ticket, ignoring empty slots
     let modalPartsArray = [];
     for (let i = 1; i <= 5; i++) {
@@ -3698,7 +3707,28 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
         : `<strong>Parts:</strong> N/A<br>`;
     // -------------------------------------------------------
 
-    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + `
+    // --- PHASE 2: RETURN & REDO MODAL BANNER ---
+    let returnModalBanner = '';
+    const returnValStr = ticket.return ? String(ticket.return).toLowerCase() : '';
+
+    if (returnValStr.startsWith('return')) {
+        returnModalBanner = `
+            <div style="background-color: #d32f2f; color: white; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px; border: 2px solid #b71c1c;">
+                ⚠️ WARNING: RETURN ORDER ⚠️<br>
+                <span style="font-size: 14px; font-weight: normal;">${ticket.return}</span>
+            </div>
+        `;
+    } else if (returnValStr.startsWith('redo')) {
+        returnModalBanner = `
+            <div style="background-color: #f57c00; color: white; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px; border: 2px solid #e65100;">
+                ⚠️ WARNING: REDO ORDER ⚠️<br>
+                <span style="font-size: 14px; font-weight: normal;">${ticket.return}</span>
+            </div>
+        `;
+    }
+    // ------------------------------------------
+
+    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + returnModalBanner + `
         <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
             <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
         </div>
@@ -5153,39 +5183,7 @@ document.getElementById('assignDownloadVisibleBtn').addEventListener('click', ()
     downloadGroupedVisibleText('assignTableBody', editedAssignations, ALL_COLUMNS, 'Assignation_Visible_Export');
 });
 
-// Bind Monitor CSV Export (Using PapaParse)
-document.getElementById('monitorDownloadCsvBtn').addEventListener('click', () => {
-    const tbody = document.getElementById('monitorTableBody');
-    if (!tbody || tbody.children.length === 0) {
-        alert("No visible Monitor data to export.");
-        return;
-    }
 
-    // Extract headers dynamically
-    const headers = Array.from(document.querySelectorAll('#monitorHeaderRow th')).map(th => th.textContent);
-    
-    // Extract visible rows text
-    const csvData = [];
-    Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
-        const rowData = Array.from(tr.querySelectorAll('td')).map(td => td.textContent);
-        csvData.push(rowData);
-    });
-
-    // Generate CSV string using your existing PapaParse dependency
-    const csv = Papa.unparse({
-        fields: headers,
-        data: csvData
-    });
-
-    // --- FIXED: UTF-8 BOM added safely without duplicate declarations ---
-    const blob = new Blob(['\uFEFF' + csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Monitor_Export_${new Date().getTime()}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-});
 
 // ==========================================
 // --- FULL SYSTEM BACKUP ENGINE ---
@@ -5318,7 +5316,7 @@ async function openViewOnlyModal(ticket) {
 
     // 5. Populate Read-Only Details
 
-    // --- NEW: DYNAMIC PURPLE PARTS FOR THE VIEW-ONLY TICKET ---
+    // --- DYNAMIC PURPLE PARTS FOR THE VIEW-ONLY TICKET ---
     let viewPartsArray = [];
     for (let i = 1; i <= 5; i++) {
         let part = (ticket[`part_${i}`] || '').trim();
@@ -5333,7 +5331,28 @@ async function openViewOnlyModal(ticket) {
         : `<strong>Parts:</strong> N/A<br>`;
     // -------------------------------------------------------
 
-    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + `
+    // --- PHASE 2: RETURN & REDO VIEW-ONLY MODAL BANNER ---
+    let returnViewBanner = '';
+    const returnValStr = ticket.return ? String(ticket.return).toLowerCase() : '';
+
+    if (returnValStr.startsWith('return')) {
+        returnViewBanner = `
+            <div style="background-color: #d32f2f; color: white; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px; border: 2px solid #b71c1c;">
+                ⚠️ WARNING: RETURN ORDER ⚠️<br>
+                <span style="font-size: 14px; font-weight: normal;">${ticket.return}</span>
+            </div>
+        `;
+    } else if (returnValStr.startsWith('redo')) {
+        returnViewBanner = `
+            <div style="background-color: #f57c00; color: white; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px; border: 2px solid #e65100;">
+                ⚠️ WARNING: REDO ORDER ⚠️<br>
+                <span style="font-size: 14px; font-weight: normal;">${ticket.return}</span>
+            </div>
+        `;
+    }
+    // ------------------------------------------
+
+    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + returnViewBanner + `
         <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
             <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
         </div>
@@ -5391,32 +5410,7 @@ async function openViewOnlyModal(ticket) {
     modal.style.display = 'flex';
 }
 
-// ---LIGHTWEIGHT EXCEL-STYLE MONITOR FILTER ---
-function filterMonitorTable() {
-    const trs = document.getElementById('monitorTableBody').getElementsByTagName('tr');
-    const inputs = document.getElementById('monitorHeaderRow').getElementsByTagName('input');
-    
-    for (let i = 0; i < trs.length; i++) {
-        let showRow = true;
-        const tds = trs[i].getElementsByTagName('td');
-        
-        for (let j = 0; j < inputs.length; j++) {
-            const filterText = inputs[j].value.toLowerCase();
-            
-            if (filterText !== '') {
-                if (tds[j]) {
-                    const cellText = tds[j].textContent.toLowerCase();
-                    if (cellText.indexOf(filterText) === -1) {
-                        showRow = false; 
-                        break; 
-                    }
-                }
-            }
-        }
-        trs[i].style.display = showRow ? '' : 'none';
-    }
-}
-// -------------------------------------------
+
 
 // --- TICKET MODAL: DOWNLOAD TICKET MEDIA BUTTON ---
 document.getElementById('modalDownloadMediaBtn').addEventListener('click', async () => {
@@ -6595,4 +6589,22 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnAddImageRow')?.addEventListener('click', () => createMediaStagingRow('image'));
     document.getElementById('btnAddVideoRow')?.addEventListener('click', () => createMediaStagingRow('video'));
     document.getElementById('btnAddCallRow')?.addEventListener('click', () => createMediaStagingRow('call'));
+});
+
+// --- FLEET MANAGER NAVIGATION ---
+const fleetManagerPage = document.getElementById('fleetManagerPage');
+
+document.getElementById('btnFleetManager').addEventListener('click', () => {
+    menuPage.classList.remove('active');
+    fleetManagerPage.classList.add('active');
+    
+    // We will call the initialization function from drivers_fleet.js here later
+    if (typeof initializeFleetManager === 'function') {
+        initializeFleetManager();
+    }
+});
+
+document.getElementById('fleetHubBtn').addEventListener('click', () => {
+    fleetManagerPage.classList.remove('active');
+    menuPage.classList.add('active');
 });

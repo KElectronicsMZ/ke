@@ -124,7 +124,7 @@
             <button class="menu-btn" id="btnAccounting">Accounting</button>
             <button class="menu-btn" id="btnTracking">Tracking</button>
             <button class="menu-btn" id="btnMyTeam">My Team</button>
-            
+            <button class="menu-btn" id="btnFleetManager">Drivers Fleet</button>            
         </div>
         <div class="center-cancel">
             <button id="menuCancelBtn">Cancel (Logout)</button>
@@ -270,7 +270,7 @@
                     <button id="monitorFilterDateBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px;">Apply Filter</button>
                     <button id="monitorClearDateBtn" style="background: transparent; color: #d32f2f; border: 1px solid #d32f2f; padding: 5px; cursor: pointer;">Clear Filter</button>
                     <button id="monitorDownloadCsvBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px; background: #1976d2; color: white; margin-top: 10px;">Download CSV</button>
-                    <button id="monitorReportBtn" onclick="window.open('./reports/index.html', '_blank')" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px; background: #8e24aa; color: white; margin-top: 10px; font-weight: bold;">📊 Generate Report</button>
+                    <button id="monitorReportBtn" onclick="window.open('./reports/performance_report.html', '_blank')" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px; background: #8e24aa; color: white; margin-top: 10px; font-weight: bold;">📊 Generate Report</button>
                     </div>
                     
                     <button id="monitorHubBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 10px; width: 100%; font-size: 14px;">Back to HUB</button>
@@ -1099,14 +1099,91 @@
     </div>
 
 
+    <!-- FLEET MANAGER PAGE -->
+    <div id="fleetManagerPage" class="page">
+        <div class="system-header" style="flex-direction: column; align-items: center; gap: 10px;">
+            <h2 style="margin: 0;">🚐 Fleet Logistics & Scheduling</h2>
+            
+            <!-- Fleet Control Panel -->
+            <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; background: var(--card-bg); padding: 10px 15px; border-radius: 4px; border: 1px solid var(--border-color); width: 100%; max-width: 900px; justify-content: center; margin-top: 10px;">
+                <div style="display: flex; flex-direction: column; gap: 5px; text-align: left;">
+                    <label style="font-size: 12px; font-weight: bold;">Start Date:</label>
+                    <input type="date" id="fleetHistStartDate" style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 5px; text-align: left;">
+                    <label style="font-size: 12px; font-weight: bold;">End Date:</label>
+                    <input type="date" id="fleetHistEndDate" style="padding: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                </div>
+                <button id="btnFetchFleetHistory" class="primary-btn" style="background-color: #f57c00; border-color: #e65100; padding: 6px 15px; height: 33px;">📅 Previous Schedules</button>
+                <button id="fleetHubBtn" class="details-btn" style="height: 33px; padding: 6px 15px; margin-top: 0;">Back to HUB</button>
+            </div>
+        </div>
+
+        <div style="width: 100%; max-width: 900px; margin: 20px auto; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #1976d2;">📅 Daily Schedule</h3>
+                <div style="display: flex; gap: 10px;">
+                    <button id="btnAddFleetRow" class="secondary-btn" style="background-color: #2e7d32; color: white; border: none; font-weight: bold;">➕ Add Row</button>
+                    <button id="btnSaveFleetSchedule" class="primary-btn">💾 Confirm & Save</button>
+                </div>
+            </div>
+
+            <!-- Datalists for Autocomplete -->
+            <datalist id="fleetDriverList"></datalist>
+            <datalist id="fleetTechList"></datalist>
+            <datalist id="fleetRouteList">
+                <option value="صحراوى"></option>
+                <option value="بلد شاشات"></option>
+                <option value="بلد اجهزة"></option>
+                <option value="عجمى شاشات"></option>
+                <option value="عجمى اجهزة"></option>
+                <option value="كفر الدوار"></option>
+                <option value="ابو المطامير"></option>
+                <option value="دمنهور"></option>
+                <option value="ساحل قريب"></option>
+                <option value="ساحل بعيد"></option>
+                <option value="مطروح"></option>
+            </datalist>
+
+            <div class="table-container" style="max-height: 50vh; overflow-y: auto;">
+                <table id="fleetScheduleTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Driver</th>
+                            <th>Technician</th>
+                            <th>Rout</th>
+                            <th style="width: 50px;">Remove</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fleetScheduleBody">
+                        <!-- Dynamic rows injected via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Historical Schedules Container -->
+        <div id="fleetHistoryContainer" style="width: 100%; max-width: 900px; margin: 0 auto 20px auto; display: none; flex-direction: column; gap: 15px;">
+            <!-- Historical tables will be injected here by JS -->
+        </div>
+
+
+    </div>
+
+    
+
     <script src="app.js"></script>
     <script src="warehouse.js"></script>
+    <script src="monitor.js"></script>
     <script src="callcenter.js"></script>
     <script src="settings.js"></script>
     <script src="accounting.js"></script>
     <script src="tracking.js"></script>
     <script src="assignation.js"></script>
     <script src="myteam.js"></script>
+    <script src="drivers_fleet.js"></script>
+    
 
     <!-- USER HISTORY SIDE PANEL -->
     <div id="historyPanel" class="history-panel">

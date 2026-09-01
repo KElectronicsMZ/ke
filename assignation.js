@@ -423,6 +423,13 @@ function renderAssignationTable(dataToRender = assignationOrders) {
         const tr = document.createElement('tr');
         const currentSO = row.so;
 
+        // --- PHASE 2.1: EXTRACT SLA FLAG ---
+        const returnVal = (editedAssignations[currentSO] && editedAssignations[currentSO]['return'] !== undefined) 
+            ? editedAssignations[currentSO]['return'] 
+            : (row['return'] || '');
+        const returnValStr = returnVal ? String(returnVal).toLowerCase() : '';
+        // -----------------------------------
+
         // --- Inject Row Number Cell ---
         const indexTd = document.createElement('td');
         indexTd.textContent = index + 1;
@@ -467,6 +474,14 @@ function renderAssignationTable(dataToRender = assignationOrders) {
                 input.style.textDecoration = 'none';
                 input.style.fontWeight = '900'; 
                 
+                // --- PHASE 2.1: CELL-LEVEL SLA STYLING ---
+                if (returnValStr.startsWith('return')) {
+                    input.style.backgroundColor = 'rgba(211, 47, 47, 0.2)'; // Light Red
+                } else if (returnValStr.startsWith('redo')) {
+                    input.style.backgroundColor = 'rgba(245, 124, 0, 0.2)'; // Light Yellowish/Orange
+                }
+                // -----------------------------------------
+
                 input.addEventListener('click', () => {
                     openViewOnlyModal(row); // Opens the ticket!
                 });
@@ -685,6 +700,13 @@ function renderStagedTable(dataToRender = stagedOrders) {
         const tr = document.createElement('tr');
         const currentSO = row.so;
 
+        // --- PHASE 2.1: EXTRACT SLA FLAG ---
+        const returnVal = (editedStagedOrders[currentSO] && editedStagedOrders[currentSO]['return'] !== undefined) 
+            ? editedStagedOrders[currentSO]['return'] 
+            : (row['return'] || '');
+        const returnValStr = returnVal ? String(returnVal).toLowerCase() : '';
+        // -----------------------------------
+
         // --- Inject Row Number Cell ---
         const indexTd = document.createElement('td');
         indexTd.textContent = index + 1;
@@ -706,6 +728,14 @@ function renderStagedTable(dataToRender = stagedOrders) {
                 input.style.cursor = 'pointer';
                 input.style.color = 'var(--text-color)'; 
                 input.style.fontWeight = '900'; 
+
+                // --- PHASE 2.1: CELL-LEVEL SLA STYLING ---
+                if (returnValStr.startsWith('return')) {
+                    input.style.backgroundColor = 'rgba(211, 47, 47, 0.2)'; // Light Red
+                } else if (returnValStr.startsWith('redo')) {
+                    input.style.backgroundColor = 'rgba(245, 124, 0, 0.2)'; // Light Yellowish/Orange
+                }
+                // -----------------------------------------
                 
                 input.addEventListener('click', async () => {
                     // Try to find the order in memory, or fetch it live to view the ticket

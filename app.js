@@ -3308,9 +3308,21 @@ async function loadActiveTickets(managerOverrideUser = null) {
     }
 
     try {
-        document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading tickets for ${targetName}...</h3>`;
-        const { data: ordersData, error: orderErr } = await supabaseClient
-            .from('orders').select('*').eq('status', 'Technician').ilike('assigned_tech', targetName); 
+        // --- PHASE 1: DYNAMIC QUERY BRANCHING ---
+        let fetchQuery = supabaseClient.from('orders').select('*');
+        
+        if (currentMyOrdersViewMode === 'coordinator') {
+            // Coordinator View: Fetch the shared global back_office queue
+            document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading Back Office Queue...</h3>`;
+            fetchQuery = fetchQuery.eq('status', 'back_office');
+        } else {
+            // Technician/Driver View: Fetch their strictly assigned tickets
+            document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading tickets for ${targetName}...</h3>`;
+            fetchQuery = fetchQuery.eq('status', 'Technician').ilike('assigned_tech', targetName);
+        }
+
+        const { data: ordersData, error: orderErr } = await fetchQuery;
+        // ----------------------------------------
         if (orderErr) throw orderErr;
 
         if (!ordersData || ordersData.length === 0) {

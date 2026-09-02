@@ -8,11 +8,128 @@ let editedMonitorRows = {};
 const MONITOR_TABLE_NAME = 'repair_log'; // Your secondary table name in Supabase
 let currentFilteredMonitorRows = [];
 
-// --- NEW: LEADERBOARD & SORTING MEMORY ---
+// --- LEADERBOARD & SORTING MEMORY ---
 let globalUserProfiles = {}; // Caches roles so we know who is a tech vs coord
 let techLeaderboardData = []; // Holds the active tech data for sorting
 let coordLeaderboardData = []; // Holds the active coord data for sorting
 let monitorSortConfig = { table: '', col: '', dir: 'desc' }; // Remembers what column you clicked
+
+// --- PHASE 1: INTRA-DAY RESOLUTION ENGINE ---
+window.resolvedDailyAssignments = {}; // Exposed globally for Phase 2 (Modal & Badges)
+
+function executeIntraDayResolution(dataPool) {
+    let techStats = {};
+    let coordStats = {};
+    window.resolvedDailyAssignments = {}; 
+    
+    // Step 1: Group logs by SO and Date
+    let dailyLogs = {};
+    dataPool.forEach(row => {
+        const dateStr = row.assign_date || 'UnknownDate';
+        const key = row.so + '_' + dateStr;
+        if (!dailyLogs[key]) dailyLogs[key] = [];
+        dailyLogs[key].push(row);
+    });
+
+    // Step 2: Time-sort to find the true final assignee for each day
+    Object.keys(dailyLogs).forEach(key => {
+        dailyLogs[key].sort((a, b) => (a.assign_time || '00:00').localeCompare(b.assign_time || '00:00'));
+        const lastLog = dailyLogs[key][dailyLogs[key].length - 1];
+        let finalTech = (lastLog.assigned_tech || '').trim();
+        if (finalTech === '') finalTech = (lastLog.end_tech || '').trim(); // Fallback if marked complete
+        window.resolvedDailyAssignments[key] = finalTech;
+    });
+
+    // Step 3: Tally Metrics Securely
+    const initTech = (name) => {
+        if (name && !techStats[name]) techStats[name] = { name: name, assigned: new Set(), acted: new Set(), finished: 0, collected: 0 };
+    };
+
+    dataPool.forEach(row => {
+        const dateStr = row.assign_date || 'UnknownDate';
+        const dailyKey = row.so + '_' + dateStr;
+
+        let actedTech = (row.assigned_by || '').trim();
+        let endTech = (row.end_tech || '').trim();
+        let agreeCoord = (row.agree_coord || '').trim();
+        let completeCoord = (row.complete_coord || '').trim();
+
+        initTech(actedTech);
+        initTech(endTech);
+
+        // Tally Coordinators
+        if (agreeCoord) {
+            if (!coordStats[agreeCoord]) coordStats[agreeCoord] = { name: agreeCoord, agree: 0, complete: 0 };
+            coordStats[agreeCoord].agree++;
+        }
+        if (completeCoord) {
+            if (!coordStats[completeCoord]) coordStats[completeCoord] = { name: completeCoord, agree: 0, complete: 0 };
+            coordStats[completeCoord].complete++;
+        }
+
+        // Tally Tech Actions (Always credited to the actor)
+        if (actedTech) {
+            techStats[actedTech].acted.add(dailyKey);
+            techStats[actedTech].collected += Number(row.collected) || 0;
+        }
+        if (endTech) techStats[endTech].finished++;
+    });
+
+    // Apply strictly resolved daily assignments
+    Object.keys(window.resolvedDailyAssignments).forEach(dailyKey => {
+        const finalTech = window.resolvedDailyAssignments[dailyKey];
+        if (finalTech) {
+            initTech(finalTech);
+            techStats[finalTech].assigned.add(dailyKey);
+        }
+    });
+
+    // Step 4: Calculate Pending strictly based on overlapping daily actions
+    let techArr = [];
+    Object.values(techStats).forEach(stats => {
+        let role = globalUserProfiles[stats.name] || 'technician';
+        if (!role.includes('coordinator')) {
+            let overlapCount = 0;
+            stats.assigned.forEach(dailyKey => { if (stats.acted.has(dailyKey)) overlapCount++; });
+            
+            techArr.push({
+                name: stats.name,
+                assigned: stats.assigned.size,
+                acted: stats.acted.size,
+                pending: stats.assigned.size - overlapCount,
+                finished: stats.finished,
+                collected: stats.collected
+            });
+        }
+    });
+
+    return { techData: techArr, coordData: Object.values(coordStats) };
+}
+
+// --- NEW LEADERBOARD ENGINE (MIGRATED TO MONITOR.JS) ---
+function renderMonitorLeaderboard(dataPool = currentFilteredMonitorRows) {
+    const headerEl = document.getElementById('activeMonitorStatusHeader');
+    const tableArea = document.getElementById('monitorTableArea');
+    const badgesArea = document.getElementById('technicianBadges');
+    
+    if (headerEl) headerEl.textContent = 'Performance Leaderboard (Split by Role)';
+    tableArea.style.display = 'block';
+    document.getElementById('techTableTitle').style.display = 'block';
+    document.getElementById('coordTableContainer').style.display = 'block';
+    if(badgesArea) badgesArea.style.display = 'none';
+
+    // 1. RUN INTRA-DAY RESOLUTION
+    const resolvedMetrics = executeIntraDayResolution(dataPool);
+    
+    techLeaderboardData = resolvedMetrics.techData;
+    coordLeaderboardData = resolvedMetrics.coordData;
+    monitorSortConfig = { table: '', col: '', dir: 'desc' }; 
+
+    // 2. DRAW TABLES
+    if (typeof drawTechLeaderboard === 'function') drawTechLeaderboard();
+    if (typeof drawCoordLeaderboard === 'function') drawCoordLeaderboard();
+}
+
 
 // Open Monitor Page from HUB Menu
 document.getElementById('btnMonitor').addEventListener('click', () => {
@@ -187,3 +304,133 @@ function filterMonitorTable() {
     }
 }
 // -------------------------------------------
+
+// --- METRIC LIST MODAL ENGINE (MIGRATED & ENHANCED) ---
+window.openMetricDetails = function(context, user, type, extraArg = null) {
+    const dataPool = context === 'monitor' ? currentFilteredMonitorRows : bonusesTrackingRows;
+    const safeUser = user.trim().toLowerCase();
+    
+    // We map by dailyKey to perfectly sync with the Leaderboard's daily event counting
+    let assignedMap = new Map();
+    let actedMap = new Map();
+    let finalResults = new Map();
+
+    // 1. Data Aggregation
+    dataPool.forEach((row, index) => {
+        const so = row.so;
+        const assignedTech = (row.assigned_tech || '').trim().toLowerCase();
+        const assignedBy = (row.assigned_by || '').trim().toLowerCase();
+        const endTech = (row.end_tech || '').trim().toLowerCase();
+        const agreeCoord = (row.agree_coord || '').trim().toLowerCase();
+        const completeCoord = (row.complete_coord || '').trim().toLowerCase();
+
+        // --- PHASE 2 ENGINE SYNCHRONIZATION ---
+        const dateStr = row.assign_date || 'UnknownDate';
+        const dailyKey = row.so + '_' + dateStr;
+        
+        // Fetch true resolved assignee. We explicitly check against undefined so empty strings don't trigger the fallback!
+        const resolved = window.resolvedDailyAssignments ? window.resolvedDailyAssignments[dailyKey] : undefined;
+        const trueAssignee = (resolved !== undefined) ? resolved.toLowerCase() : assignedTech;
+
+        // Baseline mapping for Left Out math & Carry-Over Validation
+        if (trueAssignee === safeUser) assignedMap.set(dailyKey, row);
+        if (assignedBy === safeUser) actedMap.set(dailyKey, row);
+
+        let isMatch = false;
+        
+        if (context === 'bonuses') {
+            if (type === 'acted' && assignedBy === safeUser) isMatch = true;
+            if (type === 'agreed' && agreeCoord === safeUser) isMatch = true;
+            if (type === 'completed' && completeCoord === safeUser) isMatch = true;
+            if (type === 'finished' && endTech === safeUser) isMatch = true;
+            if (type === 'hass' && String(row.hass || '').trim().toLowerCase() === 'yes') isMatch = true;
+            if (type === 'smart_things' && String(row.smart_things || '').trim().toLowerCase() === 'yes') isMatch = true;
+            if (type === 'collected' && assignedBy === safeUser && Number(row.collected) > 0) isMatch = true;
+            if (type === 'reason' && assignedBy === safeUser && (row.collected_reason || '').trim() === extraArg) isMatch = true;
+        } else {
+            // Strictly match using the true resolved assignee for Monitor context
+            if (type === 'assigned' && trueAssignee === safeUser) isMatch = true;
+            if (type === 'acted' && assignedBy === safeUser) isMatch = true;
+            if (type === 'finished' && endTech === safeUser) isMatch = true;
+            if (type === 'collected' && assignedBy === safeUser && Number(row.collected) > 0) isMatch = true;
+            if (type === 'agreed' && agreeCoord === safeUser) isMatch = true;
+            if (type === 'completed' && completeCoord === safeUser) isMatch = true;
+            if (type === 'reason' && assignedBy === safeUser && (row.collected_reason || '').trim() === extraArg) isMatch = true;
+        }
+
+        if (isMatch) {
+            // Deduplicate Set-based metrics (Assigned/Acted) by dailyKey to match Leaderboard. 
+            // Preserve all rows for count-based metrics by adding the index to the key.
+            const mapKey = (context === 'monitor' && (type === 'assigned' || type === 'acted')) ? dailyKey : (dailyKey + '_' + index);
+            finalResults.set(mapKey, row);
+        }
+    });
+
+    // 2. Left Out Math (Strictly mirroring the Leaderboard's Set subtraction)
+    if (type === 'pending') {
+        finalResults.clear();
+        assignedMap.forEach((row, dailyKey) => {
+            if (!actedMap.has(dailyKey)) finalResults.set(dailyKey, row);
+        });
+    }
+
+    // 3. UI Generation
+    const listContainer = document.getElementById('metricModalList');
+    listContainer.innerHTML = '';
+    
+    document.getElementById('metricModalTitle').textContent = `Details: ${type.toUpperCase()}`;
+    const subtitle = context === 'bonuses' ? "Showing your personal entries for the selected date range." : `Displaying records for: ${user}`;
+    document.getElementById('metricModalSubtitle').textContent = subtitle;
+
+    if (finalResults.size === 0) {
+        listContainer.innerHTML = '<p style="opacity: 0.7;">No details found for this record.</p>';
+    } else {
+        // --- PHASE 2: INDEX COUNTER INJECTION ---
+        let indexCounter = 1;
+        
+        finalResults.forEach((row) => {
+            const so = row.so;
+            const rowDateStr = row.assign_date || 'UnknownDate';
+            const rowDailyKey = so + '_' + rowDateStr;
+            
+            let detailString = '';
+            if (type === 'assigned' || type === 'pending') {
+                detailString = `Assigned Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'}`;
+            } else if (type === 'acted') {
+                detailString = `Action Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'} <br><strong>Comment:</strong> ${row.comment || 'None'}`;
+            } else if (type === 'finished') {
+                detailString = `Completed Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'} <br><strong>End Coord:</strong> ${row.complete_coord || 'N/A'}`;
+            } else if (type === 'collected') {
+                detailString = `Collection Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'} <br><strong>Amount:</strong> ${row.collected || 0}`;
+            } else {
+                detailString = `Recorded Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'}`;
+            }
+
+            // --- BRIDGE SOLUTION: CARRY-OVER DETECTION ---
+            let carryOverBadge = '';
+            if ((type === 'acted' || type === 'pending') && !assignedMap.has(rowDailyKey)) {
+                carryOverBadge = `<span style="background-color: #fbc02d; color: black; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 10px; border: 1px solid #f9a825;" title="Assigned prior to the selected date range">⚠️ Carry-over</span>`;
+            }
+
+            const card = document.createElement('div');
+            card.className = 'metric-card';
+            // --- INDEX NUMBER RENDERED BEFORE THE SO ---
+            card.innerHTML = `
+                <div class="metric-so-link" style="display: flex; align-items: center; justify-content: space-between;">
+                    <div><span style="color: #1976d2; font-weight: bold; margin-right: 5px;">#${indexCounter}</span> SO: ${so} ${carryOverBadge}</div>
+                </div>
+                <div>${detailString}</div>
+            `;
+            
+            card.querySelector('.metric-so-link').addEventListener('click', () => {
+                const mainOrder = databaseOrders.find(o => String(o.so) === String(so)) || row;
+                if (typeof openViewOnlyModal === 'function') openViewOnlyModal(mainOrder);
+            });
+
+            listContainer.appendChild(card);
+            indexCounter++;
+        });
+    }
+
+    document.getElementById('metricDetailsModal').style.display = 'flex';
+};

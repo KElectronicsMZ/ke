@@ -3261,44 +3261,46 @@ async function loadActiveTickets(managerOverrideUser = null) {
     }
 
     let targetName = managerOverrideUser || currentUser.username;
+    let driverTechArray = []; // Array to hold multiple technicians if target is a driver
     
-    // --- PHASE 2: FLEET PAIRING INTERCEPTOR ---
-    if (!isManager && !managerOverrideUser && (role.includes('driver') || currentUser.is_driver)) {
+    // --- PHASE 1: PRECISE VIEW MODE ROUTING (TARGET-BASED) ---
+    // The view mode is now dictated by the role of the person being viewed, NOT the manager.
+    if (targetRole.includes('coordinator') || targetRole.includes('tracking') || targetRole.includes('admin') || targetRole.includes('manager') || targetRole.includes('supervisor')) {
+        currentMyOrdersViewMode = 'coordinator';
+    } else if (targetRole.includes('driver') || (currentUser.is_driver && !managerOverrideUser)) {
+        currentMyOrdersViewMode = 'driver';
+    } else {
+        currentMyOrdersViewMode = 'technician';
+    }
+    // ---------------------------------------------------------
+
+    // --- PHASE 1: MULTI-TARGET FLEET PAIRING INTERCEPTOR ---
+    if (currentMyOrdersViewMode === 'driver') {
         document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Checking Fleet Pairing...</h3>";
         
-        // Establish today's exact date for strict matching
         const now = new Date();
         const dd = String(now.getDate()).padStart(2, '0');
         const mm = String(now.getMonth() + 1).padStart(2, '0');
         const yyyy = now.getFullYear();
         const todayStr = `${dd}-${mm}-${yyyy}`; 
 
+        // Removed .single() to fetch an array of ALL paired technicians for this driver today
         const { data: pairData, error: pairErr } = await supabaseClient
             .from('fleet_pairing')
             .select('tech_username')
-            .ilike('driver_username', currentUser.username)
-            .eq('date', todayStr)
-            .single();
+            .ilike('driver_username', targetName)
+            .eq('date', todayStr);
 
-        if (pairErr || !pairData || !pairData.tech_username) {
-            document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>No paired Technician found for today. Contact Coordination.</h3>";
+        if (pairErr || !pairData || pairData.length === 0) {
+            document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>No paired Technician found for ${targetName} today. Contact Coordination.</h3>`;
             if(document.getElementById('myOrdersCountBadge')) document.getElementById('myOrdersCountBadge').style.display = 'none';
             return;
         }
         
-        // Reroute the database fetch target to the paired technician
-        targetName = pairData.tech_username;
+        // Map the database results into a clean array of usernames (e.g., ['Ali', 'Mishel'])
+        driverTechArray = pairData.map(p => p.tech_username);
     }
-    // ------------------------------------------
-    
-    // Set precise View Mode routing logic
-    if (isManager || targetRole.includes('coordinator') || targetRole.includes('tracking')) {
-        currentMyOrdersViewMode = 'coordinator';
-    } else if (role.includes('driver') || currentUser.is_driver) {
-        currentMyOrdersViewMode = 'driver';
-    } else {
-        currentMyOrdersViewMode = 'technician';
-    }
+    // -------------------------------------------------------
 
     // --- TRACKING ROUTE ---
     if (!navigator.onLine) {
@@ -3308,21 +3310,31 @@ async function loadActiveTickets(managerOverrideUser = null) {
     }
 
     try {
-        // --- PHASE 1: DYNAMIC QUERY BRANCHING ---
+        // --- PHASE 1: DYNAMIC TRI-BRANCH QUERY ---
         let fetchQuery = supabaseClient.from('orders').select('*');
         
         if (currentMyOrdersViewMode === 'coordinator') {
             // Coordinator View: Fetch the shared global back_office queue
             document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading Back Office Queue...</h3>`;
             fetchQuery = fetchQuery.eq('status', 'back_office');
+            
+        } else if (currentMyOrdersViewMode === 'driver') {
+            // Driver View: Fetch active tickets for ALL paired technicians simultaneously
+            document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading fleet tickets for ${driverTechArray.join(' & ')}...</h3>`;
+            
+            // Build a dynamic OR string to match multiple names case-insensitively
+            const orString = driverTechArray.map(tech => `assigned_tech.ilike.${tech}`).join(',');
+            fetchQuery = fetchQuery.eq('status', 'Technician').or(orString);
+            
         } else {
-            // Technician/Driver View: Fetch their strictly assigned tickets
+            // Technician View: Fetch their strictly assigned tickets
             document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading tickets for ${targetName}...</h3>`;
             fetchQuery = fetchQuery.eq('status', 'Technician').ilike('assigned_tech', targetName);
         }
 
         const { data: ordersData, error: orderErr } = await fetchQuery;
-        // ----------------------------------------
+        // -----------------------------------------
+        
         if (orderErr) throw orderErr;
 
         if (!ordersData || ordersData.length === 0) {

@@ -680,6 +680,7 @@ async function applyRoleBasedMenuVisibility() {
     if (btnAccounting) btnAccounting.style.display = 'none';
     if (btnTracking) btnTracking.style.display = 'none';
     if (btnMyTeam) btnMyTeam.style.display = 'none';
+    if (btnFleetManager) btnFleetManager.style.display = 'none';
 
     // 3. Fetch this specific role's permissions from the database
     const { data: perms, error } = await supabaseClient
@@ -704,10 +705,11 @@ async function applyRoleBasedMenuVisibility() {
     if (btnWarehouse && perms.can_view_warehouse) btnWarehouse.style.display = 'block';
     if (btnAccounting && perms.can_view_accounting) btnAccounting.style.display = 'block';
     if (btnTracking && perms.can_view_tracking) btnTracking.style.display = 'block';
-    // Hardcoded fallback for My Team to avoid requiring an immediate database schema change in role_permissions
-    if (btnMyTeam && (userRole.includes('supervisor') || userRole.includes('manager') || userRole.includes('admin'))) {
-        btnMyTeam.style.display = 'block';
-    }
+    
+    // --- PHASE 3: DATABASE-DRIVEN VISIBILITY ---
+    if (btnMyTeam && perms.can_view_my_team) btnMyTeam.style.display = 'block';
+    if (btnFleetManager && perms.can_view_fleet) btnFleetManager.style.display = 'block';
+    
 }
 // ---------------------------------------------------
 document.getElementById('btnSystem').addEventListener('click', () => {
@@ -3184,8 +3186,29 @@ async function loadActiveTickets(managerOverrideUser = null) {
             
             // If they are ONLY a supervisor, strictly limit to their assigned team
             if (isSupervisor && !isManager) {
-                // Fetch anyone assigned to this supervisor OR the supervisor themselves
-                query = query.or(`supervisor_name.eq.${currentUser.username},username.eq.${currentUser.username}`);
+                // --- PHASE 3: MATRIX JSON ARRAY DROPDOWN OVERRIDE ---
+                // 1. Fetch the supervisor's team matrix from the database
+                const { data: supData } = await supabaseClient
+                    .from('profiles')
+                    .select('team_members')
+                    .eq('username', currentUser.username)
+                    .single();
+                
+                let teamArray = [];
+                try {
+                    teamArray = typeof supData?.team_members === 'string' 
+                        ? JSON.parse(supData.team_members) 
+                        : (supData?.team_members || []);
+                } catch(e) {}
+                
+                // 2. Ensure the supervisor is always in their own dropdown to view personal tickets
+                if (!teamArray.includes(currentUser.username)) {
+                    teamArray.push(currentUser.username);
+                }
+                
+                // 3. Command Supabase to strictly return only these specific users
+                query = query.in('username', teamArray);
+                // ----------------------------------------------------
             }
 
             const { data } = await query; 
@@ -3222,7 +3245,7 @@ async function loadActiveTickets(managerOverrideUser = null) {
     // The view mode is now dictated by the role of the person being viewed, NOT the manager.
     if (targetRole.includes('tracking')) {
         currentMyOrdersViewMode = 'tracking';
-    } else if (targetRole.includes('coordinator') || targetRole.includes('admin') || targetRole.includes('manager') || targetRole.includes('supervisor')) {
+    } else if (targetRole.includes('coordinator') || targetRole.includes('admin') || targetRole.includes('manager')) {
         currentMyOrdersViewMode = 'coordinator';
     } else if (targetRole.includes('driver') || (currentUser.is_driver && !managerOverrideUser)) {
         currentMyOrdersViewMode = 'driver';

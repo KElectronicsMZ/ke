@@ -36,7 +36,9 @@
         { col: 'can_view_settings', label: 'Settings (Admin)' },
         { col: 'can_view_warehouse', label: 'Warehouse' },
         { col: 'can_view_accounting', label: 'Accounting' },
-        { col: 'can_view_tracking', label: 'Tracking' }
+        { col: 'can_view_tracking', label: 'Tracking' },
+        { col: 'can_view_my_team', label: 'My Team' },
+        { col: 'can_view_fleet', label: 'Drivers Fleet' }
     ];
 
     // 2. Fetch everything when Settings page opens
@@ -233,106 +235,147 @@
             }
         });
     }
-    // 8. Supervisor Assignment Logic
-    const supervisorSelectDropdown = document.getElementById('supervisorSelectDropdown');
-    const supervisorTeamContainer = document.getElementById('supervisorTeamContainer');
-    const saveSupervisorTeamBtn = document.getElementById('save-supervisor-team-btn');
-    const supervisorTeamSavedMsg = document.getElementById('supervisorTeamSavedMsg');
+    // 8. Matrix Team & Supervisor Assignment Logic
+    const matrixUserSelectDropdown = document.getElementById('matrixUserSelectDropdown');
+    const matrixConfigContainer = document.getElementById('matrixConfigContainer');
+    const isSupervisorCheckbox = document.getElementById('isSupervisorCheckbox');
+    const matrixTeamContainer = document.getElementById('matrixTeamContainer');
+    const saveMatrixTeamBtn = document.getElementById('save-matrix-team-btn');
+    const matrixTeamSavedMsg = document.getElementById('matrixTeamSavedMsg');
 
-    if (supervisorSelectDropdown && btnSettings) {
+    if (matrixUserSelectDropdown && btnSettings) {
         btnSettings.addEventListener('click', async () => {
-            // Populate supervisors dropdown
-            const { data: supervisorsData } = await supabaseClient
+            // Populate the main user dropdown with all profiles
+            const { data: allUsers } = await supabaseClient
                 .from('profiles')
                 .select('username')
-                .ilike('role', '%supervisor%')
                 .order('username');
 
-            if (supervisorsData) {
-                supervisorSelectDropdown.innerHTML = '<option value="">-- Choose Supervisor --</option>';
-                supervisorsData.forEach(s => {
+            if (allUsers) {
+                matrixUserSelectDropdown.innerHTML = '<option value="">-- Choose User --</option>';
+                allUsers.forEach(u => {
                     const opt = document.createElement('option');
-                    opt.value = s.username;
-                    opt.textContent = s.username;
-                    supervisorSelectDropdown.appendChild(opt);
+                    opt.value = u.username;
+                    opt.textContent = u.username;
+                    matrixUserSelectDropdown.appendChild(opt);
                 });
             }
         });
 
-        // Show technicians when a supervisor is selected
-        supervisorSelectDropdown.addEventListener('change', async (e) => {
-            const selectedSupervisor = e.target.value;
-            if (!selectedSupervisor) {
-                supervisorTeamContainer.style.display = 'none';
-                saveSupervisorTeamBtn.style.display = 'none';
+        // Show config and load team members when a user is selected
+        matrixUserSelectDropdown.addEventListener('change', async (e) => {
+            const selectedUser = e.target.value;
+            if (!selectedUser) {
+                matrixConfigContainer.style.display = 'none';
+                saveMatrixTeamBtn.style.display = 'none';
                 return;
             }
 
-            supervisorTeamContainer.innerHTML = '<span style="color: gray;">Loading technicians...</span>';
-            supervisorTeamContainer.style.display = 'flex';
+            matrixTeamContainer.innerHTML = '<span style="color: gray;">Loading configuration...</span>';
+            matrixConfigContainer.style.display = 'flex';
 
-            // Fetch ALL technicians to display as checkboxes
-            const { data: techsData } = await supabaseClient
+            // Fetch the selected user's profile and JSON array
+            const { data: userProfile } = await supabaseClient
                 .from('profiles')
-                .select('username, supervisor_name')
-                .ilike('role', '%technician%')
+                .select('role, team_members')
+                .eq('username', selectedUser)
+                .single();
+
+            const currentRole = (userProfile?.role || '').toLowerCase();
+            isSupervisorCheckbox.checked = currentRole.includes('supervisor');
+            
+            // Parse JSON array safely
+            let currentTeam = [];
+            try {
+                if (userProfile?.team_members) {
+                    currentTeam = typeof userProfile.team_members === 'string' 
+                        ? JSON.parse(userProfile.team_members) 
+                        : userProfile.team_members;
+                }
+            } catch (err) {
+                currentTeam = [];
+            }
+
+            // Fetch ALL system users to display as team checkboxes
+            const { data: allTechs } = await supabaseClient
+                .from('profiles')
+                .select('username')
+                .neq('username', selectedUser) // Exclude themselves
                 .order('username');
 
-            supervisorTeamContainer.innerHTML = '';
+            matrixTeamContainer.innerHTML = '';
 
-            if (techsData && techsData.length > 0) {
-                techsData.forEach(tech => {
+            if (allTechs && allTechs.length > 0) {
+                allTechs.forEach(tech => {
                     const label = document.createElement('label');
                     label.style.cssText = 'display: flex; align-items: center; gap: 10px; cursor: pointer; border-bottom: 1px dashed var(--border-color); padding-bottom: 8px;';
-                    // Check if this technician is currently assigned to the selected supervisor
-                    const isChecked = (tech.supervisor_name === selectedSupervisor) ? 'checked' : '';
+                    
+                    const isChecked = currentTeam.includes(tech.username) ? 'checked' : '';
+                    
                     label.innerHTML = `
                         <input type="checkbox" data-tech="${tech.username}" style="width: 18px; height: 18px;" ${isChecked}>
                         <span style="font-weight: bold;">${tech.username}</span>
                     `;
-                    supervisorTeamContainer.appendChild(label);
+                    matrixTeamContainer.appendChild(label);
                 });
-                saveSupervisorTeamBtn.style.display = 'block';
+                saveMatrixTeamBtn.style.display = 'block';
             } else {
-                supervisorTeamContainer.innerHTML = '<span style="color: gray;">No technicians found.</span>';
-                saveSupervisorTeamBtn.style.display = 'none';
+                matrixTeamContainer.innerHTML = '<span style="color: gray;">No other users found.</span>';
+                saveMatrixTeamBtn.style.display = 'none';
             }
         });
 
-        // Save supervisor assignment
-        saveSupervisorTeamBtn.addEventListener('click', async () => {
-            const selectedSupervisor = supervisorSelectDropdown.value;
-            if (!selectedSupervisor) return;
+        // Save Matrix Configuration
+        saveMatrixTeamBtn.addEventListener('click', async () => {
+            const selectedUser = matrixUserSelectDropdown.value;
+            if (!selectedUser) return;
 
-            saveSupervisorTeamBtn.disabled = true;
-            saveSupervisorTeamBtn.textContent = 'Saving...';
-            supervisorTeamSavedMsg.style.display = 'none';
+            saveMatrixTeamBtn.disabled = true;
+            saveMatrixTeamBtn.textContent = 'Saving...';
+            matrixTeamSavedMsg.style.display = 'none';
 
-            const checkboxes = supervisorTeamContainer.querySelectorAll('input[type="checkbox"]');
-            let updatePromises = [];
+            // 1. Fetch current role to safely append/remove "supervisor"
+            const { data: userProfile } = await supabaseClient
+                .from('profiles')
+                .select('role')
+                .eq('username', selectedUser)
+                .single();
+            
+            let updatedRole = (userProfile?.role || '').trim();
+            const hasSupervisorRole = updatedRole.toLowerCase().includes('supervisor');
 
-            // Bulk update each technician's profile
+            if (isSupervisorCheckbox.checked && !hasSupervisorRole) {
+                updatedRole = updatedRole ? updatedRole + ', supervisor' : 'supervisor';
+            } else if (!isSupervisorCheckbox.checked && hasSupervisorRole) {
+                // Remove "supervisor" from the role string cleanly
+                updatedRole = updatedRole.split(',').map(r => r.trim()).filter(r => r.toLowerCase() !== 'supervisor').join(', ');
+            }
+
+            // 2. Build the JSON Array of checked team members
+            const checkboxes = matrixTeamContainer.querySelectorAll('input[type="checkbox"]');
+            const newTeamArray = [];
             checkboxes.forEach(box => {
-                const techName = box.dataset.tech;
-                if (box.checked) {
-                    updatePromises.push(supabaseClient.from('profiles').update({ supervisor_name: selectedSupervisor }).eq('username', techName));
-                } else {
-                    // Only nullify if they were assigned to THIS supervisor to prevent overwriting others
-                    updatePromises.push(
-                        supabaseClient.from('profiles')
-                        .update({ supervisor_name: null })
-                        .eq('username', techName)
-                        .eq('supervisor_name', selectedSupervisor) 
-                    );
-                }
+                if (box.checked) newTeamArray.push(box.dataset.tech);
             });
 
-            await Promise.all(updatePromises);
+            // 3. Execute Database Update
+            const { error } = await supabaseClient
+                .from('profiles')
+                .update({ 
+                    role: updatedRole,
+                    team_members: newTeamArray 
+                })
+                .eq('username', selectedUser);
 
-            saveSupervisorTeamBtn.disabled = false;
-            saveSupervisorTeamBtn.textContent = '💾 Save Team Assignment';
-            supervisorTeamSavedMsg.style.display = 'block';
-            setTimeout(() => supervisorTeamSavedMsg.style.display = 'none', 3000);
+            saveMatrixTeamBtn.disabled = false;
+            saveMatrixTeamBtn.textContent = '💾 Save Team & Role';
+
+            if (error) {
+                alert("Error saving matrix team: " + error.message);
+            } else {
+                matrixTeamSavedMsg.style.display = 'block';
+                setTimeout(() => matrixTeamSavedMsg.style.display = 'none', 3000);
+            }
         });
     }
 })();

@@ -824,6 +824,7 @@
                     </table>
                 </div>
             </div>
+            
 
             <!-- CURRENT STOCK SECTION -->
             <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
@@ -943,24 +944,37 @@
                 <button id="save-user-role-btn" class="primary-btn" style="width: 100%; display: none; background: #8e24aa;">💾 Update User Role</button>
                 <div id="userRoleSavedMsg" style="display: none; color: #4caf50; font-weight: bold; margin-top: 10px; text-align: center;">User Role Updated Successfully!</div>
             </div>
-            <!-- SECTION 4: Supervisor Assignment -->
+            <!-- SECTION 4: Matrix Team & Supervisor Assignment -->
             <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px;">
-                <h3 style="margin-top: 0; color: #fbc02d; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">👥 Supervisor Team Assignment</h3>
-                <p style="font-size: 13px; opacity: 0.8; margin-bottom: 15px;">Select a supervisor, then check the boxes for the technicians assigned to their team.</p>
+                <h3 style="margin-top: 0; color: #fbc02d; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">👥 Matrix Team Assignment</h3>
+                <p style="font-size: 13px; opacity: 0.8; margin-bottom: 15px;">Select a user, configure their Supervisor status, and define their exact team members.</p>
                 
                 <div class="input-group" style="margin-bottom: 15px;">
-                    <label>Select Supervisor:</label>
-                    <select id="supervisorSelectDropdown" style="padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
-                        <option value="">-- Choose Supervisor --</option>
+                    <label>Select User:</label>
+                    <select id="matrixUserSelectDropdown" style="padding: 10px; font-size: 16px; width: 100%; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                        <option value="">-- Choose User --</option>
+                        <!-- Injected via JS -->
                     </select>
                 </div>
 
-                <div id="supervisorTeamContainer" style="display: none; flex-direction: column; gap: 12px; margin-bottom: 20px; background: rgba(0,0,0,0.05); padding: 15px; border-radius: 4px; border: 1px dashed var(--border-color); max-height: 250px; overflow-y: auto;">
-                    <!-- Checkboxes injected by JS -->
+                <div id="matrixConfigContainer" style="display: none; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+                    <!-- Supervisor Toggle -->
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; background: rgba(0,0,0,0.05); padding: 10px; border: 1px solid var(--border-color); border-radius: 4px;">
+                        <input type="checkbox" id="isSupervisorCheckbox" style="width: 20px; height: 20px;">
+                        <span style="font-weight: bold; font-size: 15px; color: #fbc02d;">Grant Supervisor Role</span>
+                    </label>
+
+                    <!-- Team Members List -->
+                    <div style="background: rgba(0,0,0,0.05); padding: 15px; border-radius: 4px; border: 1px dashed var(--border-color);">
+                        <label style="font-weight: bold; font-size: 14px; margin-bottom: 10px; display: block; color: var(--text-color);">Select Team Members:</label>
+                        <div id="matrixTeamContainer" style="display: flex; flex-direction: column; gap: 12px; max-height: 250px; overflow-y: auto;">
+                            <!-- Checkboxes injected by JS -->
+                        </div>
+                    </div>
                 </div>
 
-                <button id="save-supervisor-team-btn" class="primary-btn" style="width: 100%; display: none; background: #fbc02d; color: black;">💾 Save Team Assignment</button>
-                <div id="supervisorTeamSavedMsg" style="display: none; color: #4caf50; font-weight: bold; margin-top: 10px; text-align: center;">Team Assigned Successfully!</div>
+                <button id="save-matrix-team-btn" class="primary-btn" style="width: 100%; display: none; background: #fbc02d; color: black;">💾 Save Team & Role</button>
+                <div id="matrixTeamSavedMsg" style="display: none; color: #4caf50; font-weight: bold; margin-top: 10px; text-align: center;">Configuration Saved Successfully!</div>
             </div>
 
         </div>

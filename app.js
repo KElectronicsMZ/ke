@@ -3574,27 +3574,40 @@ function fetchAndRenderTicketHistory(soNumber) {
                 document.getElementById('lastPushedByValue').textContent = 'N/A';
             }
 
-            // 5. Extract and format all comments
-            const commentLogs = logs.filter(l => l.comment && l.comment.trim() !== '');
+            // 5. Extract and format relevant logs (Comments AND Assignments)
+            const displayLogs = logs.filter(l => (l.comment && l.comment.trim() !== '') || l.status === 'Technician');
             const commentsContainer = document.getElementById('coordCommentsList');
             commentsContainer.innerHTML = '';
 
-            if (commentLogs.length > 0) {
-                commentLogs.forEach(log => {
+            if (displayLogs.length > 0) {
+                displayLogs.forEach(log => {
                     const div = document.createElement('div');
                     div.style.padding = '8px';
                     div.style.background = 'var(--bg-color)';
                     div.style.border = '1px solid var(--border-color)';
                     div.style.borderRadius = '4px';
+                    
+                    let contentHtml = '';
+                    
+                    // Inject Assignment Badge if applicable
+                    if (log.status === 'Technician' && log.assigned_tech) {
+                        contentHtml += `<div style="margin-top: 4px; margin-bottom: 4px; display: inline-block; background: #e3f2fd; color: #1976d2; padding: 3px 6px; border-radius: 4px; font-size: 12px; font-weight: bold; border: 1px solid #90caf9;">🔄 Assigned to: ${log.assigned_tech}</div><br>`;
+                    }
+                    
+                    // Inject Comment Payload if applicable
+                    if (log.comment && log.comment.trim() !== '') {
+                        contentHtml += `<span style="margin-top: 4px; display: inline-block; color: var(--text-color);">${log.comment}</span>`;
+                    }
+
                     div.innerHTML = `
-                        <strong style="color: #4caf50;">${log.assigned_by || 'Unknown'}</strong> 
+                        <strong style="color: #4caf50;">${log.assigned_by || 'System'}</strong> 
                         <span style="font-size: 11px; opacity: 0.7;">(${log.assign_date} at ${log.assign_time}):</span><br>
-                        <span style="margin-top: 4px; display: inline-block;">${log.comment}</span>
+                        ${contentHtml}
                     `;
                     commentsContainer.appendChild(div);
                 });
             } else {
-                commentsContainer.innerHTML = '<span style="color: gray;">No comments recorded yet.</span>';
+                commentsContainer.innerHTML = '<span style="color: gray;">No activity recorded yet.</span>';
             }
         });
 }
@@ -3775,7 +3788,7 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
         document.getElementById('confirmTechBtn').style.display = 'none';
         document.getElementById('coordActionSection').style.display = 'none';
         document.getElementById('confirmCoordBtn').style.display = 'none';
-    } else if (viewMode === 'coordinator') {
+    } else if (viewMode === 'coordinator' || viewMode === 'tracking') {
         // Hide Tech Zone
         document.getElementById('techActionSection').style.display = 'none';
         document.getElementById('confirmTechBtn').style.display = 'none';

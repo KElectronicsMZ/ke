@@ -3181,7 +3181,9 @@ async function loadActiveTickets(managerOverrideUser = null) {
     
     // --- PHASE 1: PRECISE VIEW MODE ROUTING (TARGET-BASED) ---
     // The view mode is now dictated by the role of the person being viewed, NOT the manager.
-    if (targetRole.includes('coordinator') || targetRole.includes('tracking') || targetRole.includes('admin') || targetRole.includes('manager') || targetRole.includes('supervisor')) {
+    if (targetRole.includes('tracking')) {
+        currentMyOrdersViewMode = 'tracking';
+    } else if (targetRole.includes('coordinator') || targetRole.includes('admin') || targetRole.includes('manager') || targetRole.includes('supervisor')) {
         currentMyOrdersViewMode = 'coordinator';
     } else if (targetRole.includes('driver') || (currentUser.is_driver && !managerOverrideUser)) {
         currentMyOrdersViewMode = 'driver';
@@ -3226,10 +3228,15 @@ async function loadActiveTickets(managerOverrideUser = null) {
     }
 
     try {
-        // --- PHASE 1: DYNAMIC TRI-BRANCH QUERY ---
+        // --- PHASE 1: DYNAMIC MULTI-BRANCH QUERY ---
         let fetchQuery = supabaseClient.from('orders').select('*');
         
-        if (currentMyOrdersViewMode === 'coordinator') {
+        if (currentMyOrdersViewMode === 'tracking') {
+            // Tracking View: Fetch the strictly tracked queue
+            document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading Tracking Queue...</h3>`;
+            fetchQuery = fetchQuery.eq('status', 'Tracking');
+            
+        } else if (currentMyOrdersViewMode === 'coordinator') {
             // Coordinator View: Fetch the shared global back_office queue
             document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading Back Office Queue...</h3>`;
             fetchQuery = fetchQuery.eq('status', 'back_office');
@@ -3356,31 +3363,49 @@ function renderTickets(tickets, viewMode = 'technician') {
             }
             // ------------------------------------
 
+            // --- PHASE 2: DRIVER UI HARDENING (CONDITIONAL RENDERING) ---
+            let ticketBodyHtml = '';
+            
+            if (viewMode === 'driver') {
+                ticketBodyHtml = `
+                    <div class="ticket-header">
+                        <span>SO: ${ticket.so}</span>
+                    </div>
+                    <div class="ticket-row"><span>Name: ${ticket.name || 'N/A'}</span></div>
+                    <div class="ticket-row"><span>Date: ${ticket.date || 'N/A'}</span></div>
+                    <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
+                    ${actionButtonsHtml}
+                `;
+            } else {
+                ticketBodyHtml = `
+                    <div class="ticket-header">
+                        <span>SO: ${ticket.so}</span>
+                        <span style="color:#ffb300;">Days: ${ticket.days || 0}</span>
+                    </div>
+                    <div class="ticket-row"><span>Name: ${ticket.name || 'N/A'}</span> <span>${p1}</span></div>
+                    <div class="ticket-row"><span>Date: ${ticket.date || 'N/A'}</span> <span>${p2}</span></div>
+                    <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
+
+                    <!-- --- Model, SN, and I/O on the same flex-wrapped line --- -->
+                    <div class="ticket-row" style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 5px;">
+                        <span><strong>Model:</strong> ${ticket.model || 'N/A'}</span> 
+                        <span><strong>SN:</strong> ${ticket.serial || 'N/A'}</span>
+                        <span><strong>I/O:</strong> <span style="color: #e65100; font-weight: bold;">${ticket.io || 'N/A'}</span></span>
+                    </div>
+                    <!-- ------------------------------------------------------------------- -->
+
+                    <div class="ticket-row" style="margin-top: 5px;"><strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}</div>
+                    <div class="ticket-row" style="margin-top: 5px;"><strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${ticket.assigned_tech || 'N/A'}</span></div>
+                    ${partsHtml}
+                    ${actionButtonsHtml}
+                `;
+            }
+
             card.innerHTML = `
                 ${returnBadgeHtml}
-                <div class="ticket-header">
-                    <span>SO: ${ticket.so}</span>
-                    <span style="color:#ffb300;">Days: ${ticket.days || 0}</span>
-                </div>
-                <div class="ticket-row"><span>Name: ${ticket.name || 'N/A'}</span> <span>${p1}</span></div>
-                <div class="ticket-row"><span>Date: ${ticket.date || 'N/A'}</span> <span>${p2}</span></div>
-                <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
-
-                <!-- --- Model, SN, and I/O on the same flex-wrapped line --- -->
-                <div class="ticket-row" style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 5px;">
-                    <span><strong>Model:</strong> ${ticket.model || 'N/A'}</span> 
-                    <span><strong>SN:</strong> ${ticket.serial || 'N/A'}</span>
-                    <span><strong>I/O:</strong> <span style="color: #e65100; font-weight: bold;">${ticket.io || 'N/A'}</span></span>
-                </div>
-                <!-- ------------------------------------------------------------------- -->
-
-                <!-- NEW: Added the Status Comment line here so it shows on the outside ticket -->
-                <div class="ticket-row" style="margin-top: 5px;"><strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}</div>
-                <!-- NEW: Assigned Tech on outer card -->
-                <div class="ticket-row" style="margin-top: 5px;"><strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${ticket.assigned_tech || 'N/A'}</span></div>
-                ${partsHtml}
-                ${actionButtonsHtml}
+                ${ticketBodyHtml}
             `;
+            // -----------------------------------------------------------
 
             // --- PHASE 4.1: BIND DRIVER ACTION EVENTS WITH DOM CONTEXT ---
             if (viewMode === 'driver') {

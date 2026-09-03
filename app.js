@@ -156,7 +156,15 @@ function loadTicketsFromVault() {
 async function displaySystemVersion() {
     const versionDisplay = document.getElementById('appVersionDisplay');
     if (!versionDisplay) return;
+    
     try {
+        // --- NEW: Wait for Service Worker to complete installation ---
+        if ('serviceWorker' in navigator) {
+            await navigator.serviceWorker.ready;
+            // 500ms stabilization buffer for disk I/O on Cache Storage API
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
         // Ask the browser directly what caches are actively installed
         const cacheNames = await caches.keys();
         // Find the one that belongs to our system
@@ -172,8 +180,39 @@ async function displaySystemVersion() {
     } catch (e) {
         versionDisplay.textContent = 'vOffline';
     }
+
+    // --- CACHE PURGE OVERRIDE ENGINE ---
+    versionDisplay.style.cursor = 'pointer';
+    versionDisplay.title = "Click to force system update (Clear Cache)";
+    
+    // We use .onclick instead of addEventListener to prevent duplicate bindings upon auto-login loops
+    versionDisplay.onclick = async () => {
+        if (!confirm("Force system update? This will clear cached files and reload the application from the server.")) return;
+        
+        try {
+            versionDisplay.textContent = 'Updating...'; // Visual feedback during purge
+            
+            // 1. Wipe all Cache Storage allocations
+            const cacheKeys = await caches.keys();
+            await Promise.all(cacheKeys.map(key => caches.delete(key)));
+            
+            // 2. Unregister Active Service Workers
+            if ('serviceWorker' in navigator) {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (let reg of regs) {
+                    await reg.unregister();
+                }
+            }
+            
+            // 3. Force Hard Reload (Bypassing browser memory)
+            window.location.reload(true);
+        } catch (err) {
+            alert("Cache purge failed. Please refresh manually. Error: " + err.message);
+        }
+    };
+    // ----------------------------------------
 }
-// ------------------------------------
+
 
 let activeInputTarget = null; // Tracks the currently selected table cell input
 let sortDirection = {}; // Tracks if column is sorting 'asc' or 'desc'

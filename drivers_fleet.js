@@ -6,12 +6,11 @@ let fleetDrivers = [];
 let fleetTechs = [];
 
 // Format Date to YYYY-MM-DD for HTML Calendar Inputs
-function getTomorrowHtmlDate() {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const y = tomorrow.getFullYear();
-    const m = String(tomorrow.getMonth() + 1).padStart(2, '0');
-    const d = String(tomorrow.getDate()).padStart(2, '0');
+function getTodayHtmlDate() {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
 }
 
@@ -56,28 +55,55 @@ async function initializeFleetManager() {
         fleetTechs.forEach(u => techList.appendChild(new Option(u)));
     }
 
-    // 4. Reset Table and Add One Default Row
+    // 4. Hydrate Table with Today's Active Pairings
     const tbody = document.getElementById('fleetScheduleBody');
     if (tbody) {
         tbody.innerHTML = '';
-        addFleetRow();
+        
+        // Align temporal formats (HTML Date to Database DD-MM-YYYY)
+        const todayHtml = getTodayHtmlDate();
+        const todayDb = formatToDbDate(todayHtml);
+
+        const { data: activePairings, error: pairError } = await supabaseClient
+            .from('fleet_pairing')
+            .select('*')
+            .eq('date', todayDb);
+
+        if (pairError) {
+            console.error("Database Error: Failed to fetch active pairings.", pairError);
+            addFleetRow(); // Fallback to blank row
+        } else if (activePairings && activePairings.length > 0) {
+            // Render existing backend records
+            activePairings.forEach(row => addFleetRow(row));
+        } else {
+            // Empty schedule, provide blank template
+            addFleetRow(); 
+        }
     }
 
     if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
 }
 
 // Dynamic Row Generator
-function addFleetRow() {
+function addFleetRow(rowData = null) {
     const tbody = document.getElementById('fleetScheduleBody');
     if (!tbody) return;
+
+    // Standardize input mappings for new rows vs pre-hydrated database rows
+    const dateVal = rowData && rowData.date ? rowData.date.split('-').reverse().join('-') : getTodayHtmlDate();
+    const driverVal = rowData && rowData.driver_username ? rowData.driver_username : '';
+    const techVal = rowData && rowData.tech_username ? rowData.tech_username : '';
+    const routVal = rowData && rowData.rout ? rowData.rout : '';
+    const commentVal = rowData && rowData.comments ? rowData.comments : '';
 
     const tr = document.createElement('tr');
     
     tr.innerHTML = `
-        <td><input type="date" class="fleet-date-input" value="${getTomorrowHtmlDate()}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
-        <td><input type="text" class="fleet-driver-input" list="fleetDriverList" placeholder="Driver..." style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
-        <td><input type="text" class="fleet-tech-input" list="fleetTechList" placeholder="Tech..." style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
-        <td><input type="text" class="fleet-route-input" list="fleetRouteList" placeholder="Route..." style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
+        <td><input type="date" class="fleet-date-input" value="${dateVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
+        <td><input type="text" class="fleet-driver-input" list="fleetDriverList" placeholder="Driver..." value="${driverVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
+        <td><input type="text" class="fleet-tech-input" list="fleetTechList" placeholder="Tech..." value="${techVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
+        <td><input type="text" class="fleet-route-input" list="fleetRouteList" placeholder="Route..." value="${routVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
+        <td><input type="text" class="fleet-comment-input" placeholder="Comments..." value="${commentVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
         <td style="text-align: center;"><button class="secondary-btn btn-remove-fleet-row" style="background-color: #d32f2f; color: white; border: none; padding: 4px 10px; cursor: pointer; border-radius: 4px; font-weight: bold;">X</button></td>
     `;
 
@@ -114,8 +140,12 @@ async function saveFleetSchedule() {
         const driver = tr.querySelector('.fleet-driver-input').value.trim();
         const tech = tr.querySelector('.fleet-tech-input').value.trim();
         const rout = tr.querySelector('.fleet-route-input').value.trim();
+        
+        // Safely extract the comment (optional field)
+        const commentInput = tr.querySelector('.fleet-comment-input');
+        const comments = commentInput ? commentInput.value.trim() : '';
 
-        if (!htmlDate || !driver || !tech) {
+        if (!htmlDate) {
             hasErrors = true;
             tr.style.backgroundColor = 'rgba(211, 47, 47, 0.1)'; // Highlight missing data
         } else {
@@ -124,13 +154,14 @@ async function saveFleetSchedule() {
                 date: formatToDbDate(htmlDate), // Forces the required 'dd-mm-yyyy' format
                 driver_username: driver,
                 tech_username: tech,
-                rout: rout
+                rout: rout,
+                comments: comments
             });
         }
     });
 
     if (hasErrors) {
-        alert("Please ensure Date, Driver, and Technician are populated for all rows.");
+        alert("Please ensure a valid Date is selected for all rows.");
         return;
     }
 
@@ -139,26 +170,23 @@ async function saveFleetSchedule() {
     const btnSave = document.getElementById('btnSaveFleetSchedule');
     btnSave.disabled = true;
 
-    // Use standard insert. The composite unique constraint we added to the DB handles duplicates.
+    // 1. Extract unique dates to perform a clean sync for the targeted days
+    const uniqueDates = [...new Set(payload.map(p => p.date))];
+    if (uniqueDates.length > 0) {
+        await supabaseClient.from('fleet_pairing').delete().in('date', uniqueDates);
+    }
+
+    // 2. Insert the fresh payload reflecting the exact UI state
     const { error } = await supabaseClient.from('fleet_pairing').insert(payload);
 
     btnSave.disabled = false;
     if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
 
     if (error) {
-        // Postgres Code 23505 = Unique Violation
-        if (error.code === '23505') {
-            alert("Database Error: One or more of these pairings already exist for the selected date. Duplicates were rejected to prevent overlapping routes.");
-        } else {
-            alert("Failed to save schedule: " + error.message);
-        }
+        alert("Failed to save schedule: " + error.message);
     } else {
         alert("Fleet Schedule successfully saved!");
-        const tbody = document.getElementById('fleetScheduleBody');
-        if (tbody) {
-            tbody.innerHTML = '';
-            addFleetRow(); // Reset UI with a fresh row
-        }
+        // UI retention: We intentionally leave the DOM intact so the user does not lose their active view.
     }
 }
 
@@ -253,6 +281,7 @@ function renderFleetHistory(data) {
                             <th>Driver سائق</th>
                             <th>Technician مهندس</th>
                             <th>Rout خط سير</th>
+                            <th>Comments تعليقات</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -264,6 +293,7 @@ function renderFleetHistory(data) {
                     <td style="font-weight: bold; color: var(--text-color);">${row.driver_username || 'N/A'}</td>
                     <td style="font-weight: bold; color: #1976d2;">${row.tech_username || 'N/A'}</td>
                     <td>${row.rout || 'N/A'}</td>
+                    <td>${row.comments || ''}</td>
                 </tr>
             `;
         });

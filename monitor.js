@@ -20,90 +20,82 @@ window.resolvedDailyAssignments = {}; // Exposed globally for Phase 2 (Modal & B
 function executeIntraDayResolution(dataPool) {
     let techStats = {};
     let coordStats = {};
-    window.resolvedDailyAssignments = {}; 
-    
-    // Step 1: Group logs by SO and Date
-    let dailyLogs = {};
-    dataPool.forEach(row => {
-        const dateStr = row.assign_date || 'UnknownDate';
-        const key = row.so + '_' + dateStr;
-        if (!dailyLogs[key]) dailyLogs[key] = [];
-        dailyLogs[key].push(row);
-    });
+    window.resolvedDailyAssignments = {}; // Preserved to prevent errors in legacy integrations
 
-    // Step 2: Time-sort to find the true final assignee for each day
-    Object.keys(dailyLogs).forEach(key => {
-        dailyLogs[key].sort((a, b) => (a.assign_time || '00:00').localeCompare(b.assign_time || '00:00'));
-        const lastLog = dailyLogs[key][dailyLogs[key].length - 1];
-        let finalTech = (lastLog.assigned_tech || '').trim();
-        if (finalTech === '') finalTech = (lastLog.end_tech || '').trim(); // Fallback if marked complete
-        window.resolvedDailyAssignments[key] = finalTech;
-    });
-
-    // Step 3: Tally Metrics Securely
     const initTech = (name) => {
-        if (name && !techStats[name]) techStats[name] = { name: name, assigned: new Set(), acted: new Set(), finished: 0, collected: 0 };
+        if (name && !techStats[name]) {
+            // Keying Sets by SO ensures an order is only counted once per technician in this date range
+            techStats[name] = { name: name, assigned: new Set(), acted: new Set(), finished: new Set(), collectedMap: new Map() };
+        }
     };
 
     dataPool.forEach(row => {
-        const dateStr = row.assign_date || 'UnknownDate';
-        const dailyKey = row.so + '_' + dateStr;
-
+        const so = row.so;
         let actedTech = (row.assigned_by || '').trim();
+        let assignedTech = (row.assigned_tech || '').trim();
         let endTech = (row.end_tech || '').trim();
         let agreeCoord = (row.agree_coord || '').trim();
         let completeCoord = (row.complete_coord || '').trim();
 
         initTech(actedTech);
+        initTech(assignedTech);
         initTech(endTech);
 
-        // Tally Coordinators
+        // Tally Coordinators (Deduplicated by SO)
         if (agreeCoord) {
-            if (!coordStats[agreeCoord]) coordStats[agreeCoord] = { name: agreeCoord, agree: 0, complete: 0 };
-            coordStats[agreeCoord].agree++;
+            if (!coordStats[agreeCoord]) coordStats[agreeCoord] = { name: agreeCoord, agree: new Set(), complete: new Set() };
+            coordStats[agreeCoord].agree.add(so);
         }
         if (completeCoord) {
-            if (!coordStats[completeCoord]) coordStats[completeCoord] = { name: completeCoord, agree: 0, complete: 0 };
-            coordStats[completeCoord].complete++;
+            if (!coordStats[completeCoord]) coordStats[completeCoord] = { name: completeCoord, agree: new Set(), complete: new Set() };
+            coordStats[completeCoord].complete.add(so);
         }
 
-        // Tally Tech Actions (Always credited to the actor)
+        // Tally Tech Metrics (Deduplicated by SO)
+        if (assignedTech) techStats[assignedTech].assigned.add(so);
+        
         if (actedTech) {
-            techStats[actedTech].acted.add(dailyKey);
-            techStats[actedTech].collected += Number(row.collected) || 0;
+            techStats[actedTech].acted.add(so);
+            
+            // Deduplicate Collected Money: Retain the max value for this SO to prevent double counting
+            const currentCollected = Number(row.collected) || 0;
+            const existingCollected = techStats[actedTech].collectedMap.get(so) || 0;
+            if (currentCollected > existingCollected) {
+                techStats[actedTech].collectedMap.set(so, currentCollected);
+            }
         }
-        if (endTech) techStats[endTech].finished++;
+        if (endTech) techStats[endTech].finished.add(so);
     });
 
-    // Apply strictly resolved daily assignments
-    Object.keys(window.resolvedDailyAssignments).forEach(dailyKey => {
-        const finalTech = window.resolvedDailyAssignments[dailyKey];
-        if (finalTech) {
-            initTech(finalTech);
-            techStats[finalTech].assigned.add(dailyKey);
-        }
-    });
-
-    // Step 4: Calculate Pending strictly based on overlapping daily actions
+    // Step 4: Calculate Pending based on overlapping unique SOs
     let techArr = [];
     Object.values(techStats).forEach(stats => {
         let role = globalUserProfiles[stats.name] || 'technician';
         if (!role.includes('coordinator')) {
             let overlapCount = 0;
-            stats.assigned.forEach(dailyKey => { if (stats.acted.has(dailyKey)) overlapCount++; });
+            stats.assigned.forEach(so => { if (stats.acted.has(so)) overlapCount++; });
+            
+            let totalCollected = 0;
+            stats.collectedMap.forEach(amount => totalCollected += amount);
             
             techArr.push({
                 name: stats.name,
                 assigned: stats.assigned.size,
                 acted: stats.acted.size,
                 pending: stats.assigned.size - overlapCount,
-                finished: stats.finished,
-                collected: stats.collected
+                finished: stats.finished.size,
+                collected: totalCollected
             });
         }
     });
 
-    return { techData: techArr, coordData: Object.values(coordStats) };
+    let formattedCoordData = Object.values(coordStats).map(coord => ({
+        name: coord.name,
+        agree: coord.agree.size,
+        complete: coord.complete.size
+    }));
+
+    return { techData: techArr, coordData: formattedCoordData };
 }
 
 // --- NEW LEADERBOARD ENGINE (MIGRATED TO MONITOR.JS) ---
@@ -310,12 +302,11 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
     const dataPool = context === 'monitor' ? currentFilteredMonitorRows : bonusesTrackingRows;
     const safeUser = user.trim().toLowerCase();
     
-    // We map by dailyKey to perfectly sync with the Leaderboard's daily event counting
     let assignedMap = new Map();
     let actedMap = new Map();
     let finalResults = new Map();
 
-    // 1. Data Aggregation
+    // 1. Data Aggregation (Mapped by SO)
     dataPool.forEach((row, index) => {
         const so = row.so;
         const assignedTech = (row.assigned_tech || '').trim().toLowerCase();
@@ -324,17 +315,9 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
         const agreeCoord = (row.agree_coord || '').trim().toLowerCase();
         const completeCoord = (row.complete_coord || '').trim().toLowerCase();
 
-        // --- PHASE 2 ENGINE SYNCHRONIZATION ---
-        const dateStr = row.assign_date || 'UnknownDate';
-        const dailyKey = row.so + '_' + dateStr;
-        
-        // Fetch true resolved assignee. We explicitly check against undefined so empty strings don't trigger the fallback!
-        const resolved = window.resolvedDailyAssignments ? window.resolvedDailyAssignments[dailyKey] : undefined;
-        const trueAssignee = (resolved !== undefined) ? resolved.toLowerCase() : assignedTech;
-
-        // Baseline mapping for Left Out math & Carry-Over Validation
-        if (trueAssignee === safeUser) assignedMap.set(dailyKey, row);
-        if (assignedBy === safeUser) actedMap.set(dailyKey, row);
+        // Baseline mapping for Left Out math
+        if (assignedTech === safeUser) assignedMap.set(so, row);
+        if (assignedBy === safeUser) actedMap.set(so, row);
 
         let isMatch = false;
         
@@ -348,8 +331,8 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
             if (type === 'collected' && assignedBy === safeUser && Number(row.collected) > 0) isMatch = true;
             if (type === 'reason' && assignedBy === safeUser && (row.collected_reason || '').trim() === extraArg) isMatch = true;
         } else {
-            // Strictly match using the true resolved assignee for Monitor context
-            if (type === 'assigned' && trueAssignee === safeUser) isMatch = true;
+            // Strictly match using raw columns for Monitor context
+            if (type === 'assigned' && assignedTech === safeUser) isMatch = true;
             if (type === 'acted' && assignedBy === safeUser) isMatch = true;
             if (type === 'finished' && endTech === safeUser) isMatch = true;
             if (type === 'collected' && assignedBy === safeUser && Number(row.collected) > 0) isMatch = true;
@@ -359,18 +342,18 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
         }
 
         if (isMatch) {
-            // Deduplicate Set-based metrics (Assigned/Acted) by dailyKey to match Leaderboard. 
-            // Preserve all rows for count-based metrics by adding the index to the key.
-            const mapKey = (context === 'monitor' && (type === 'assigned' || type === 'acted')) ? dailyKey : (dailyKey + '_' + index);
+            // Deduplicate Set-based metrics by SO to match Leaderboard. 
+            // Preserve all rows for specific count-based metrics (like reasons) by modifying the key.
+            const mapKey = (context === 'monitor' && (type === 'assigned' || type === 'acted' || type === 'finished' || type === 'agreed' || type === 'completed')) ? so : (so + '_' + index);
             finalResults.set(mapKey, row);
         }
     });
 
-    // 2. Left Out Math (Strictly mirroring the Leaderboard's Set subtraction)
+    // 2. Left Out Math (Unique Assigned SOs lacking an Action)
     if (type === 'pending') {
         finalResults.clear();
-        assignedMap.forEach((row, dailyKey) => {
-            if (!actedMap.has(dailyKey)) finalResults.set(dailyKey, row);
+        assignedMap.forEach((row, so) => {
+            if (!actedMap.has(so)) finalResults.set(so, row);
         });
     }
 
@@ -385,13 +368,10 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
     if (finalResults.size === 0) {
         listContainer.innerHTML = '<p style="opacity: 0.7;">No details found for this record.</p>';
     } else {
-        // --- PHASE 2: INDEX COUNTER INJECTION ---
         let indexCounter = 1;
         
-        finalResults.forEach((row) => {
+        finalResults.forEach((row, mapKey) => {
             const so = row.so;
-            const rowDateStr = row.assign_date || 'UnknownDate';
-            const rowDailyKey = so + '_' + rowDateStr;
             
             let detailString = '';
             if (type === 'assigned' || type === 'pending') {
@@ -406,18 +386,17 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
                 detailString = `Recorded Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'}`;
             }
 
-            // --- BRIDGE SOLUTION: CARRY-OVER DETECTION ---
-            let carryOverBadge = '';
-            if ((type === 'acted' || type === 'pending') && !assignedMap.has(rowDailyKey)) {
-                carryOverBadge = `<span style="background-color: #fbc02d; color: black; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 10px; border: 1px solid #f9a825;" title="Assigned prior to the selected date range">⚠️ Carry-over</span>`;
+            // --- INJECT "NOT ASSIGNED PERIOD" BADGE LOGIC ---
+            let unassignedBadge = '';
+            if (type === 'acted' && !assignedMap.has(so)) {
+                unassignedBadge = `<span style="background-color: #d32f2f; color: white; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 10px; border: 1px solid #b71c1c;" title="Action taken on an order not explicitly assigned to this technician in this period.">⚠️ Not assigned period</span>`;
             }
 
             const card = document.createElement('div');
             card.className = 'metric-card';
-            // --- INDEX NUMBER RENDERED BEFORE THE SO ---
             card.innerHTML = `
                 <div class="metric-so-link" style="display: flex; align-items: center; justify-content: space-between;">
-                    <div><span style="color: #1976d2; font-weight: bold; margin-right: 5px;">#${indexCounter}</span> SO: ${so} ${carryOverBadge}</div>
+                    <div><span style="color: #1976d2; font-weight: bold; margin-right: 5px;">#${indexCounter}</span> SO: ${so} ${unassignedBadge}</div>
                 </div>
                 <div>${detailString}</div>
             `;

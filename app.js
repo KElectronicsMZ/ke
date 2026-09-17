@@ -4004,6 +4004,19 @@ confirmTechBtn.addEventListener('click', async () => {
         finalComment = `تم تحصيل مبلغ ${validatedMoney} - ${reason} | ${typedComment}`;
     }
 
+    // --- REPAIR EVALUATION ENGINE ---
+    const repairReasons = [
+        "02 - صيانة", 
+        "03 - تركيب", 
+        "04 - اوبن سيل/ليدات", 
+        "05 - كبس", 
+        "06 - شحن", 
+        "07- صيانة تكييف", 
+        "08 - شحن /تركيب تكييف"
+    ];
+    const isRepaired = repairReasons.includes(reason);
+    const resolvedEndTech = isRepaired ? currentUser.username : '';
+
     // Lock button to prevent double-clicks and update text to show progress
     confirmTechBtn.disabled = true;
     confirmTechBtn.textContent = 'Saving Ticket...';
@@ -4071,6 +4084,7 @@ confirmTechBtn.addEventListener('click', async () => {
             so: activeTechTicket.so,
             status: 'back_office',
             assigned_by: currentUser.username,
+            end_tech: resolvedEndTech, // <-- INJECTED REPAIR FLAG
             assign_date: `${dd}-${mm}-${yyyy}`,
             assign_time: `${hh}:${min}`,
             smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
@@ -4161,6 +4175,7 @@ confirmTechBtn.addEventListener('click', async () => {
         so: activeTechTicket.so,
         status: 'back_office',
         assigned_by: currentUser.username,
+        end_tech: resolvedEndTech, // <-- INJECTED REPAIR FLAG
         assign_date: `${dd}-${mm}-${yyyy}`,
         assign_time: `${hh}:${min}`,
         smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
@@ -4189,8 +4204,9 @@ confirmTechBtn.addEventListener('click', async () => {
         .from('orders')
         .update({ 
             status: 'back_office',
+            complete_tech: resolvedEndTech, // <-- INJECTED REPAIR FLAG
             // Consolidated JSON payloads target img1, vid1, and calls exclusively
-            img1: finalImg1Str, 
+            img1: finalImg1Str,
             calls: finalCallsStr, 
             location_link: activeTechTicket.location_link,
             vid1: finalVid1Str, 

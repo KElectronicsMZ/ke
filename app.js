@@ -1218,11 +1218,6 @@ function populateTableRows(dataToDisplay) {
                         actionButtons.style.display = 'flex';
                         actionButtons.dataset.activeSo = currentSO; 
                     }
-                    
-                    // NEW: Reset the tech dropdown to a clean state if they click a different cell
-                    document.getElementById('masterTechDropdown').style.display = 'none';
-                    document.getElementById('btnSubmitTechAssign').style.display = 'none';
-                    document.getElementById('masterTechDropdown').value = '';
                 }
             });
 
@@ -2476,123 +2471,6 @@ document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
     }
 });
 
-// Action 2 (Part 1): Show the Tech Dropdown
-document.getElementById('btnCompleteTech').addEventListener('click', async () => {
-    const activeSo = document.getElementById('systemSearchSoInput').value.trim();
-    if (!activeSo) {
-        alert("Please enter an SO number in the search box first.");
-        return;
-    }
-
-    const dropdown = document.getElementById('masterTechDropdown');
-    const confirmBtn = document.getElementById('btnSubmitTechAssign');
-    
-    if (availableTechnicians.length === 0) {
-        const { data, error } = await supabaseClient
-            .from('profiles')
-            .select('username')
-            .or('role.ilike.%technician%,role.ilike.%supervisor%');
-        
-        if (data && !error) {
-            availableTechnicians = data.map(d => d.username);
-        }
-    }
-
-    dropdown.innerHTML = '<option value="">-- Select Tech --</option>';
-    availableTechnicians.forEach(tech => {
-        const opt = document.createElement('option');
-        opt.value = tech;
-        opt.textContent = tech;
-        dropdown.appendChild(opt);
-    });
-
-    dropdown.style.display = 'inline-block';
-    confirmBtn.style.display = 'inline-block';
-});
-
-// Action 2 (Part 2): Confirm Completion and Insert Database Records
-document.getElementById('btnSubmitTechAssign').addEventListener('click', async () => {
-    const activeSo = document.getElementById('systemSearchSoInput').value.trim();
-    const selectedTech = document.getElementById('masterTechDropdown').value;
-
-    if (!activeSo) return;
-
-    if (!selectedTech) {
-        alert("Please select a technician from the dropdown list first.");
-        return;
-    }
-
-    // VERIFY DIRECTLY WITH DATABASE
-    showGlobalLoader("Verifying Order...");
-    const { data: foundOrder, error: fetchErr } = await supabaseClient
-        .from('orders')
-        .select('so, complete_coord') // <-- UPDATED: Fetch the complete_coord column
-        .eq('so', activeSo)
-        .single();
-    hideGlobalLoader();
-
-    if (fetchErr || !foundOrder) {
-        alert(`Cannot apply action: Order SO ${activeSo} not found in the database.`);
-        return;
-    }
-
-    // --- NEW: CHECK IF ALREADY COMPLETED ---
-    if (foundOrder.complete_coord && foundOrder.complete_coord.trim() !== '') {
-        alert(`Action blocked: This order was already completed by ${foundOrder.complete_coord}.`);
-        
-        // Clean up the UI
-        document.getElementById('masterTechDropdown').style.display = 'none';
-        document.getElementById('btnSubmitTechAssign').style.display = 'none';
-        document.getElementById('masterTechDropdown').value = '';
-        return; // Stops the function here
-    }
-    // ---------------------------------------
-
-    const { date, time } = getCurrentDateTime();
-    const currentUsername = currentUser ? currentUser.username : 'Unknown';
-
-    // 1. Prepare history log payload
-    const payload = {
-        so: activeSo,
-        status: 'Complete',
-        assigned_by: currentUsername,
-        complete_coord: currentUsername,
-        end_tech: selectedTech,
-        assigned_tech: '', // <-- Leaves this completely blank as requested
-        assign_date: date,
-        assign_time: time
-    };
-
-    // 2. Execute history log
-    const { error: logError } = await supabaseClient.from('repair_log').insert(payload);
-
-    if (logError) {
-        alert("Error saving record: " + logError.message);
-        return;
-    }
-
-    // 3. Execute main orders table update!
-    const { error: orderError } = await supabaseClient.from('orders')
-        .update({ 
-            complete_coord: currentUsername,
-            complete_tech: selectedTech // Exact column name you requested
-        })
-        .eq('so', activeSo);
-
-    if (orderError) {
-        alert("Log was saved, but error updating main order table: " + orderError.message);
-    } else {
-        alert(`SO: ${activeSo} successfully completed by ${selectedTech}`);
-        
-        document.getElementById('masterTechDropdown').style.display = 'none';
-        document.getElementById('btnSubmitTechAssign').style.display = 'none';
-        document.getElementById('masterTechDropdown').value = '';
-    }
-});
-
-// ==========================================
-// --- BONUSES / PERFORMANCE TRACKING PAGE ---
-// ==========================================
 
 // ==========================================
 // --- BONUSES / PERFORMANCE TRACKING PAGE ---

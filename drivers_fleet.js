@@ -4,6 +4,7 @@
 
 let fleetDrivers = [];
 let fleetTechs = [];
+let currentFleetPerms = {}; // Tracks logged-in user's fleet field-level permissions
 
 // Format Date to YYYY-MM-DD for HTML Calendar Inputs
 function getTodayHtmlDate() {
@@ -26,15 +27,21 @@ function formatToDbDate(htmlDate) {
 async function initializeFleetManager() {
     if (typeof showGlobalLoader === 'function') showGlobalLoader("Loading Fleet Data...");
 
-    // 1. Fetch Users from Profiles
+    // 1. Fetch Users from Profiles (Now capturing JSONB fleet_permissions)
     const { data: profiles, error } = await supabaseClient
         .from('profiles')
-        .select('username, role');
+        .select('username, role, fleet_permissions');
 
     if (error) {
         if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
         alert("Error loading users: " + error.message);
         return;
+    }
+
+    // Extract field-level permissions for the currently logged-in user
+    if (typeof currentUser !== 'undefined' && currentUser) {
+        const myProfile = profiles.find(p => p.username === currentUser.username);
+        currentFleetPerms = myProfile?.fleet_permissions || {};
     }
 
     // 2. Separate into specific role lists (Case-insensitive check)
@@ -98,12 +105,23 @@ function addFleetRow(rowData = null) {
 
     const tr = document.createElement('tr');
     
+    // Evaluate ACL matrix for the current user
+    const d_state = currentFleetPerms['driver_username'] ? '' : 'disabled';
+    const t_state = currentFleetPerms['tech_username'] ? '' : 'disabled';
+    const r_state = currentFleetPerms['rout'] ? '' : 'disabled';
+    const c_state = currentFleetPerms['comments'] ? '' : 'disabled';
+    
+    // UI Style Generator for locked fields
+    const getStyle = (state) => state === 'disabled' 
+        ? 'padding: 6px; width: 100%; box-sizing: border-box; border: 1px dashed var(--border-color); background: rgba(0,0,0,0.1); color: var(--text-color); border-radius: 4px; cursor: not-allowed; opacity: 0.7;'
+        : 'padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;';
+    
     tr.innerHTML = `
-        <td><input type="date" class="fleet-date-input" value="${dateVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
-        <td><input type="text" class="fleet-driver-input" list="fleetDriverList" placeholder="Driver..." value="${driverVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
-        <td><input type="text" class="fleet-tech-input" list="fleetTechList" placeholder="Tech..." value="${techVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
-        <td><input type="text" class="fleet-route-input" list="fleetRouteList" placeholder="Route..." value="${routVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
-        <td><input type="text" class="fleet-comment-input" placeholder="Comments..." value="${commentVal}" style="padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;"></td>
+        <td><input type="date" class="fleet-date-input" value="${dateVal}" disabled style="${getStyle('disabled')}"></td>
+        <td><input type="text" class="fleet-driver-input" list="fleetDriverList" placeholder="Driver..." value="${driverVal}" ${d_state} style="${getStyle(d_state)}"></td>
+        <td><input type="text" class="fleet-tech-input" list="fleetTechList" placeholder="Tech..." value="${techVal}" ${t_state} style="${getStyle(t_state)}"></td>
+        <td><input type="text" class="fleet-route-input" list="fleetRouteList" placeholder="Route..." value="${routVal}" ${r_state} style="${getStyle(r_state)}"></td>
+        <td><input type="text" class="fleet-comment-input" placeholder="Comments..." value="${commentVal}" ${c_state} style="${getStyle(c_state)}"></td>
         <td style="text-align: center;"><button class="secondary-btn btn-remove-fleet-row" style="background-color: #d32f2f; color: white; border: none; padding: 4px 10px; cursor: pointer; border-radius: 4px; font-weight: bold;">X</button></td>
     `;
 

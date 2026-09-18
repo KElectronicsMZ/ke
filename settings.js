@@ -25,6 +25,12 @@
     const saveUserRoleBtn = document.getElementById('save-user-role-btn');
     const userRoleSavedMsg = document.getElementById('userRoleSavedMsg');
 
+    // Fleet Permissions UI elements
+    const fleetUserSelectDropdown = document.getElementById('fleetUserSelectDropdown');
+    const fleetConfigContainer = document.getElementById('fleetConfigContainer');
+    const saveFleetPermsBtn = document.getElementById('save-fleet-perms-btn');
+    const fleetPermsSavedMsg = document.getElementById('fleetPermsSavedMsg');
+
     // Maps database columns to clean labels for the UI
     const permissionMap = [
         { col: 'can_view_my_orders', label: 'My Orders' },
@@ -55,8 +61,11 @@
             // Fetch Users to extract unique roles and populate User Dropdown
             const { data: usersData } = await supabaseClient.from('profiles').select('username, role').order('username');
             
+            if (typeof resetFleetSettingsUI === 'function') resetFleetSettingsUI(); // Enforce strict UI reset on page entry
+            
             if (usersData) {
                 userSelectDropdown.innerHTML = '<option value="">-- Choose User --</option>';
+                if (fleetUserSelectDropdown) fleetUserSelectDropdown.innerHTML = '<option value="">-- Choose User --</option>';
                 const uniqueRoles = new Set();
 
                 usersData.forEach(u => {
@@ -66,6 +75,13 @@
                     const userRole = (u.role || 'unassigned').toLowerCase().trim();
                     opt.dataset.currentRole = userRole; 
                     userSelectDropdown.appendChild(opt);
+                    
+                    if (fleetUserSelectDropdown) {
+                        const fleetOpt = document.createElement('option');
+                        fleetOpt.value = u.username;
+                        fleetOpt.textContent = u.username;
+                        fleetUserSelectDropdown.appendChild(fleetOpt);
+                    }
                     
                     if (userRole && userRole !== 'unassigned') {
                         uniqueRoles.add(userRole);
@@ -375,6 +391,87 @@
             } else {
                 matrixTeamSavedMsg.style.display = 'block';
                 setTimeout(() => matrixTeamSavedMsg.style.display = 'none', 3000);
+            }
+        });
+    }
+    // 9. Fleet Permissions Logic & Strict Reset Enforcement
+    function resetFleetSettingsUI() {
+        if (fleetUserSelectDropdown) fleetUserSelectDropdown.value = '';
+        if (fleetConfigContainer) fleetConfigContainer.style.display = 'none';
+        if (saveFleetPermsBtn) saveFleetPermsBtn.style.display = 'none';
+        document.querySelectorAll('#fleetColumnsContainer input[type="checkbox"]').forEach(cb => cb.checked = false);
+    }
+
+    // Enforce reset when the page is closed (HUB button clicked)
+    const settingsHubBtn = document.getElementById('settingsHubBtn');
+    if (settingsHubBtn) {
+        settingsHubBtn.addEventListener('click', resetFleetSettingsUI);
+    }
+
+    if (fleetUserSelectDropdown) {
+        fleetUserSelectDropdown.addEventListener('change', async (e) => {
+            const selectedUser = e.target.value;
+            if (!selectedUser) {
+                resetFleetSettingsUI();
+                return;
+            }
+
+            fleetConfigContainer.style.display = 'flex';
+            saveFleetPermsBtn.style.display = 'block';
+
+            // Fetch the user's current fleet_permissions JSONB from profiles
+            const { data: userProfile, error } = await supabaseClient
+                .from('profiles')
+                .select('fleet_permissions')
+                .eq('username', selectedUser)
+                .single();
+
+            if (error) {
+                console.error("Failed to fetch fleet permissions:", error);
+            }
+
+            const currentPerms = userProfile?.fleet_permissions || {};
+
+            // Hydrate the checkboxes based on the database state
+            document.querySelectorAll('#fleetColumnsContainer input[type="checkbox"]').forEach(cb => {
+                const colName = cb.dataset.col;
+                cb.checked = currentPerms[colName] === true;
+            });
+        });
+    }
+
+    if (saveFleetPermsBtn) {
+        saveFleetPermsBtn.addEventListener('click', async () => {
+            const selectedUser = fleetUserSelectDropdown.value;
+            if (!selectedUser) return;
+
+            saveFleetPermsBtn.disabled = true;
+            saveFleetPermsBtn.textContent = 'Saving...';
+            if (fleetPermsSavedMsg) fleetPermsSavedMsg.style.display = 'none';
+
+            // Harvest the checkbox values into a JSON object
+            const newPerms = {};
+            document.querySelectorAll('#fleetColumnsContainer input[type="checkbox"]').forEach(cb => {
+                newPerms[cb.dataset.col] = cb.checked;
+            });
+
+            // Push to Supabase JSONB column
+            const { error } = await supabaseClient
+                .from('profiles')
+                .update({ fleet_permissions: newPerms })
+                .eq('username', selectedUser);
+
+            saveFleetPermsBtn.disabled = false;
+            saveFleetPermsBtn.textContent = '💾 Save Fleet Permissions';
+
+            if (error) {
+                alert("Error saving fleet permissions: " + error.message);
+            } else {
+                if (fleetPermsSavedMsg) fleetPermsSavedMsg.style.display = 'block';
+                setTimeout(() => {
+                    if (fleetPermsSavedMsg) fleetPermsSavedMsg.style.display = 'none';
+                    resetFleetSettingsUI(); // Strict reset on successful confirm
+                }, 2000);
             }
         });
     }

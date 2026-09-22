@@ -331,6 +331,110 @@ function renderFleetHistory(data) {
 // --- DRIVER GEOLOCATION & ACTION ENGINE ---
 // ==========================================
 
+// --- ARCHITECT MOD: DRIVER SHIFT TELEMETRY ENGINE ---
+document.getElementById('btnDriverStart')?.addEventListener('click', function() {
+    executeDriverShiftAction('start', this);
+});
+
+document.getElementById('btnDriverSignOff')?.addEventListener('click', function() {
+    executeDriverShiftAction('end', this);
+});
+
+
+
+async function executeDriverShiftAction(actionType, btnElement) {
+    if (!navigator.onLine) {
+        alert("An active internet connection is required to log your shift.");
+        return;
+    }
+
+    // 1. Generate precise timestamps (Strictly dd-mm-yyyy for repair_log)
+    const now = new Date();
+    const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const dateStr = `${dd}-${mm}-${yyyy}`; 
+
+    // 2. Lock UI to prevent double-firing
+    btnElement.disabled = true;
+    const originalText = btnElement.innerHTML;
+    
+    // --- ARCHITECT MOD: FRONT-END PRE-FLIGHT CHECK ---
+    btnElement.innerHTML = '⏳ Checking...';
+    const targetAction = actionType === 'start' ? 'shift_start' : 'shift_end';
+    
+    const { data: existingShift, error: checkError } = await supabaseClient
+        .from('drivers_log')
+        .select('id')
+        .eq('driver_username', currentUser.username)
+        .eq('action_type', targetAction)
+        .eq('action_date', dateStr)
+        .limit(1);
+
+    if (existingShift && existingShift.length > 0) {
+        alert(`Your shift ${actionType === 'start' ? 'start' : 'sign off'} has already been recorded for today.`);
+        btnElement.innerHTML = actionType === 'start' ? '✅ Day Started' : '✅ Signed Off';
+        return; // Execution halts here; button remains disabled to prevent spamming
+    }
+    // -------------------------------------------------
+
+    btnElement.innerHTML = '📍 Locating...';
+
+    if (!navigator.geolocation) {
+        alert("Geolocation is not supported by your browser or device.");
+        btnElement.disabled = false;
+        btnElement.innerHTML = originalText;
+        return;
+    }
+
+    // 3. Trigger GPS API
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+
+        btnElement.innerHTML = '⏳ Saving...';
+
+        // A. Construct Dedicated drivers_log Payload
+        const payload = {
+            driver_username: currentUser.username,
+            action_type: actionType === 'start' ? 'shift_start' : 'shift_end',
+            action_date: dateStr,
+            action_time: timeStr,
+            location_link: mapsUrl,
+            so: null // Shifts are not tied to specific orders
+        };
+
+        // B. Inject into NEW drivers_log table
+        const { error } = await supabaseClient.from('drivers_log').insert(payload);
+
+        if (error) {
+            alert("Failed to log shift: " + error.message);
+            btnElement.disabled = false;
+            btnElement.innerHTML = originalText;
+        } else {
+            alert(`Shift ${actionType === 'start' ? 'Started' : 'Signed Off'} Successfully!`);
+            btnElement.innerHTML = actionType === 'start' ? '✅ Day Started' : '✅ Signed Off';
+            
+            setTimeout(() => {
+                btnElement.disabled = false;
+                btnElement.innerHTML = originalText;
+            }, 10000);
+        }
+
+    }, (error) => {
+        alert("Failed to acquire location. Ensure GPS is enabled and permissions are granted. Error: " + error.message);
+        btnElement.disabled = false;
+        btnElement.innerHTML = originalText;
+    }, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+    });
+}
+// ---------------------------------------------------
+
 async function handleDriverAction(ticket, actionType, btnElement) {
     if (!navigator.onLine) {
         alert("An active internet connection is required for real-time fleet tracking.");
@@ -368,29 +472,26 @@ async function handleDriverAction(ticket, actionType, btnElement) {
 
             btnElement.innerHTML = '⏳ Saving...';
 
-            // A. Log Historical Audit Trail
+            // A. Log Historical Audit Trail to NEW drivers_log
             const logPayload = {
                 so: ticket.so,
-                status: ticket.status || 'Technician',
-                assigned_by: currentUser.username,
-                assigned_tech: ticket.assigned_tech || '',
-                assign_date: dateStr,
-                assign_time: timeStr,
-                comment: "Driver Arrived at Location",
-                location_link: mapsUrl,
-                arrived_at: dateTimeStr // <-- UPDATED
+                driver_username: currentUser.username,
+                action_type: 'arrive',
+                action_date: dateStr,
+                action_time: timeStr,
+                location_link: mapsUrl
             };
-            await supabaseClient.from('repair_log').insert(logPayload);
+            await supabaseClient.from('drivers_log').insert(logPayload);
 
-            // B. Update Live Master Order
+            // B. Update Live Master Order (Required for UI persistence)
             await supabaseClient.from('orders')
-                .update({ location_link: mapsUrl, arrived_at: dateTimeStr }) // <-- UPDATED
+                .update({ location_link: mapsUrl, arrived_at: dateTimeStr }) 
                 .eq('so', ticket.so);
 
             // C. Persist UI State & Memory
-            btnElement.innerHTML = `🟢 Arrived ${dateTimeStr} 📍`; // <-- UPDATED
+            btnElement.innerHTML = `🟢 Arrived ${dateTimeStr} 📍`; 
             btnElement.disabled = false;
-            ticket.arrived_at = dateTimeStr; // <-- UPDATED
+            ticket.arrived_at = dateTimeStr; 
             ticket.location_link = mapsUrl;
 
         }, (error) => {
@@ -406,27 +507,24 @@ async function handleDriverAction(ticket, actionType, btnElement) {
     } else if (actionType === 'leave') {
         btnElement.innerHTML = '⏳ Saving...';
 
-        // A. Log Historical Audit Trail (No GPS required for leaving)
+        // A. Log Historical Audit Trail to NEW drivers_log
         const logPayload = {
             so: ticket.so,
-            status: ticket.status || 'Technician',
-            assigned_by: currentUser.username,
-            assigned_tech: ticket.assigned_tech || '',
-            assign_date: dateStr,
-            assign_time: timeStr,
-            comment: "Driver Left Location",
-            left_at: dateTimeStr // <-- UPDATED
+            driver_username: currentUser.username,
+            action_type: 'leave',
+            action_date: dateStr,
+            action_time: timeStr
         };
-        await supabaseClient.from('repair_log').insert(logPayload);
+        await supabaseClient.from('drivers_log').insert(logPayload);
 
-        // B. Update Live Master Order
+        // B. Update Live Master Order (Required to drop it from the Driver's active queue)
         await supabaseClient.from('orders')
-            .update({ left_at: dateTimeStr }) // <-- UPDATED
+            .update({ left_at: dateTimeStr }) 
             .eq('so', ticket.so);
 
         // C. Persist UI State & Memory
-        btnElement.innerHTML = `🔴 Left ${dateTimeStr}`; // <-- UPDATED
+        btnElement.innerHTML = `🔴 Left ${dateTimeStr}`; 
         btnElement.disabled = false;
-        ticket.left_at = dateTimeStr; // <-- UPDATED
+        ticket.left_at = dateTimeStr; 
     }
 }

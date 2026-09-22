@@ -3132,6 +3132,12 @@ async function loadActiveTickets(managerOverrideUser = null) {
     }
     // ---------------------------------------------------------
 
+    // --- ARCHITECT MOD: TOGGLE SHIFT UI ---
+    const shiftContainer = document.getElementById('driverShiftContainer');
+    if (shiftContainer) {
+        shiftContainer.style.display = (currentMyOrdersViewMode === 'driver' && !managerOverrideUser) ? 'flex' : 'none';
+    }
+
     // --- PHASE 1: MULTI-TARGET FLEET PAIRING INTERCEPTOR ---
     if (currentMyOrdersViewMode === 'driver') {
         document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Checking Fleet Pairing...</h3>";
@@ -3181,13 +3187,17 @@ async function loadActiveTickets(managerOverrideUser = null) {
             document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading Back Office Queue...</h3>`;
             fetchQuery = fetchQuery.eq('status', 'back_office');
             
-        } else if (currentMyOrdersViewMode === 'driver') {
+       } else if (currentMyOrdersViewMode === 'driver') {
             // Driver View: Fetch active tickets for ALL paired technicians simultaneously
             document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading fleet tickets for ${driverTechArray.join(' & ')}...</h3>`;
             
             // Build a dynamic OR string to match multiple names case-insensitively
             const orString = driverTechArray.map(tech => `assigned_tech.ilike.${tech}`).join(',');
-            fetchQuery = fetchQuery.eq('status', 'Technician').or(orString);
+            
+            // ARCHITECT MOD HOTFIX: Handle both strict NULL and empty strings for 'left_at'
+            fetchQuery = fetchQuery.in('status', ['Technician', 'back_office'])
+                                   .or(orString)
+                                   .or('left_at.is.null,left_at.eq.,left_at.eq.""');
             
         } else {
             // Technician View: Fetch their strictly assigned tickets

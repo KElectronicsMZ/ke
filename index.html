@@ -447,6 +447,8 @@
                 </ul>
             </div>
 
+            
+
             <div style="display: flex; gap: 10px;">
                 <button id="btnOpenRoutePlanner" class="primary-btn" style="width: auto; padding: 8px 20px; margin-top: 0; background-color: #2e7d32; border-color: #1b5e20;">📍 Route Planner</button>
                 <button id="btnOpenTechParts" class="primary-btn" style="width: auto; padding: 8px 20px; margin-top: 0; background-color: #8e24aa; border-color: #6a1b9a;">📦 My Parts</button>
@@ -454,6 +456,12 @@
             </div>
         </div>
         
+        <!-- ARCHITECT MOD: DRIVER SHIFT CONTROLS -->
+        <div id="driverShiftContainer" style="display: none; justify-content: center; gap: 15px; margin-bottom: 15px; width: 100%; max-width: 500px; margin-left: auto; margin-right: auto;">
+            <button id="btnDriverStart" style="background-color: #2e7d32; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; flex: 1;">🟢 Start Day</button>
+            <button id="btnDriverSignOff" style="background-color: #d32f2f; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; flex: 1;">🔴 Sign Off</button>
+        </div>
+
         <!-- MANAGER SELECTOR -->
         <div id="managerUserSelectContainer" style="display: none; width: 100%; max-width: 500px; margin: 0 auto 15px auto; flex-direction: column; gap: 5px;">
             <label style="font-weight: bold; font-size: 14px; color: var(--text-color);">View User's Orders (Manager Only):</label>

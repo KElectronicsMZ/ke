@@ -12,14 +12,19 @@ let currentFilteredMonitorRows = [];
 let globalUserProfiles = {}; // Caches roles so we know who is a tech vs coord
 let techLeaderboardData = []; // Holds the active tech data for sorting
 let coordLeaderboardData = []; // Holds the active coord data for sorting
+let driverLeaderboardData = []; // Holds the active driver data for sorting
+let monitorDriverRows = []; // Holds the raw telemetry from drivers_log
 let monitorSortConfig = { table: '', col: '', dir: 'desc' }; // Remembers what column you clicked
+
+// --- PHASE 1: INTRA-DAY RESOLUTION ENGINE ---
 
 // --- PHASE 1: INTRA-DAY RESOLUTION ENGINE ---
 window.resolvedDailyAssignments = {}; // Exposed globally for Phase 2 (Modal & Badges)
 
-function executeIntraDayResolution(dataPool) {
+function executeIntraDayResolution(dataPool, driverPool = monitorDriverRows) {
     let techStats = {};
     let coordStats = {};
+    let driverStats = {};
     window.resolvedDailyAssignments = {}; // Preserved to prevent errors in legacy integrations
 
     const initTech = (name) => {
@@ -95,7 +100,34 @@ function executeIntraDayResolution(dataPool) {
         complete: coord.complete.size
     }));
 
-    return { techData: techArr, coordData: formattedCoordData };
+    // Calculate Driver Metrics
+    const initDriver = (name) => {
+        if (name && !driverStats[name]) {
+            driverStats[name] = { name: name, orderVisits: new Set(), totalBranchVisits: 0, branchNames: new Set() };
+        }
+    };
+
+    driverPool.forEach(log => {
+        const driver = log.driver_username;
+        if (!driver) return;
+        initDriver(driver);
+
+        if (log.action_type === 'arrive' || log.action_type === 'leave') {
+            driverStats[driver].orderVisits.add(log.so);
+        } else if (log.action_type === 'branch_visit') {
+            driverStats[driver].totalBranchVisits++;
+            driverStats[driver].branchNames.add(log.so);
+        }
+    });
+
+    let formattedDriverData = Object.values(driverStats).map(d => ({
+        name: d.name,
+        orderVisits: d.orderVisits.size,
+        branchVisits: d.totalBranchVisits,
+        branches: Array.from(d.branchNames).join(' | ') || 'None'
+    }));
+
+    return { techData: techArr, coordData: formattedCoordData, driverData: formattedDriverData };
 }
 
 // --- NEW LEADERBOARD ENGINE (MIGRATED TO MONITOR.JS) ---
@@ -108,18 +140,21 @@ function renderMonitorLeaderboard(dataPool = currentFilteredMonitorRows) {
     tableArea.style.display = 'block';
     document.getElementById('techTableTitle').style.display = 'block';
     document.getElementById('coordTableContainer').style.display = 'block';
+    document.getElementById('driverTableContainer').style.display = 'block';
     if(badgesArea) badgesArea.style.display = 'none';
 
     // 1. RUN INTRA-DAY RESOLUTION
-    const resolvedMetrics = executeIntraDayResolution(dataPool);
+    const resolvedMetrics = executeIntraDayResolution(dataPool, monitorDriverRows);
     
     techLeaderboardData = resolvedMetrics.techData;
     coordLeaderboardData = resolvedMetrics.coordData;
+    driverLeaderboardData = resolvedMetrics.driverData;
     monitorSortConfig = { table: '', col: '', dir: 'desc' }; 
 
     // 2. DRAW TABLES
     if (typeof drawTechLeaderboard === 'function') drawTechLeaderboard();
     if (typeof drawCoordLeaderboard === 'function') drawCoordLeaderboard();
+    if (typeof drawDriverLeaderboard === 'function') drawDriverLeaderboard();
 }
 
 
@@ -204,6 +239,7 @@ async function loadMonitorDataEngine() {
 
     // 3. SERVER-SIDE FILTER: Only download logs that occurred on these specific dates
     const trackRows = await fetchAllRecords(MONITOR_TABLE_NAME, 'assign_date', dateStringsToFetch);
+    const driverRows = await fetchAllRecords('drivers_log', 'action_date', dateStringsToFetch);
     
     // 4. Extract the unique SO numbers from the logs we just downloaded
     const uniqueSOs = [...new Set(trackRows.map(log => log.so))];
@@ -218,6 +254,7 @@ async function loadMonitorDataEngine() {
     // Store in our master variables
     databaseOrders = mainOrders || [];
     monitorTrackingRows = trackRows || [];
+    monitorDriverRows = driverRows || [];
     currentFilteredMonitorRows = monitorTrackingRows; 
 
     // --- NEW: FETCH ROLES TO SPLIT THE LEADERBOARD ---
@@ -299,7 +336,11 @@ function filterMonitorTable() {
 
 // --- METRIC LIST MODAL ENGINE (MIGRATED & ENHANCED) ---
 window.openMetricDetails = function(context, user, type, extraArg = null) {
-    const dataPool = context === 'monitor' ? currentFilteredMonitorRows : bonusesTrackingRows;
+    let dataPool;
+    if (context === 'monitor') dataPool = currentFilteredMonitorRows;
+    else if (context === 'driver') dataPool = monitorDriverRows;
+    else dataPool = bonusesTrackingRows;
+
     const safeUser = user.trim().toLowerCase();
     
     let assignedMap = new Map();
@@ -330,6 +371,12 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
             if (type === 'smart_things' && String(row.smart_things || '').trim().toLowerCase() === 'yes') isMatch = true;
             if (type === 'collected' && assignedBy === safeUser && Number(row.collected) > 0) isMatch = true;
             if (type === 'reason' && assignedBy === safeUser && (row.collected_reason || '').trim() === extraArg) isMatch = true;
+        } else if (context === 'driver') {
+            const rowDriver = (row.driver_username || '').trim().toLowerCase();
+            if (rowDriver === safeUser) {
+                if (type === 'orderVisits' && (row.action_type === 'arrive' || row.action_type === 'leave')) isMatch = true;
+                if (type === 'branchVisits' && row.action_type === 'branch_visit') isMatch = true;
+            }
         } else {
             // Strictly match using raw columns for Monitor context
             if (type === 'assigned' && assignedTech === safeUser) isMatch = true;
@@ -344,7 +391,10 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
         if (isMatch) {
             // Deduplicate Set-based metrics by SO to match Leaderboard. 
             // Preserve all rows for specific count-based metrics (like reasons) by modifying the key.
-            const mapKey = (context === 'monitor' && (type === 'assigned' || type === 'acted' || type === 'finished' || type === 'agreed' || type === 'completed')) ? so : (so + '_' + index);
+            let mapKey = so + '_' + index; // Default to listing every single row
+            if (context === 'monitor' && ['assigned', 'acted', 'finished', 'agreed', 'completed'].includes(type)) mapKey = so;
+            if (context === 'driver' && type === 'orderVisits') mapKey = so; // Deduplicate orders so the count matches exactly
+            
             finalResults.set(mapKey, row);
         }
     });
@@ -361,7 +411,10 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
     const listContainer = document.getElementById('metricModalList');
     listContainer.innerHTML = '';
     
-    document.getElementById('metricModalTitle').textContent = `Details: ${type.toUpperCase()}`;
+    let titleType = type.toUpperCase();
+    if (context === 'driver') titleType = type === 'orderVisits' ? 'Unique Orders Visited' : 'Fixed Branches Visited';
+    
+    document.getElementById('metricModalTitle').textContent = `Details: ${titleType}`;
     const subtitle = context === 'bonuses' ? "Showing your personal entries for the selected date range." : `Displaying records for: ${user}`;
     document.getElementById('metricModalSubtitle').textContent = subtitle;
 
@@ -374,7 +427,9 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
             const so = row.so;
             
             let detailString = '';
-            if (type === 'assigned' || type === 'pending') {
+            if (context === 'driver') {
+                detailString = `Logged At: ${row.action_date || 'N/A'} at ${row.action_time || 'N/A'}`;
+            } else if (type === 'assigned' || type === 'pending') {
                 detailString = `Assigned Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'}`;
             } else if (type === 'acted') {
                 detailString = `Action Date: ${row.assign_date || 'N/A'} at ${row.assign_time || 'N/A'} <br><strong>Comment:</strong> ${row.comment || 'None'}`;
@@ -394,17 +449,25 @@ window.openMetricDetails = function(context, user, type, extraArg = null) {
 
             const card = document.createElement('div');
             card.className = 'metric-card';
+            const labelText = (context === 'driver' && type === 'branchVisits') ? 'Branch: ' : 'SO: ';
+            
             card.innerHTML = `
                 <div class="metric-so-link" style="display: flex; align-items: center; justify-content: space-between;">
-                    <div><span style="color: #1976d2; font-weight: bold; margin-right: 5px;">#${indexCounter}</span> SO: ${so} ${unassignedBadge}</div>
+                    <div><span style="color: #1976d2; font-weight: bold; margin-right: 5px;">#${indexCounter}</span> ${labelText} ${so} ${unassignedBadge}</div>
                 </div>
                 <div>${detailString}</div>
             `;
             
-            card.querySelector('.metric-so-link').addEventListener('click', () => {
-                const mainOrder = databaseOrders.find(o => String(o.so) === String(so)) || row;
-                if (typeof openViewOnlyModal === 'function') openViewOnlyModal(mainOrder);
-            });
+            // Only make actual Orders clickable
+            if (type !== 'branchVisits') {
+                card.querySelector('.metric-so-link').style.cursor = 'pointer';
+                card.querySelector('.metric-so-link').addEventListener('click', () => {
+                    const mainOrder = databaseOrders.find(o => String(o.so) === String(so)) || row;
+                    if (typeof openViewOnlyModal === 'function') openViewOnlyModal(mainOrder);
+                });
+            } else {
+                card.querySelector('.metric-so-link').style.cursor = 'default';
+            }
 
             listContainer.appendChild(card);
             indexCounter++;

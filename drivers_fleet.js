@@ -5,6 +5,7 @@
 let fleetDrivers = [];
 let fleetTechs = [];
 let currentFleetPerms = {}; // Tracks logged-in user's fleet field-level permissions
+let activeFleetDate = null; // Tracks the currently viewed schedule date
 
 // Format Date to YYYY-MM-DD for HTML Calendar Inputs
 function getTodayHtmlDate() {
@@ -62,19 +63,23 @@ async function initializeFleetManager() {
         fleetTechs.forEach(u => techList.appendChild(new Option(u)));
     }
 
-    // 4. Hydrate Table with Today's Active Pairings
+    // 4. Hydrate Table with Active Pairings
     const tbody = document.getElementById('fleetScheduleBody');
     if (tbody) {
         tbody.innerHTML = '';
         
-        // Align temporal formats (HTML Date to Database DD-MM-YYYY)
-        const todayHtml = getTodayHtmlDate();
-        const todayDb = formatToDbDate(todayHtml);
+        // Setup Date Tracker
+        if (!activeFleetDate) activeFleetDate = getTodayHtmlDate();
+        const activeDbDate = formatToDbDate(activeFleetDate);
+        
+        // Update UI Header
+        const dateLabel = document.getElementById('fleetActiveDateLabel');
+        if (dateLabel) dateLabel.textContent = `(${activeDbDate})`;
 
         const { data: activePairings, error: pairError } = await supabaseClient
             .from('fleet_pairing')
             .select('*')
-            .eq('date', todayDb);
+            .eq('date', activeDbDate);
 
         if (pairError) {
             console.error("Database Error: Failed to fetch active pairings.", pairError);
@@ -97,7 +102,7 @@ function addFleetRow(rowData = null) {
     if (!tbody) return;
 
     // Standardize input mappings for new rows vs pre-hydrated database rows
-    const dateVal = rowData && rowData.date ? rowData.date.split('-').reverse().join('-') : getTodayHtmlDate();
+    const dateVal = rowData && rowData.date ? rowData.date.split('-').reverse().join('-') : activeFleetDate;
     const driverVal = rowData && rowData.driver_username ? rowData.driver_username : '';
     const techVal = rowData && rowData.tech_username ? rowData.tech_username : '';
     const routVal = rowData && rowData.rout ? rowData.rout : '';
@@ -106,6 +111,7 @@ function addFleetRow(rowData = null) {
     const tr = document.createElement('tr');
     
     // Evaluate ACL matrix for the current user
+    const date_state = currentFleetPerms['date'] ? '' : 'disabled';
     const d_state = currentFleetPerms['driver_username'] ? '' : 'disabled';
     const t_state = currentFleetPerms['tech_username'] ? '' : 'disabled';
     const r_state = currentFleetPerms['rout'] ? '' : 'disabled';
@@ -117,7 +123,7 @@ function addFleetRow(rowData = null) {
         : 'padding: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;';
     
     tr.innerHTML = `
-        <td><input type="date" class="fleet-date-input" value="${dateVal}" disabled style="${getStyle('disabled')}"></td>
+        <td><input type="date" class="fleet-date-input" value="${dateVal}" ${date_state} style="${getStyle(date_state)}"></td>
         <td><input type="text" class="fleet-driver-input" list="fleetDriverList" placeholder="Driver..." value="${driverVal}" ${d_state} style="${getStyle(d_state)}"></td>
         <td><input type="text" class="fleet-tech-input" list="fleetTechList" placeholder="Tech..." value="${techVal}" ${t_state} style="${getStyle(t_state)}"></td>
         <td><input type="text" class="fleet-route-input" list="fleetRouteList" placeholder="Route..." value="${routVal}" ${r_state} style="${getStyle(r_state)}"></td>
@@ -136,10 +142,27 @@ function addFleetRow(rowData = null) {
 // Attach Static DOM Listeners
 document.addEventListener('DOMContentLoaded', () => {
     const btnAdd = document.getElementById('btnAddFleetRow');
-    if (btnAdd) btnAdd.addEventListener('click', addFleetRow);
+    if (btnAdd) btnAdd.addEventListener('click', () => addFleetRow());
 
     const btnSave = document.getElementById('btnSaveFleetSchedule');
     if (btnSave) btnSave.addEventListener('click', saveFleetSchedule);
+    
+    const btnLoadTomorrow = document.getElementById('btnLoadTomorrowFleet');
+    if (btnLoadTomorrow) btnLoadTomorrow.addEventListener('click', function() {
+        if (this.innerHTML.includes('Tomorrow')) {
+            const tmrw = new Date();
+            tmrw.setDate(tmrw.getDate() + 1);
+            const y = tmrw.getFullYear();
+            const m = String(tmrw.getMonth() + 1).padStart(2, '0');
+            const d = String(tmrw.getDate()).padStart(2, '0');
+            activeFleetDate = `${y}-${m}-${d}`;
+            this.innerHTML = '⏮️ Load Today';
+        } else {
+            activeFleetDate = getTodayHtmlDate();
+            this.innerHTML = '⏭️ Load Tomorrow';
+        }
+        initializeFleetManager();
+    });
 });
 
 // Primary Save Execution
@@ -340,7 +363,113 @@ document.getElementById('btnDriverSignOff')?.addEventListener('click', function(
     executeDriverShiftAction('end', this);
 });
 
+// --- ARCHITECT MOD: PERSISTENT UI SHIFT STATE ---
+async function checkDriverShiftState() {
+    const btnStart = document.getElementById('btnDriverStart');
+    const btnSignOff = document.getElementById('btnDriverSignOff');
+    if (!btnStart || !btnSignOff || !navigator.onLine || typeof currentUser === 'undefined' || !currentUser) return;
 
+    const now = new Date();
+    const dateStr = String(now.getDate()).padStart(2, '0') + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + now.getFullYear();
+
+    btnStart.innerHTML = '⏳ Checking...';
+    btnSignOff.innerHTML = '⏳ Checking...';
+
+    const { data: existingShifts, error } = await supabaseClient
+        .from('drivers_log')
+        .select('action_type, action_time')
+        .eq('driver_username', currentUser.username)
+        .in('action_type', ['shift_start', 'shift_end'])
+        .eq('action_date', dateStr);
+
+    if (!error && existingShifts) {
+        const startLog = existingShifts.find(s => s.action_type === 'shift_start');
+        const endLog = existingShifts.find(s => s.action_type === 'shift_end');
+        
+        btnStart.innerHTML = startLog ? `✅ Day Started at ${startLog.action_time}` : '🟢 Start Day';
+        btnSignOff.innerHTML = endLog ? `✅ Signed Off at ${endLog.action_time}` : '🔴 Sign Off';
+    } else {
+        btnStart.innerHTML = '🟢 Start Day';
+        btnSignOff.innerHTML = '🔴 Sign Off';
+    }
+}
+
+// --- ARCHITECT MOD: FIXED LOCATION TELEMETRY ---
+document.getElementById('btnDriverLocationArrive')?.addEventListener('click', function() {
+    const locSelect = document.getElementById('driverLocationSelect');
+    const locationName = locSelect.value;
+    if (!locationName) {
+        alert("Please select a location from the dropdown first.");
+        return;
+    }
+    logFixedLocationVisit(locationName, this);
+});
+
+async function logFixedLocationVisit(locationName, btnElement) {
+    if (!navigator.onLine) {
+        alert("An active internet connection is required to log location visits.");
+        return;
+    }
+
+    const now = new Date();
+    const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const dateStr = `${dd}-${mm}-${yyyy}`; 
+
+    btnElement.disabled = true;
+    const originalText = btnElement.innerHTML;
+    btnElement.innerHTML = '📍 Locating...';
+
+    if (!navigator.geolocation) {
+        alert("Geolocation is not supported by your browser.");
+        btnElement.disabled = false;
+        btnElement.innerHTML = originalText;
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+
+        btnElement.innerHTML = '⏳ Saving...';
+
+        // Storing the branch name in the 'so' column
+        const payload = {
+            driver_username: currentUser.username,
+            action_type: 'branch_visit',
+            action_date: dateStr,
+            action_time: timeStr,
+            location_link: mapsUrl,
+            so: locationName 
+        };
+
+        const { error } = await supabaseClient.from('drivers_log').insert(payload);
+
+        if (error) {
+            alert("Failed to log visit: " + error.message);
+            btnElement.disabled = false;
+            btnElement.innerHTML = originalText;
+        } else {
+            alert(`Successfully logged arrival at ${locationName}!`);
+            btnElement.innerHTML = '✅ Saved';
+            
+            setTimeout(() => {
+                btnElement.disabled = false;
+                btnElement.innerHTML = originalText;
+                document.getElementById('driverLocationSelect').value = ''; // Reset dropdown
+            }, 3000);
+        }
+
+    }, (error) => {
+        alert("Failed to acquire location. Ensure GPS is enabled. Error: " + error.message);
+        btnElement.disabled = false;
+        btnElement.innerHTML = originalText;
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
+// ------------------------------------------------
 
 async function executeDriverShiftAction(actionType, btnElement) {
     if (!navigator.onLine) {
@@ -415,12 +544,11 @@ async function executeDriverShiftAction(actionType, btnElement) {
             btnElement.innerHTML = originalText;
         } else {
             alert(`Shift ${actionType === 'start' ? 'Started' : 'Signed Off'} Successfully!`);
-            btnElement.innerHTML = actionType === 'start' ? '✅ Day Started' : '✅ Signed Off';
+            btnElement.innerHTML = actionType === 'start' ? `✅ Day Started at ${timeStr}` : `✅ Signed Off at ${timeStr}`;
             
             setTimeout(() => {
                 btnElement.disabled = false;
-                btnElement.innerHTML = originalText;
-            }, 10000);
+            }, 1000);
         }
 
     }, (error) => {
@@ -489,7 +617,7 @@ async function handleDriverAction(ticket, actionType, btnElement) {
                 .eq('so', ticket.so);
 
             // C. Persist UI State & Memory
-            btnElement.innerHTML = `🟢 Arrived ${dateTimeStr} 📍`; 
+            btnElement.innerHTML = `🟢 Arrived ${timeStr} 📍`; 
             btnElement.disabled = false;
             ticket.arrived_at = dateTimeStr; 
             ticket.location_link = mapsUrl;
@@ -523,8 +651,77 @@ async function handleDriverAction(ticket, actionType, btnElement) {
             .eq('so', ticket.so);
 
         // C. Persist UI State & Memory
-        btnElement.innerHTML = `🔴 Left ${dateTimeStr}`; 
+        btnElement.innerHTML = `🔴 Left ${timeStr}`; 
         btnElement.disabled = false;
         ticket.left_at = dateTimeStr; 
     }
+}
+
+// ==========================================
+// --- APP.JS EXTRACTED DRIVER LOGIC ---
+// ==========================================
+
+// Fetches all technicians paired with a driver for the current day
+async function getFleetPairedTechsForDriver(driverName) {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const todayStr = `${dd}-${mm}-${yyyy}`; 
+
+    const { data: pairData, error: pairErr } = await supabaseClient
+        .from('fleet_pairing')
+        .select('tech_username')
+        .ilike('driver_username', driverName)
+        .eq('date', todayStr);
+
+    if (pairErr || !pairData || pairData.length === 0) return [];
+    return pairData.map(p => p.tech_username);
+}
+
+// Generates the customized Driver Ticket Card HTML
+function getDriverTicketHtml(ticket) {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const todayStr = `${dd}-${mm}-${now.getFullYear()}`;
+
+    let arrivedText = '🟢 Arrive وصلت';
+    if (ticket.arrived_at && ticket.arrived_at.includes(todayStr)) {
+        const timeOnly = ticket.arrived_at.split(' ')[1] || '';
+        arrivedText = `🟢 Arrived ${timeOnly} ${ticket.location_link ? '📍' : ''}`;
+    }
+
+    let leftText = '🔴 Leave تحركت';
+    if (ticket.left_at && ticket.left_at.includes(todayStr)) {
+        const timeOnly = ticket.left_at.split(' ')[1] || '';
+        leftText = `🔴 Left ${timeOnly}`;
+    }
+    
+    const actionButtonsHtml = `
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button class="btn-driver-arrive" style="flex: 1; background-color: #1976d2; color: white; border: none; padding: 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">${arrivedText}</button>
+            <button class="btn-driver-leave" style="flex: 1; background-color: #1976d2; color: white; border: none; padding: 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">${leftText}</button>
+        </div>
+    `;
+
+    return `
+        <div class="ticket-header">
+            <span>SO: ${ticket.so}</span>
+        </div>
+        <div class="ticket-row"><span>Name: ${ticket.name || 'N/A'}</span></div>
+        <div class="ticket-row"><span>Date: ${ticket.date || 'N/A'}</span></div>
+        <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
+        ${actionButtonsHtml}
+    `;
+}
+
+// Attaches the Driver Arrive/Leave events to the newly generated HTML
+function bindDriverTicketEvents(card, ticket) {
+    card.querySelector('.btn-driver-arrive').addEventListener('click', function() {
+        if (typeof handleDriverAction === 'function') handleDriverAction(ticket, 'arrive', this);
+    });
+    card.querySelector('.btn-driver-leave').addEventListener('click', function() {
+        if (typeof handleDriverAction === 'function') handleDriverAction(ticket, 'leave', this);
+    });
 }

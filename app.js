@@ -2048,7 +2048,7 @@ function drawCoordLeaderboard() {
     });
 }
 
-// --- NEW: THE ACTUAL SORTING LOGIC ---
+// --- THE ACTUAL SORTING LOGIC ---
 function triggerMonitorSort(tableType, colKey) {
     // Determine sort direction (flip if clicking the same column twice)
     if (monitorSortConfig.col === colKey) {
@@ -2058,7 +2058,10 @@ function triggerMonitorSort(tableType, colKey) {
         monitorSortConfig.dir = 'desc'; // Default to highest numbers first
     }
 
-    const dataArray = tableType === 'tech' ? techLeaderboardData : coordLeaderboardData;
+    let dataArray;
+    if (tableType === 'tech') dataArray = techLeaderboardData;
+    else if (tableType === 'coord') dataArray = coordLeaderboardData;
+    else if (tableType === 'driver') dataArray = driverLeaderboardData;
 
     dataArray.sort((a, b) => {
         let valA = a[colKey];
@@ -2075,6 +2078,47 @@ function triggerMonitorSort(tableType, colKey) {
     // Redraw only the table that was clicked
     if (tableType === 'tech') drawTechLeaderboard();
     if (tableType === 'coord') drawCoordLeaderboard();
+    if (tableType === 'driver') drawDriverLeaderboard();
+}
+
+function drawDriverLeaderboard() {
+    const tbody = document.getElementById('driverTableBody');
+    const theadRow = document.getElementById('driverHeaderRow');
+    tbody.innerHTML = '';
+    theadRow.innerHTML = '';
+
+    const indexHeader = document.createElement('th');
+    indexHeader.innerHTML = `<div style="padding: 5px;"><span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">#</span></div>`;
+    theadRow.appendChild(indexHeader);
+
+    const cols = [
+        { label: 'Driver', key: 'name' },
+        { label: 'Unique Orders Visited', key: 'orderVisits' },
+        { label: 'Total Branch Visits', key: 'branchVisits' },
+        { label: 'Branches Visited', key: 'branches' }
+    ];
+
+    cols.forEach(col => {
+        const th = document.createElement('th');
+        let arrow = monitorSortConfig.col === col.key ? (monitorSortConfig.dir === 'asc' ? ' 🔼' : ' 🔽') : '';
+        th.innerHTML = `<div style="padding: 5px; cursor: pointer;" title="Click to sort">
+            <span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">${col.label}</span>${arrow}
+        </div>`;
+        th.addEventListener('click', () => triggerMonitorSort('driver', col.key));
+        theadRow.appendChild(th);
+    });
+
+    driverLeaderboardData.forEach((stats, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding: 10px; font-weight: bold; text-align: center;">${index + 1}</td>
+            <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
+            <td style="padding: 10px; color: #1976d2;"><span class="metric-clickable" onclick="openMetricDetails('driver', '${stats.name}', 'orderVisits')">${stats.orderVisits}</span></td>
+            <td style="padding: 10px; color: #f57c00;"><span class="metric-clickable" onclick="openMetricDetails('driver', '${stats.name}', 'branchVisits')">${stats.branchVisits}</span></td>
+            <td style="padding: 10px; font-size: 13px; opacity: 0.9;">${stats.branches}</td>
+        `;
+        tbody.appendChild(tr);
+    });
 }
 // -----------------------------------------------
 
@@ -2087,9 +2131,10 @@ function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRow
     const theadRow = document.getElementById('monitorHeaderRow');
     
     tableArea.style.display = 'block';
-    // --- ADD THESE TWO LINES TO HIDE THE LEADERBOARD ELEMENTS ---
+    // --- ADD THESE LINES TO HIDE THE LEADERBOARD ELEMENTS ---
     document.getElementById('techTableTitle').style.display = 'none';
     document.getElementById('coordTableContainer').style.display = 'none';
+    document.getElementById('driverTableContainer').style.display = 'none';
     // ------------------------------------------------------------
     badgesArea.style.display = 'none'; 
     tbody.innerHTML = '';
@@ -3132,37 +3177,37 @@ async function loadActiveTickets(managerOverrideUser = null) {
     }
     // ---------------------------------------------------------
 
-    // --- ARCHITECT MOD: TOGGLE SHIFT UI ---
+    // --- ARCHITECT MOD: TOGGLE SHIFT & LOCATION UI ---
+    const isDriverView = currentMyOrdersViewMode === 'driver' && !managerOverrideUser;
+    
     const shiftContainer = document.getElementById('driverShiftContainer');
+    const fixedLocationUI = document.getElementById('driverFixedLocationUI');
+    const routePlannerBtn = document.getElementById('btnOpenRoutePlanner');
+    const techPartsBtn = document.getElementById('btnOpenTechParts');
+    
     if (shiftContainer) {
-        shiftContainer.style.display = (currentMyOrdersViewMode === 'driver' && !managerOverrideUser) ? 'flex' : 'none';
+        shiftContainer.style.display = isDriverView ? 'flex' : 'none';
+        if (isDriverView && typeof checkDriverShiftState === 'function') checkDriverShiftState();
     }
+    if (fixedLocationUI) fixedLocationUI.style.display = isDriverView ? 'flex' : 'none';
+    
+    // Hide Technical Modules for Drivers
+    if (routePlannerBtn) routePlannerBtn.style.display = isDriverView ? 'none' : 'inline-block';
+    if (techPartsBtn) techPartsBtn.style.display = isDriverView ? 'none' : 'inline-block';
 
     // --- PHASE 1: MULTI-TARGET FLEET PAIRING INTERCEPTOR ---
     if (currentMyOrdersViewMode === 'driver') {
         document.getElementById('ticketContainer').innerHTML = "<h3 style='text-align:center;'>Checking Fleet Pairing...</h3>";
         
-        const now = new Date();
-        const dd = String(now.getDate()).padStart(2, '0');
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const yyyy = now.getFullYear();
-        const todayStr = `${dd}-${mm}-${yyyy}`; 
-
-        // Removed .single() to fetch an array of ALL paired technicians for this driver today
-        const { data: pairData, error: pairErr } = await supabaseClient
-            .from('fleet_pairing')
-            .select('tech_username')
-            .ilike('driver_username', targetName)
-            .eq('date', todayStr);
-
-        if (pairErr || !pairData || pairData.length === 0) {
+        if (typeof getFleetPairedTechsForDriver === 'function') {
+            driverTechArray = await getFleetPairedTechsForDriver(targetName);
+        }
+        
+        if (!driverTechArray || driverTechArray.length === 0) {
             document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>No paired Technician found for ${targetName} today. Contact Coordination.</h3>`;
             if(document.getElementById('myOrdersCountBadge')) document.getElementById('myOrdersCountBadge').style.display = 'none';
             return;
         }
-        
-        // Map the database results into a clean array of usernames (e.g., ['Ali', 'Mishel'])
-        driverTechArray = pairData.map(p => p.tech_username);
     }
     // -------------------------------------------------------
 
@@ -3295,39 +3340,13 @@ function renderTickets(tickets, viewMode = 'technician') {
             let partsHtml = partsArray.length > 0 ? `<div style="color: #8e24aa; font-size: 13px; font-weight: bold; margin-top: 8px; padding-top: 5px; border-top: 1px dashed var(--border-color);">🛠️ Parts: ${partsArray.join(', ')}</div>` : '';
             // ----------------------------------------------------------
 
-            // --- PHASE 4.1: DRIVER UI WITH PERSISTENT (ACTIVE) STATE ---
-            let actionButtonsHtml = '';
-            if (viewMode === 'driver') {
-                const arrivedText = ticket.arrived_at ? `🟢 Arrived ${ticket.arrived_at} ${ticket.location_link ? '📍' : ''}` : '🟢 Arrive وصلت';
-                const leftText = ticket.left_at ? `🔴 Left ${ticket.left_at}` : '🔴 Leave تحركت';
-                
-                // Unified button colors to primary blue (#1976d2)
-                actionButtonsHtml = `
-                    <div style="display: flex; gap: 10px; margin-top: 10px;">
-                        <button class="btn-driver-arrive" style="flex: 1; background-color: #1976d2; color: white; border: none; padding: 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">${arrivedText}</button>
-                        <button class="btn-driver-leave" style="flex: 1; background-color: #1976d2; color: white; border: none; padding: 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">${leftText}</button>
-                    </div>
-                `;
+            // --- PHASE 2: UI RENDERING (DRIVER VS STANDARD) ---
+            if (viewMode === 'driver' && typeof getDriverTicketHtml === 'function') {
+                card.innerHTML = returnBadgeHtml + getDriverTicketHtml(ticket);
+                if (typeof bindDriverTicketEvents === 'function') bindDriverTicketEvents(card, ticket);
             } else {
-                actionButtonsHtml = `<button class="details-btn">Details & Action</button>`;
-            }
-            // ------------------------------------
-
-            // --- PHASE 2: DRIVER UI HARDENING (CONDITIONAL RENDERING) ---
-            let ticketBodyHtml = '';
-            
-            if (viewMode === 'driver') {
-                ticketBodyHtml = `
-                    <div class="ticket-header">
-                        <span>SO: ${ticket.so}</span>
-                    </div>
-                    <div class="ticket-row"><span>Name: ${ticket.name || 'N/A'}</span></div>
-                    <div class="ticket-row"><span>Date: ${ticket.date || 'N/A'}</span></div>
-                    <div class="ticket-row" style="margin-top: 5px;"><strong>Address:</strong> ${ticket.address || 'N/A'}</div>
-                    ${actionButtonsHtml}
-                `;
-            } else {
-                ticketBodyHtml = `
+                let actionButtonsHtml = `<button class="details-btn">Details & Action</button>`;
+                let ticketBodyHtml = `
                     <div class="ticket-header">
                         <span>SO: ${ticket.so}</span>
                         <span style="color:#ffb300;">Days: ${ticket.days || 0}</span>
@@ -3349,23 +3368,8 @@ function renderTickets(tickets, viewMode = 'technician') {
                     ${partsHtml}
                     ${actionButtonsHtml}
                 `;
-            }
-
-            card.innerHTML = `
-                ${returnBadgeHtml}
-                ${ticketBodyHtml}
-            `;
-            // -----------------------------------------------------------
-
-            // --- PHASE 4.1: BIND DRIVER ACTION EVENTS WITH DOM CONTEXT ---
-            if (viewMode === 'driver') {
-                card.querySelector('.btn-driver-arrive').addEventListener('click', function() {
-                    if (typeof handleDriverAction === 'function') handleDriverAction(ticket, 'arrive', this);
-                });
-                card.querySelector('.btn-driver-leave').addEventListener('click', function() {
-                    if (typeof handleDriverAction === 'function') handleDriverAction(ticket, 'leave', this);
-                });
-            } else {
+                
+                card.innerHTML = returnBadgeHtml + ticketBodyHtml;
                 card.querySelector('.details-btn').addEventListener('click', () => openDetailsModal(ticket, viewMode));
             }
             

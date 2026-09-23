@@ -307,7 +307,7 @@
                         </table>
                     </div>
                     
-                    <!-- NEW: Dedicated Coordinator Table -->
+                    <!-- Dedicated Coordinator Table -->
                     <div id="coordTableContainer" style="display: none;">
                         <h3 style="margin: 0 0 10px 0;">Coordinator Leaderboard</h3>
                         <div class="table-container" style="max-height: 30vh; overflow-y: auto;">
@@ -320,7 +320,18 @@
                         </div>
                     </div>
                     
-                    <div id="technicianBadges" style="display: none; gap: 15px; margin-top: 20px; flex-wrap: wrap;"></div>
+                    <!-- Dedicated Driver Table -->
+                    <div id="driverTableContainer" style="display: none; margin-top: 20px;">
+                        <h3 style="margin: 0 0 10px 0; color: #f57c00;">🚐 Driver Leaderboard</h3>
+                        <div class="table-container" style="max-height: 30vh; overflow-y: auto;">
+                            <table id="driverDataTable">
+                                <thead>
+                                    <tr id="driverHeaderRow"></tr>
+                                </thead>
+                                <tbody id="driverTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
                     
                     <div id="technicianBadges" style="display: none; gap: 15px; margin-top: 20px; flex-wrap: wrap;"></div>
 
@@ -449,9 +460,25 @@
 
             
 
-            <div style="display: flex; gap: 10px;">
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
                 <button id="btnOpenRoutePlanner" class="primary-btn" style="width: auto; padding: 8px 20px; margin-top: 0; background-color: #2e7d32; border-color: #1b5e20;">📍 Route Planner</button>
                 <button id="btnOpenTechParts" class="primary-btn" style="width: auto; padding: 8px 20px; margin-top: 0; background-color: #8e24aa; border-color: #6a1b9a;">📦 My Parts</button>
+                
+                <!-- NEW: DRIVER FIXED LOCATION UI -->
+                <div id="driverFixedLocationUI" style="display: none; gap: 10px; align-items: center;">
+                    <select id="driverLocationSelect" style="padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);">
+                        <option value="">-- Select Location --</option>
+                        <option value="فرع السيوف">El Seyouf Branch (فرع السيوف)</option>
+                        <option value="فرع العجمى">El Agamy Branch (فرع العجمى)</option>
+                        <option value="فرع العامرية">El Amreya Branch (فرع العامرية)</option>
+                        <option value="فرع مطروح">Matrouh Branch (فرع مطروح)</option>
+                        <option value="فرع كفر الدوار">Kafr El Dawar Branch (فرع كفر الدوار)</option>
+                        <option value="كاوتش">Tire (كاوتش)</option>
+                        <option value="المطبعة">Print Shop (المطبعة)</option>
+                    </select>
+                    <button id="btnDriverLocationArrive" class="primary-btn" style="width: auto; padding: 8px 20px; margin-top: 0; background-color: #1976d2; border-color: #1565c0;">✅ Arrived</button>
+                </div>
+
                 <button id="techHubBtn" class="details-btn" style="width: auto; padding: 8px 30px; margin-top: 0;">Back</button>
             </div>
         </div>
@@ -998,6 +1025,7 @@
                     <div style="background: rgba(0,0,0,0.05); padding: 15px; border-radius: 4px; border: 1px dashed var(--border-color);">
                         <label style="font-weight: bold; font-size: 14px; margin-bottom: 10px; display: block; color: var(--text-color);">Allowed Editable Columns:</label>
                         <div id="fleetColumnsContainer" style="display: flex; flex-direction: column; gap: 12px;">
+                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;"><input type="checkbox" data-col="date" style="width: 18px; height: 18px;"> <span>Date تاريخ</span></label>
                             <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;"><input type="checkbox" data-col="driver_username" style="width: 18px; height: 18px;"> <span>Driver سائق</span></label>
                             <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;"><input type="checkbox" data-col="tech_username" style="width: 18px; height: 18px;"> <span>Technician مهندس</span></label>
                             <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;"><input type="checkbox" data-col="rout" style="width: 18px; height: 18px;"> <span>Route خط سير</span></label>
@@ -1170,8 +1198,9 @@
 
         <div style="width: 100%; max-width: 900px; margin: 20px auto; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px;">
-                <h3 style="margin: 0; color: #1976d2;">📅 Daily Schedule</h3>
+                <h3 style="margin: 0; color: #1976d2;">📅 Daily Schedule <span id="fleetActiveDateLabel" style="font-size: 14px; color: var(--text-color); opacity: 0.8; margin-left: 10px;"></span></h3>
                 <div style="display: flex; gap: 10px;">
+                    <button id="btnLoadTomorrowFleet" class="secondary-btn" style="background-color: #8e24aa; color: white; border: none; font-weight: bold; padding: 4px 10px;">⏭️ Load Tomorrow</button>
                     <button id="btnAddFleetRow" class="secondary-btn" style="background-color: #2e7d32; color: white; border: none; font-weight: bold;">➕ Add Row</button>
                     <button id="btnSaveFleetSchedule" class="primary-btn">💾 Confirm & Save</button>
                 </div>

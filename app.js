@@ -3913,6 +3913,12 @@ confirmTechBtn.addEventListener('click', async () => {
     confirmTechBtn.disabled = true;
     confirmTechBtn.textContent = 'Saving Ticket...';
 
+    // --- PHASE 1: EVALUATION REMINDER INTERCEPT (NON-BLOCKING) ---
+    if (isRepaired) {
+        document.getElementById('evaluationReminderModal').style.display = 'flex';
+    }
+    // -------------------------------------------------------------
+
     // 1. Harvest dynamic JSON payloads (Files are already uploaded!)
     let newImagePayloads = [];
     let newVideoPayloads = [];
@@ -6205,7 +6211,10 @@ const executeModalClose = () => {
 
 document.getElementById('closeModalBtn').addEventListener('click', executeModalClose);
 document.getElementById('cancelModalBtn').addEventListener('click', executeModalClose);
-
+// --- EVALUATION REMINDER MODAL CLOSURE ---
+document.getElementById('closeEvalReminderBtn')?.addEventListener('click', () => {
+    document.getElementById('evaluationReminderModal').style.display = 'none';
+});
 // ==========================================
 // --- PHASE 2: DAILY ROUTE PLANNER LOGIC ---
 // ==========================================

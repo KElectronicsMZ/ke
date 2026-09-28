@@ -556,8 +556,25 @@
                 <button id="bonusesHubBtn">HUB</button>
             </div>
         </div>
+        <!-- CUSTOMER EVALUATION REMINDER MODAL -->
+        <div id="evaluationReminderModal" class="modal-overlay" style="z-index: 1100; display: none;">
+            <div class="modal-content" style="max-width: 450px; text-align: center; border: 2px solid #ffb300;">
+                <div class="modal-header" style="justify-content: center; background-color: rgba(255, 179, 0, 0.1); border-bottom: 1px solid #ffb300;">
+                    <h3 style="margin: 0; color: #e65100;">⚠️ تنبيه هام ⚠️</h3>
+                </div>
+                <div class="modal-body" style="padding: 25px 15px;">
+                    <p style="font-size: 16px; font-weight: bold; line-height: 1.6; color: var(--text-color); margin: 0;">
+                        برجاء ابلاغ العميل بانه يوجد تقييم سيصل على الواتس أب وعلى العميل اختيار 9 او 10 فقط لان هذا ما يحسب لنا ، خالص الشكر
+                    </p>
+                </div>
+                <div class="modal-footer" style="justify-content: center; border-top: none;">
+                    <button id="closeEvalReminderBtn" class="primary-btn" style="background-color: #f57c00; border-color: #e65100; font-size: 16px; padding: 10px 40px;">OK</button>
+                </div>
+            </div>
+        </div>
 
         <div id="detailsModal" class="modal-overlay" style="z-index: 1050;">
+
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 id="modalSoHeader">Order Details</h3>

@@ -3236,13 +3236,13 @@ async function loadActiveTickets(managerOverrideUser = null) {
             // Driver View: Fetch active tickets for ALL paired technicians simultaneously
             document.getElementById('ticketContainer').innerHTML = `<h3 style='text-align:center;'>Loading fleet tickets for ${driverTechArray.join(' & ')}...</h3>`;
             
-            // Build a dynamic OR string to match multiple names case-insensitively
-            const orString = driverTechArray.map(tech => `assigned_tech.ilike.${tech}`).join(',');
+            /// Build a dynamic OR string to match exact names safely without dangerous wildcards
+            const orString = driverTechArray.map(tech => `assigned_tech.ilike.${tech.trim()}`).join(',');
             
-            // ARCHITECT MOD HOTFIX: Handle both strict NULL and empty strings for 'left_at'
+            // ARCHITECT MOD HOTFIX: Remove the 'left_at' filter entirely. 
+            // Filtering on 'left_at' permanently hides multi-day tickets. The UI handles daily button resets natively.
             fetchQuery = fetchQuery.in('status', ['Technician', 'back_office'])
-                                   .or(orString)
-                                   .or('left_at.is.null,left_at.eq.,left_at.eq.""');
+                                   .or(orString);
             
         } else {
             // Technician View: Fetch their strictly assigned tickets

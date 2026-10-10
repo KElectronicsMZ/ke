@@ -22,6 +22,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- HEIC to JPG Converter -->
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+    <!-- HTML2Canvas DOM Rasterization Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body data-theme="greenish">
     <!-- GLOBAL LOADING OVERLAY -->
@@ -634,31 +636,35 @@
                         <h4>Financials & Notes</h4>
                         
                         <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 15px;">
-                            <div class="input-group" style="flex: 0 0 150px; margin-bottom: 0;">
-                                <label>المبلغ المدفوع Collected</label>
-                                <input type="number" id="collectedInput" placeholder="0.00" min="0">
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 18px;">
-                                <input type="checkbox" id="warrantyCheck" style="width: 18px; height: 18px;">
-                                <label for="warrantyCheck" style="font-weight: bold; cursor: pointer;">بدون تكلفة / ضمان</label>
+                            <div class="input-group" style="display: flex; flex-direction: row; align-items: center; gap: 10px; margin-bottom: 0; white-space: nowrap;">
+                                <label style="margin-bottom: 0;">المبلغ المدفوع Collected</label>
+                                <input type="number" id="collectedInput" placeholder="0.00" min="0" style="width: 120px;">
                             </div>
                         </div>
                         
-                        <div class="input-group" id="reasonGroup" style="display: none;">
-                            <label>Reason نوع الصيانة</label>
-                            <select id="reasonSelect">
-                                <option value="">-- Select Reason --</option>
-                                <!-- The value="" is exactly what gets saved to the database -->
-                                 <option value="00 - بدون زيارة">00 - بدون زيارة</option>
-                                <option value="01 - زيارة">01 - زيارة</option>
-                                <option value="02 - صيانة">02 - صيانة</option>
-                                <option value="03 - تركيب">03 - تركيب</option>
-                                <option value="04 - اوبن سيل/ليدات">04 - اوبن سيل/ليدات</option>
-                                <option value="05 - كبس">05 - كبس</option>
-                                <option value="06 - شحن">06 - شحن</option>
-                                <option value="07- صيانة تكييف">07- صيانة تكييف</option>
-                                <option value="08 - شحن /تركيب تكييف">08 - شحن /تركيب تكييف</option>
-                            </select>
+                        <div class="input-group" id="reasonGroup" style="display: flex; gap: 10px;">
+                            <div style="flex: 1;">
+                                <label>Main Option الاختيار الرئيسي</label>
+                                <select id="mainReasonSelect">
+                                    <option value="">-- Select Main --</option>
+                                    <option value="Visit زيارة">Visit زيارة</option>
+                                    <option value="No Visit بدون زيارة">No Visit بدون زيارة</option>
+                                    <option value="Repair صيانة">Repair صيانة</option>
+                                    <option value="Cancel إلغاء">Cancel إلغاء</option>
+                                    <option value="Scheduled تأجيل">Scheduled تأجيل</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1; display: none;" id="subReasonContainer">
+                                <label>Sub Option الاختيار الفرعي</label>
+                                <select id="subReasonSelect">
+                                    <option value="">-- Select Sub --</option>
+                                </select>
+                            </div>
+                            <!-- NEW: Scheduled Date Container -->
+                            <div style="flex: 1; display: none;" id="scheduledDateContainer">
+                                <label>Schedule Date تاريخ التأجيل</label>
+                                <input type="date" id="scheduledDateInput" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 4px;">
+                            </div>
                         </div>
 
                         <div class="input-group" id="techCommentGroup" style="display: none; width: 90%;">
@@ -1217,6 +1223,7 @@
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px;">
                 <h3 style="margin: 0; color: #1976d2;">📅 Daily Schedule <span id="fleetActiveDateLabel" style="font-size: 14px; color: var(--text-color); opacity: 0.8; margin-left: 10px;"></span></h3>
                 <div style="display: flex; gap: 10px;">
+                    <button id="btnCaptureFleetTable" class="secondary-btn" style="background-color: #0288d1; color: white; border: none; font-weight: bold; padding: 4px 10px;">📸 Copy Table</button>
                     <button id="btnLoadTomorrowFleet" class="secondary-btn" style="background-color: #8e24aa; color: white; border: none; font-weight: bold; padding: 4px 10px;">⏭️ Load Tomorrow</button>
                     <button id="btnAddFleetRow" class="secondary-btn" style="background-color: #2e7d32; color: white; border: none; font-weight: bold;">➕ Add Row</button>
                     <button id="btnSaveFleetSchedule" class="primary-btn">💾 Confirm & Save</button>
@@ -1270,6 +1277,7 @@
     
 
     <script src="app.js"></script>
+    <script src="system.js"></script>
     <script src="warehouse.js"></script>
     <script src="monitor.js"></script>
     <script src="callcenter.js"></script>
@@ -1279,6 +1287,7 @@
     <script src="assignation.js"></script>
     <script src="myteam.js"></script>
     <script src="drivers_fleet.js"></script>
+    <script src="bonuses.js"></script>
     
 
     <!-- USER HISTORY SIDE PANEL -->

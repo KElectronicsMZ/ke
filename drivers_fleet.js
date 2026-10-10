@@ -147,6 +147,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnSave = document.getElementById('btnSaveFleetSchedule');
     if (btnSave) btnSave.addEventListener('click', saveFleetSchedule);
     
+    const btnCapture = document.getElementById('btnCaptureFleetTable');
+    if (btnCapture) btnCapture.addEventListener('click', captureFleetSchedule);
+    
     const btnLoadTomorrow = document.getElementById('btnLoadTomorrowFleet');
     if (btnLoadTomorrow) btnLoadTomorrow.addEventListener('click', function() {
         if (this.innerHTML.includes('Tomorrow')) {
@@ -228,6 +231,127 @@ async function saveFleetSchedule() {
     } else {
         alert("Fleet Schedule successfully saved!");
         // UI retention: We intentionally leave the DOM intact so the user does not lose their active view.
+    }
+}
+
+// Rasterize Fleet Schedule & Dispatch to WhatsApp / Clipboard / Storage
+async function captureFleetSchedule() {
+    const table = document.getElementById('fleetScheduleTable');
+    const tbody = document.getElementById('fleetScheduleBody');
+    if (!table || !tbody || tbody.children.length === 0) {
+        alert("No schedule rows available to capture.");
+        return;
+    }
+
+    if (typeof html2canvas !== 'function') {
+        alert("System error: Rasterization engine (html2canvas) is not loaded.");
+        return;
+    }
+
+    const btnCapture = document.getElementById('btnCaptureFleetTable');
+    if (btnCapture) {
+        btnCapture.disabled = true;
+        btnCapture.textContent = '⏳ Processing...';
+    }
+
+    if (typeof showGlobalLoader === 'function') showGlobalLoader("Generating Schedule Snapshot...");
+
+    try {
+        const activeDate = activeFleetDate ? formatToDbDate(activeFleetDate) : 'Schedule';
+        const fileName = `Fleet_Schedule_${activeDate}.png`;
+
+        // 1. Rasterize off-screen canvas at 2x resolution with input synchronization
+        const canvas = await html2canvas(table, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            onclone: (clonedDoc) => {
+                const origInputs = table.querySelectorAll('input');
+                const cloneInputs = clonedDoc.querySelectorAll('#fleetScheduleTable input');
+                origInputs.forEach((orig, idx) => {
+                    if (cloneInputs[idx]) {
+                        cloneInputs[idx].value = orig.value;
+                        cloneInputs[idx].setAttribute('value', orig.value);
+                    }
+                });
+            }
+        });
+
+        // 2. Convert Canvas to PNG Blob
+        canvas.toBlob(async (blob) => {
+            if (!blob) {
+                if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
+                if (btnCapture) {
+                    btnCapture.disabled = false;
+                    btnCapture.textContent = '📸 Copy Table';
+                }
+                alert("Failed to generate image file.");
+                return;
+            }
+
+            const file = new File([blob], fileName, { type: 'image/png' });
+            let dispatched = false;
+
+            // Tier 1: Native Mobile Web Share API (Direct forwarding to WhatsApp)
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({
+                        files: [file],
+                        title: `Fleet Schedule (${activeDate})`,
+                        text: `Fleet Schedule for ${activeDate}`
+                    });
+                    dispatched = true;
+                } catch (shareErr) {
+                    if (shareErr.name === 'AbortError') {
+                        dispatched = true; // User voluntarily cancelled native share sheet
+                    } else {
+                        console.warn("Share API rejected file. Escalating to clipboard:", shareErr);
+                    }
+                }
+            }
+
+            // Tier 2: Async Clipboard Write API (Binary Image Blob)
+            if (!dispatched && navigator.clipboard && window.ClipboardItem) {
+                try {
+                    await navigator.clipboard.write([
+                        new ClipboardItem({ 'image/png': blob })
+                    ]);
+                    alert("✅ Schedule table copied to clipboard! You can now paste it directly into WhatsApp.");
+                    dispatched = true;
+                } catch (clipErr) {
+                    console.warn("Clipboard binary write rejected. Escalating to file download:", clipErr);
+                }
+            }
+
+            // Tier 3: Direct File Download Anchor Fallback
+            if (!dispatched) {
+                const downloadUrl = URL.createObjectURL(blob);
+                const downloadLink = document.createElement('a');
+                downloadLink.href = downloadUrl;
+                downloadLink.download = fileName;
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+                URL.revokeObjectURL(downloadUrl);
+                alert("✅ Schedule image downloaded to your device.");
+            }
+
+            if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
+            if (btnCapture) {
+                btnCapture.disabled = false;
+                btnCapture.textContent = '📸 Copy Table';
+            }
+        }, 'image/png');
+
+    } catch (err) {
+        console.error("Schedule rasterization failure:", err);
+        if (typeof hideGlobalLoader === 'function') hideGlobalLoader();
+        if (btnCapture) {
+            btnCapture.disabled = false;
+            btnCapture.textContent = '📸 Copy Table';
+        }
+        alert("Failed to capture schedule: " + err.message);
     }
 }
 

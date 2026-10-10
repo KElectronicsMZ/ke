@@ -157,6 +157,433 @@ function renderMonitorLeaderboard(dataPool = currentFilteredMonitorRows) {
     if (typeof drawDriverLeaderboard === 'function') drawDriverLeaderboard();
 }
 
+// --- FAST DATE BUTTONS ---
+const formatHtmlDate = (dateObj) => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+document.getElementById('btnMonitorToday').addEventListener('click', () => {
+    const now = new Date();
+    document.getElementById('monitorStartDate').value = formatHtmlDate(now);
+    document.getElementById('monitorEndDate').value = formatHtmlDate(now);
+});
+
+document.getElementById('btnMonitorThisMonth').addEventListener('click', () => {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    document.getElementById('monitorStartDate').value = formatHtmlDate(firstDay);
+    document.getElementById('monitorEndDate').value = formatHtmlDate(now);
+});
+
+document.getElementById('monitorFilterDateBtn').addEventListener('click', () => {
+    // Only run the engine. The engine now triggers the leaderboard automatically!
+    loadMonitorDataEngine();
+});
+
+// UPDATED: Calculates counts and populates the Top Dropdowns
+function calculateStatusMetrics(dataToProcess = monitorTrackingRows) {
+    const statusSelect = document.getElementById('monitorStatusSelect');
+    const techSelect = document.getElementById('monitorTechSelect');
+    
+    // Clear dropdowns completely, but keep the default placeholder options
+    statusSelect.innerHTML = '<option value="">-- Select Status --</option>';
+    techSelect.innerHTML = '<option value="">-- Select Technician --</option>';
+
+    let statusCounts = { "All Tracking Logs": dataToProcess.length };
+    let techCounts = {};
+
+   // Tally the data
+    dataToProcess.forEach(row => {
+        // 1. Tally Statuses
+        let statusName = row.status ? row.status.trim() : 'Unknown';
+        if (statusName === '') statusName = 'Unknown';
+        statusCounts[statusName] = (statusCounts[statusName] || 0) + 1;
+
+        // 2. Tally Technicians (Checking BOTH columns, STRICT CASE)
+        let namesForThisRow = new Set(); 
+        
+        if (row.assigned_tech && row.assigned_tech.trim()) {
+            namesForThisRow.add(row.assigned_tech.trim());
+        }
+        if (row.assigned_by && row.assigned_by.trim()) {
+            namesForThisRow.add(row.assigned_by.trim());
+        }
+
+        namesForThisRow.forEach(name => {
+            techCounts[name] = (techCounts[name] || 0) + 1;
+        });
+    });
+
+    // Populate Status Dropdown
+    for (const [statusName, totalCount] of Object.entries(statusCounts)) {
+        const opt = document.createElement('option');
+        opt.value = statusName; 
+        opt.textContent = `${statusName} (${totalCount})`; 
+        statusSelect.appendChild(opt);
+    }
+
+    // Populate Technician Dropdown (Alphabetized for easy searching)
+    Object.keys(techCounts).sort().forEach(techName => {
+        const totalCount = techCounts[techName];
+        const opt = document.createElement('option');
+        opt.value = techName;
+        opt.textContent = `${techName} (${totalCount})`;
+        techSelect.appendChild(opt);
+    });
+}
+
+// --- MUTUALLY EXCLUSIVE DROPDOWN LISTENERS ---
+document.getElementById('monitorStatusSelect').addEventListener('change', (e) => {
+    const selectedVal = e.target.value;
+    document.getElementById('monitorTechSelect').value = ''; 
+    
+    const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
+    if (selectedVal) {
+        renderMonitorTable('status', selectedVal, poolToUse);
+    } else {
+        renderMonitorLeaderboard(poolToUse); // Go back to leaderboard
+    }
+});
+
+document.getElementById('monitorTechSelect').addEventListener('change', (e) => {
+    const selectedVal = e.target.value;
+    document.getElementById('monitorStatusSelect').value = ''; 
+    
+    const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
+    if (selectedVal) {
+        renderMonitorTable('technician', selectedVal, poolToUse);
+    } else {
+        renderMonitorLeaderboard(poolToUse); // Go back to leaderboard
+    }
+});
+
+// --- TABLE DRAWING FUNCTIONS WITH CLICKABLE HEADERS ---
+function drawTechLeaderboard() {
+    const tbody = document.getElementById('monitorTableBody');
+    const theadRow = document.getElementById('monitorHeaderRow');
+    tbody.innerHTML = '';
+    theadRow.innerHTML = '';
+
+    // --- Inject Row Number Header ---
+    const indexHeader = document.createElement('th');
+    indexHeader.innerHTML = `<div style="padding: 5px;"><span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">#</span></div>`;
+    theadRow.appendChild(indexHeader);
+
+    const cols = [
+        { label: 'Technician', key: 'name' },
+        { label: 'Assigned Orders', key: 'assigned' },
+        { label: 'Actions Submitted', key: 'acted' },
+        { label: 'Pending (Left Out)', key: 'pending' },
+        { label: 'Finished', key: 'finished' },
+        { label: 'Total Collected', key: 'collected' }
+    ];
+
+    cols.forEach(col => {
+        const th = document.createElement('th');
+        let arrow = monitorSortConfig.col === col.key ? (monitorSortConfig.dir === 'asc' ? ' 🔼' : ' 🔽') : '';
+        th.innerHTML = `<div style="padding: 5px; cursor: pointer;" title="Click to sort">
+            <span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">${col.label}</span>${arrow}
+        </div>`;
+        th.addEventListener('click', () => triggerMonitorSort('tech', col.key));
+        theadRow.appendChild(th);
+    });
+
+    techLeaderboardData.forEach((stats,index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+        <td style="padding: 10px; font-weight: bold; text-align: center;">${index + 1}</td>
+            <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
+            <td style="padding: 10px;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'assigned')">${stats.assigned}</span></td>
+            <td style="padding: 10px; color: #2e7d32;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'acted')">${stats.acted}</span></td>
+            <td style="padding: 10px; color: #d32f2f;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'pending')">${stats.pending}</span></td>
+            <td style="padding: 10px;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'finished')">${stats.finished}</span></td>
+            <td style="padding: 10px; color: #1976d2;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'collected')">${stats.collected}</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function drawCoordLeaderboard() {
+    const tbody = document.getElementById('coordTableBody');
+    const theadRow = document.getElementById('coordHeaderRow');
+    tbody.innerHTML = '';
+    theadRow.innerHTML = '';
+
+    const indexHeader = document.createElement('th');
+    indexHeader.innerHTML = `<div style="padding: 5px;"><span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">#</span></div>`;
+    theadRow.appendChild(indexHeader);
+
+    const cols = [
+        { label: 'Coordinator', key: 'name' },
+        { label: 'Agreed Orders', key: 'agree' },
+        { label: 'Completed Orders', key: 'complete' }
+    ];
+
+    cols.forEach(col => {
+        const th = document.createElement('th');
+        let arrow = monitorSortConfig.col === col.key ? (monitorSortConfig.dir === 'asc' ? ' 🔼' : ' 🔽') : '';
+        th.innerHTML = `<div style="padding: 5px; cursor: pointer;" title="Click to sort">
+            <span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">${col.label}</span>${arrow}
+        </div>`;
+        th.addEventListener('click', () => triggerMonitorSort('coord', col.key));
+        theadRow.appendChild(th);
+    });
+
+    coordLeaderboardData.forEach((stats, index) => { 
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding: 10px; font-weight: bold; text-align: center;">${index + 1}</td>
+            <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
+            <td style="padding: 10px; color: #f57c00;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'agreed')">${stats.agree}</span></td>
+            <td style="padding: 10px; color: #2e7d32;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'completed')">${stats.complete}</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// --- THE ACTUAL SORTING LOGIC ---
+function triggerMonitorSort(tableType, colKey) {
+    if (monitorSortConfig.col === colKey) {
+        monitorSortConfig.dir = monitorSortConfig.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        monitorSortConfig.col = colKey;
+        monitorSortConfig.dir = 'desc'; 
+    }
+
+    let dataArray;
+    if (tableType === 'tech') dataArray = techLeaderboardData;
+    else if (tableType === 'coord') dataArray = coordLeaderboardData;
+    else if (tableType === 'driver') dataArray = driverLeaderboardData;
+
+    dataArray.sort((a, b) => {
+        let valA = a[colKey];
+        let valB = b[colKey];
+        
+        if (typeof valA === 'string') {
+            return monitorSortConfig.dir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        return monitorSortConfig.dir === 'asc' ? valA - valB : valB - valA;
+    });
+
+    if (tableType === 'tech') drawTechLeaderboard();
+    if (tableType === 'coord') drawCoordLeaderboard();
+    if (tableType === 'driver') drawDriverLeaderboard();
+}
+
+function drawDriverLeaderboard() {
+    const tbody = document.getElementById('driverTableBody');
+    const theadRow = document.getElementById('driverHeaderRow');
+    tbody.innerHTML = '';
+    theadRow.innerHTML = '';
+
+    const indexHeader = document.createElement('th');
+    indexHeader.innerHTML = `<div style="padding: 5px;"><span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">#</span></div>`;
+    theadRow.appendChild(indexHeader);
+
+    const cols = [
+        { label: 'Driver', key: 'name' },
+        { label: 'Unique Orders Visited', key: 'orderVisits' },
+        { label: 'Total Branch Visits', key: 'branchVisits' },
+        { label: 'Branches Visited', key: 'branches' }
+    ];
+
+    cols.forEach(col => {
+        const th = document.createElement('th');
+        let arrow = monitorSortConfig.col === col.key ? (monitorSortConfig.dir === 'asc' ? ' 🔼' : ' 🔽') : '';
+        th.innerHTML = `<div style="padding: 5px; cursor: pointer;" title="Click to sort">
+            <span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">${col.label}</span>${arrow}
+        </div>`;
+        th.addEventListener('click', () => triggerMonitorSort('driver', col.key));
+        theadRow.appendChild(th);
+    });
+
+    driverLeaderboardData.forEach((stats, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding: 10px; font-weight: bold; text-align: center;">${index + 1}</td>
+            <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
+            <td style="padding: 10px; color: #1976d2;"><span class="metric-clickable" onclick="openMetricDetails('driver', '${stats.name}', 'orderVisits')">${stats.orderVisits}</span></td>
+            <td style="padding: 10px; color: #f57c00;"><span class="metric-clickable" onclick="openMetricDetails('driver', '${stats.name}', 'branchVisits')">${stats.branchVisits}</span></td>
+            <td style="padding: 10px; font-size: 13px; opacity: 0.9;">${stats.branches}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRows) {
+    const headerEl = document.getElementById('activeMonitorStatusHeader');
+    const tableArea = document.getElementById('monitorTableArea');
+    const badgesArea = document.getElementById('technicianBadges');
+    const tbody = document.getElementById('monitorTableBody');
+    const theadRow = document.getElementById('monitorHeaderRow');
+    
+    tableArea.style.display = 'block';
+    document.getElementById('techTableTitle').style.display = 'none';
+    document.getElementById('coordTableContainer').style.display = 'none';
+    document.getElementById('driverTableContainer').style.display = 'none';
+    badgesArea.style.display = 'none'; 
+    tbody.innerHTML = '';
+    theadRow.innerHTML = '';
+
+    let rowsToRender = [];
+
+    if (viewType === 'status') {
+        headerEl.textContent = `Status View: ${targetValue}`;
+        rowsToRender = targetValue === "All Tracking Logs" 
+            ? dataPool 
+            : dataPool.filter(r => (r.status || 'Unknown').trim() === targetValue || (targetValue === 'Unknown' && !r.status));
+            
+    } else if (viewType === 'technician') {
+        headerEl.textContent = `Technician View: ${targetValue}`;
+        rowsToRender = dataPool.filter(r => 
+            (r.assigned_by && r.assigned_by.trim() === targetValue) || 
+            (r.assigned_tech && r.assigned_tech.trim() === targetValue)
+        );
+    }
+
+    const columnsConfig = [
+        { key: 'so', label: 'SO', source: 'main' },
+        { key: 'assign_date', label: 'Assign Date', source: 'track' },
+        { key: 'assign_time', label: 'Assign Time', source: 'track' },
+        { key: 'status', label: 'Status', source: 'track' }, 
+        { key: 'days', label: 'Days', source: 'main' },
+        { key: 'rout', label: 'Rout', source: 'main' },
+        { key: 'assigned_by', label: 'Assigned By', source: 'track' },
+        { key: 'assigned_tech', label: 'Assigned Tech', source: 'track' },
+        { key: 'end_tech', label: 'End Tech', source: 'track' },
+        { key: 'end_coord', label: 'End Coord', source: 'track' },
+        { key: 'collected', label: 'Collected', source: 'track' },
+        { key: 'collected_reason', label: 'Reason', source: 'track' }, 
+        { key: 'comment', label: 'Comment', source: 'track' }
+    ];
+
+    const indexHeader = document.createElement('th');
+    indexHeader.innerHTML = `<div>#</div><input type="text" disabled style="width: 100%; box-sizing: border-box; margin-top: 5px; padding: 4px; border: 1px solid transparent; background: transparent; visibility: hidden;">`; 
+    theadRow.appendChild(indexHeader);
+
+    columnsConfig.forEach((cfg) => {
+        const th = document.createElement('th');
+        const labelDiv = document.createElement('div');
+        labelDiv.textContent = cfg.label;
+        th.appendChild(labelDiv);
+        
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search...';
+        searchInput.style.width = '100%';
+        searchInput.style.boxSizing = 'border-box';
+        searchInput.style.marginTop = '5px';
+        searchInput.style.padding = '4px';
+        searchInput.style.fontSize = '11px';
+        searchInput.style.border = '1px solid var(--border-color)';
+        searchInput.style.borderRadius = '3px';
+        searchInput.style.background = 'var(--bg-color)';
+        searchInput.style.color = 'var(--text-color)';
+        
+        searchInput.addEventListener('keyup', filterMonitorTable);
+        th.appendChild(searchInput);
+        theadRow.appendChild(th);
+    });
+
+    let totalCollected = 0;
+    let countHass = 0;
+    let countSmartThings = 0;
+    let countFinished = 0;
+    let totalWithReason = 0;
+    let reasonBreakdown = {};
+
+    let assignedSOs = new Set();
+    let actedSOs = new Set();
+
+    rowsToRender.forEach((trackingMatch, index) => { 
+        const tr = document.createElement('tr');
+        const currentSO = trackingMatch.so;
+        const orderMatch = databaseOrders.find(o => String(o.so) === String(currentSO)) || {};
+
+        const indexTd = document.createElement('td');
+        indexTd.textContent = index + 1;
+        indexTd.style.textAlign = 'center';
+        indexTd.style.fontWeight = 'bold';
+        indexTd.style.padding = "10px";
+        tr.appendChild(indexTd);
+
+        columnsConfig.forEach(cfg => {
+            const td = document.createElement('td');
+            let val = cfg.source === 'main' ? orderMatch[cfg.key] : trackingMatch[cfg.key];
+            td.textContent = val || '';
+            td.style.padding = "10px";
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+
+        if (viewType === 'technician') {
+            if (trackingMatch.assigned_tech && trackingMatch.assigned_tech.trim() === targetValue) {
+                assignedSOs.add(currentSO);
+            }
+            if (trackingMatch.assigned_by && trackingMatch.assigned_by.trim() === targetValue) {
+                actedSOs.add(currentSO);
+                totalCollected += (Number(trackingMatch.collected) || 0);
+                const reason = (trackingMatch.collected_reason || '').trim();
+                if (reason) {
+                    totalWithReason++;
+                    reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
+                }
+            }
+            if (trackingMatch.hass && String(trackingMatch.hass).trim() !== '') countHass++;
+            if (trackingMatch.smart_things && String(trackingMatch.smart_things).toLowerCase() === 'yes') countSmartThings++;
+            if (trackingMatch.end_tech && trackingMatch.end_tech.trim() === targetValue) countFinished++;
+        }
+    });
+
+    if (viewType === 'technician') {
+        badgesArea.style.display = 'flex';
+        const totalAssignedOrders = assignedSOs.size;
+        const totalActionsSubmitted = actedSOs.size; 
+        let overlapCount = 0;
+        assignedSOs.forEach(so => {
+            if (actedSOs.has(so)) overlapCount++;
+        });
+        const leftOutCount = totalAssignedOrders - overlapCount;
+
+        let reasonsHtml = '';
+        if (totalWithReason > 0) {
+            Object.keys(reasonBreakdown).sort().forEach(reason => {
+                reasonsHtml += `<div style="margin-top: 5px; font-size: 12px; color: var(--text-color); border-bottom: 1px dashed var(--border-color); padding-bottom: 3px;">
+                    ${reason}: <strong>${reasonBreakdown[reason]}</strong>
+                </div>`;
+            });
+        } else {
+            reasonsHtml = '<div style="margin-top: 5px; font-size: 12px; opacity: 0.6;">No reasons logged.</div>';
+        }
+
+        badgesArea.innerHTML = `
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); flex: 1; min-width: 250px;">
+                📌 Unique Assigned: <span class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'assigned')">${totalAssignedOrders}</span>
+                <div style="margin-top: 10px; background: var(--bg-color); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 13px;">
+                    ▶ Actions: <span style="color: #2e7d32;" class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'acted')">${totalActionsSubmitted}</span><br>
+                    ▶ Pending: <span style="color: #d32f2f;" class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'pending')">${leftOutCount}</span><br>
+                </div>
+            </div>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); flex: 1; min-width: 250px;">
+                📋 Logged w/ Reason: <span style="font-weight: 900;">${totalWithReason}</span>
+                <div style="margin-top: 10px; background: var(--bg-color); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                    ${Object.keys(reasonBreakdown).sort().map(r => `<div style="margin-top: 5px; font-size: 12px; border-bottom: 1px dashed var(--border-color); padding-bottom: 3px;">${r}: <strong class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'reason', '${r}')">${reasonBreakdown[r]}</strong></div>`).join('')}
+                </div>
+            </div>
+            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); flex: 1; min-width: 150px;">
+                ✅ Finished: <span class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'finished')">${countFinished}</span><br><br>
+                💰 Collected: <span class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'collected')">${totalCollected}</span>
+            </div>
+        `;
+    }
+
+    if (typeof applyResizableColumns === 'function') {
+        applyResizableColumns('monitorDataTable', 'mon_cols');
+    }
+}
 
 // Open Monitor Page from HUB Menu
 document.getElementById('btnMonitor').addEventListener('click', () => {
@@ -184,27 +611,14 @@ document.getElementById('btnMonitor').addEventListener('click', () => {
     //loadMonitorDataEngine(); //this line is cmmmented to prevent the page from loading the table when it is opened 
 });
 
-// Back to HUB button inside Monitor Page
+// --- RETURN TO HUB FROM MONITOR PAGE ---
 document.getElementById('monitorHubBtn').addEventListener('click', () => {
-    if (Object.keys(editedMonitorRows).length > 0) {
-        if (!confirm("You have unsaved monitoring changes. Are you sure you want to discard them?")) {
-            return;
-        }
-    }
-    editedMonitorRows = {};
-    document.getElementById('monitorTableArea').style.display = 'none';
-    document.getElementById('monitorSubmitBtn').style.display = 'none';
-    document.getElementById('activeMonitorStatusHeader').textContent = 'Select a Status from the Left';
+    // Hide the monitor page and restore the global menu page
     monitorPage.classList.remove('active');
-    menuPage.classList.add('active');
+    window.menuPage.classList.add('active');
 });
 
-// Close Action Table inside Monitor Page
-document.getElementById('closeMonitorTableBtn').addEventListener('click', () => {
-    document.getElementById('monitorTableArea').style.display = 'none';
-    document.getElementById('monitorSubmitBtn').style.display = 'none';
-    document.getElementById('activeMonitorStatusHeader').textContent = 'Select a Status from the Left';
-});
+
 
 // --- 12. MONITOR ENGINE AND DATA INTERSECTION LOGIC ---
 async function loadMonitorDataEngine() {

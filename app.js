@@ -6,7 +6,7 @@ const SUPABASE_KEY = "sb_publishable_9uEZtAWURjryzdCaVwH2Eg_OaW1MmpC";
 let currentSessionUploads = []; // Tracks { url, type, rowId } for the currently open ticket
 let activeUploadsCount = 0;     // Locks the Confirm button while > 0
 
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- OFFLINE DATABASE (INDEXEDDB) SETUP ---
 let localDB;
@@ -214,19 +214,20 @@ async function displaySystemVersion() {
 }
 
 
-let activeInputTarget = null; // Tracks the currently selected table cell input
-let sortDirection = {}; // Tracks if column is sorting 'asc' or 'desc'
-let currentUser = null;
-let databaseOrders = []; 
-let editedOrders = {};    
-let hiddenColumns = [];
-let selectedSystemOrders = new Set(); //to track the selected order in system page
-let selectedAssignationOrders = new Set();  //to track the selected order in assignation page
+
+
+
+window.currentUser = null;
+window.databaseOrders = []; 
+window.editedOrders = {};    
+window.hiddenColumns = [];
+window.selectedSystemOrders = new Set();
+
  
 
 
 // 1. MASTER DATABASE SCHEMA (Matches your exact Supabase SQL list)
-const ALL_COLUMNS = [
+window.ALL_COLUMNS = [
     "so", "created_by", "branch", "date", "days", "status", "reason", "name", 
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
     "remark", "status_comment", "change_log", "return", 
@@ -236,7 +237,7 @@ const ALL_COLUMNS = [
 ];
 
 // 2. THE TRANSLATOR (Strictly for External Samsung/IPAAS Export Files)
-const IMPORT_COLUMNS = [
+window.IMPORT_COLUMNS = [
     "so", "created_by", "branch", "date", "days", "status", "reason", "service_type", "name", 
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
     "remark", "status_comment", "change_log", "return", 
@@ -245,28 +246,14 @@ const IMPORT_COLUMNS = [
     "assigned_tech", "agree_coord", "complete_coord", "complete_tech"
 ];
 
-let activeColumns = [...ALL_COLUMNS];
+window.activeColumns = [...ALL_COLUMNS];
 
-// related to assignation page
-let assignationOrders = [];
-let availableTechnicians = [];
-let editedAssignations = {};
-let stagedOrders = [];
-let editedStagedOrders = {};
-const STAGED_COLUMNS = [
-    "so", "assigned_tech", "rout", "remark", "status_comment", 
-    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5"
-];
-const ASSIGN_COLUMNS = [
-    "so", "date", "days", "status", "service_type", "address", "rout", 
-    "assigned_tech", "model", "remark", "status_comment", 
-    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5"
-];
+
 
 // --- 3. DOM ELEMENTS ELEMENT SELECTORS ---
-const loginPage = document.getElementById('loginPage');
-const menuPage = document.getElementById('menuPage');
-const systemPage = document.getElementById('systemPage');
+window.loginPage = document.getElementById('loginPage');
+window.menuPage = document.getElementById('menuPage');
+window.systemPage = document.getElementById('systemPage');
 
 // --- 4. THEME SELECTION ENGINE ---
 const themeSelect = document.getElementById('themeSelect');
@@ -712,68 +699,7 @@ async function applyRoleBasedMenuVisibility() {
     
 }
 // ---------------------------------------------------
-document.getElementById('btnSystem').addEventListener('click', () => {
-    // Restrictions removed! If they can see the button, they can click it.
-    menuPage.classList.remove('active');
-    systemPage.classList.add('active');
-    
-    // --- NEW: SET DEFAULT DATES TO LAST 30 DAYS ---
-    const now = new Date();
-    const past30 = new Date();
-    past30.setDate(now.getDate() - 30);
-    
-    const formatInputDate = (dateObj) => {
-        const y = dateObj.getFullYear();
-        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-        const d = String(dateObj.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
-    };
 
-    const startDateInput = document.getElementById('systemStartDate');
-    const endDateInput = document.getElementById('systemEndDate');
-    
-    // Only set if they are empty so we don't overwrite user selection when navigating back and forth
-    if (startDateInput && !startDateInput.value) startDateInput.value = formatInputDate(past30);
-    if (endDateInput && !endDateInput.value) endDateInput.value = formatInputDate(now);
-    // ----------------------------------------------
-
-    //loadDatabaseData(); 
-});
-document.getElementById('systemCancelBtn').addEventListener('click', () => {
-    if (Object.keys(editedOrders).length > 0) {
-        if (!confirm("You have unsaved inline changes. Are you sure you want to discard them?")) {
-            return;
-        }
-    }
-    editedOrders = {};
-    systemPage.classList.remove('active');
-    menuPage.classList.add('active');
-});
-
-
-
-
-document.getElementById('systemHubBtn').addEventListener('click', () => {
-    // Safety check: Don't let the user accidentally lose their work
-    if (Object.keys(editedOrders).length > 0) {
-        if (!confirm("You have unsaved inline changes. Are you sure you want to leave for the HUB?")) {
-            return;
-        }
-    }
-    
-    // Clear out any unsaved edits so they don't linger
-    editedOrders = {};
-
-    // ---Garbage (unwanted records or tables saved to the browser) Collection ---
-    databaseOrders = [];
-    const tableBody = document.getElementById('tableBody');
-    if (tableBody) tableBody.innerHTML = '';
-    // -------------------------------
-
-    // Hide the system page and show the menu (HUB) page
-    systemPage.classList.remove('active');
-    menuPage.classList.add('active');
-});
 
 // --- SETTINGS PAGE NAVIGATION ---
 const settingsPage = document.getElementById('settingsPage');
@@ -831,1576 +757,8 @@ document.getElementById('techHubBtn').addEventListener('click', () => {
     menuPage.classList.add('active');
 });
 
-// --- 6. DATA VISUALIZATION ENGINE (DYNAMIC TABLE) ---
-async function loadDatabaseData() {
-    showGlobalLoader("Fetching System Records..."); 
-    
-    const startInput = document.getElementById('systemStartDate').value;
-    const endInput = document.getElementById('systemEndDate').value;
-    
-    let data = [];
-    
-    if (startInput && endInput) {
-        const start = new Date(startInput);
-        const end = new Date(endInput);
-        
-        let dateStringsToFetch = [];
-        let currentDay = new Date(start);
-        
-        // Loop through every day in the selected range
-        while (currentDay <= end) {
-            const dd = String(currentDay.getDate()).padStart(2, '0');
-            const mm = String(currentDay.getMonth() + 1).padStart(2, '0');
-            const yyyy = currentDay.getFullYear();
-            
-            // Build the string formats that match your database entries exactly
-            dateStringsToFetch.push(`${mm}.${dd}.${yyyy}`); // Example: 07.28.2026
-            dateStringsToFetch.push(`${mm}/${dd}/${yyyy}`); // Example: 07/28/2026
-            dateStringsToFetch.push(`${dd}.${mm}.${yyyy}`); // Fallback
-            dateStringsToFetch.push(`${dd}/${mm}/${yyyy}`); // Fallback
-            
-            // Move to the next day in the loop
-            currentDay.setDate(currentDay.getDate() + 1);
-        }
-        
-        // Use the pagination engine to ask Supabase ONLY for these specific text dates
-        data = await fetchAllRecords('orders', 'date', dateStringsToFetch);
-    } else {
-        // Fallback: If the dates are empty, fetch everything
-        data = await fetchAllRecords('orders');
-    }
-    
-    if (!data) {
-        hideGlobalLoader(); 
-        alert("Error loading data from database. Please check your connection.");
-        return;
-    }
-    
-    databaseOrders = data || [];
-    editedOrders = {};
-    renderTableStructure();
-    
-    hideGlobalLoader(); 
-}
 
-// Hook up the Apply Range button
-const applySystemDateBtn = document.getElementById('btnApplySystemDate');
-if (applySystemDateBtn) {
-    applySystemDateBtn.addEventListener('click', () => {
-        loadDatabaseData(); 
-    });
-}
 
-// --- GET A LIST (BATCH FETCH) LOGIC FOR SYSTEM PAGE ---
-
-// 1. Toggle the hidden text area
-const btnToggleGetList = document.getElementById('btnToggleGetList');
-const systemGetListContainer = document.getElementById('systemGetListContainer');
-
-if (btnToggleGetList && systemGetListContainer) {
-    btnToggleGetList.addEventListener('click', () => {
-        if (systemGetListContainer.style.display === 'none') {
-            systemGetListContainer.style.display = 'flex';
-        } else {
-            systemGetListContainer.style.display = 'none';
-        }
-    });
-}
-
-// 2. Fetch the specific orders and draw the table
-const btnFetchSystemList = document.getElementById('btnFetchSystemList');
-const systemBatchSoInput = document.getElementById('systemBatchSoInput');
-
-if (btnFetchSystemList && systemBatchSoInput) {
-    btnFetchSystemList.addEventListener('click', async () => {
-        const rawText = systemBatchSoInput.value;
-        // Split by comma or newline and clean up spaces
-        const soList = rawText.split(/[\n,]+/).map(s => s.trim()).filter(s => s);
-
-        if (soList.length === 0) {
-            alert("Please paste at least one SO number.");
-            return;
-        }
-
-        showGlobalLoader("Fetching specific orders...");
-
-        // Use the pagination engine to ask Supabase ONLY for these specific SOs
-        const data = await fetchAllRecords('orders', 'so', soList);
-
-        hideGlobalLoader();
-
-        if (!data) {
-            alert("Error loading data from database. Please check your connection.");
-            return;
-        }
-
-        // Check for missing orders
-        const foundSOs = data.map(d => String(d.so));
-        const missingSOs = soList.filter(so => !foundSOs.includes(String(so)));
-
-        if (missingSOs.length > 0) {
-            alert(`Fetched ${data.length} orders.\n\n⚠️ Could not find ${missingSOs.length} order(s) in the system: \n${missingSOs.join(', ')}`);
-        } else {
-            alert(`Success! Fetched all ${data.length} orders.`);
-        }
-
-        // Wipe the existing table memory and replace it with ONLY the new data
-        databaseOrders = data || [];
-        editedOrders = {}; // Wipe unsaved edits to prevent ghost data from showing up
-        
-        // Force the table to redraw with the new limited dataset
-        renderTableStructure();
-        
-        // Clean up the UI
-        systemBatchSoInput.value = '';
-        systemGetListContainer.style.display = 'none';
-    });
-
-    // Allow 'Enter' key to fetch, and 'Shift+Enter' for new line
-    systemBatchSoInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            btnFetchSystemList.click();
-        }
-    });
-}
-// --- END GET A LIST LOGIC ---
-
-
-
-function renderTableStructure() {
-    const headerRow = document.getElementById('headerRow');
-    const filterRow = document.getElementById('filterRow');
-    
-    headerRow.innerHTML = '';
-    filterRow.innerHTML = '';
-
-    // --- Inject Row Number Header ---
-    const indexHeader = document.createElement('th');
-    indexHeader.textContent = "#";
-    indexHeader.style.width = "40px"; 
-    headerRow.appendChild(indexHeader);
-    
-    const indexFilter = document.createElement('th');
-    filterRow.appendChild(indexFilter);
-
-    // --- Add empty header cells for the checkbox column ---
-        const checkHeader = document.createElement('th');
-        
-        // NEW: "Select All" checkbox embedded in the header
-        checkHeader.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center;"><input type="checkbox" id="selectAllAssignCheckbox" style="margin-bottom: 2px; width: auto;"><span style="font-size: 11px;">Select All</span></div>`;
-        headerRow.appendChild(checkHeader);
-
-        // Attach Select All logic (targets ONLY visible rows)
-        checkHeader.querySelector('#selectAllAssignCheckbox').addEventListener('change', (e) => {
-            const isChecked = e.target.checked;
-            dataToRender.forEach(row => {
-                if (isChecked) {
-                    selectedAssignationOrders.add(row.so);
-                } else {
-                    selectedAssignationOrders.delete(row.so);
-                }
-            });
-            // Instantly redraw to show all boxes checked/unchecked
-            renderAssignationTable(dataToRender); 
-        });
-    
-    const checkFilter = document.createElement('th');
-    filterRow.appendChild(checkFilter);
-    // -------end of Add empty header cells for the checkbox colum------
-
-    activeColumns.forEach(colKey => {
-        const th = document.createElement('th');
-        const displayName = colKey === 'so' ? 'SO' : colKey;
-        
-        // Wrap the name in a clickable span for sorting
-        th.innerHTML = `
-            <div class="header-wrapper" style="display: flex; justify-content: center; align-items: center; width: 100%;">
-                <span class="sort-header" style="cursor:pointer; font-weight: bold;">${displayName}</span> 
-            </div>
-        `;
-        
-        // --- ADD MISSING SORT CLICK EVENT ---
-        th.querySelector('.sort-header').addEventListener('click', () => {
-            sortColumn(colKey);
-        });
-        // ------------------------------------
-        
-        headerRow.appendChild(th);
-
-        // --- NEW EXCEL-STYLE DROPDOWN FILTER ---
-        const filterTd = document.createElement('th');
-        
-        // 1. Create the text input for typing
-        const textFilter = document.createElement('input');
-        textFilter.type = 'text';
-        textFilter.placeholder = 'Search...';
-        textFilter.dataset.column = colKey;
-        textFilter.style.width = '100%';
-        textFilter.style.boxSizing = 'border-box';
-        textFilter.style.marginBottom = '2px';
-        textFilter.addEventListener('input', runFilters);
-        filterTd.appendChild(textFilter);
-
-        // 2. Create the dropdown select
-        const filterSelect = document.createElement('select');
-        filterSelect.dataset.column = colKey;
-
-        // Add these 3 styling lines:
-        filterSelect.style.width = '100%';
-        filterSelect.style.boxSizing = 'border-box';
-        filterSelect.style.display = 'block';
-                
-        // Add the default option and Blank option at the top
-        filterSelect.innerHTML = `
-            <option value="">-- All --</option>
-            <option value="[BLANK]">-- Blank --</option>
-        `;
-        
-        // Extract unique values from the database for this specific column
-        const uniqueValues = new Set();
-        databaseOrders.forEach(row => {
-            let val = (editedOrders[row.so] && editedOrders[row.so][colKey] !== undefined) 
-                ? editedOrders[row.so][colKey] 
-                : row[colKey];
-            
-            if (val !== null && val !== undefined && String(val).trim() !== '') {
-                uniqueValues.add(String(val).trim());
-            }
-        });
-
-        // Sort alphabetically and add them to the dropdown list
-        Array.from(uniqueValues).sort().forEach(val => {
-            const opt = document.createElement('option');
-            opt.value = val;
-            opt.textContent = val;
-            filterSelect.appendChild(opt);
-        });
-
-        filterSelect.addEventListener('change', runFilters);
-        filterTd.appendChild(filterSelect);
-        filterRow.appendChild(filterTd);
-        // ---------------------------------------
-    });
-
-    populateTableRows(databaseOrders);
-    // Fire resizer
-    applyResizableColumns('dataTable', 'sys_cols');
-
-    attachClickMoveLogic('headerRow', activeColumns, 'sys_order', renderTableStructure);
-}
-
-function populateTableRows(dataToDisplay) {
-    const tbody = document.getElementById('tableBody');
-    tbody.innerHTML = '';
-
-    dataToDisplay.forEach((row, index) => { 
-        const tr = document.createElement('tr');
-        const currentSO = row.so;
-
-        // --- PHASE 2: EXTRACT SLA FLAG ---
-        const returnVal = (editedOrders[currentSO] && editedOrders[currentSO]['return'] !== undefined) 
-            ? editedOrders[currentSO]['return'] 
-            : (row['return'] || '');
-        const returnValStr = returnVal ? String(returnVal).toLowerCase() : '';
-        // ---------------------------------
-
-        // --- Inject Row Number Cell ---
-        const indexTd = document.createElement('td');
-        indexTd.textContent = index + 1; // +1 so it starts at 1 instead of 0
-        indexTd.style.textAlign = 'center';
-        indexTd.style.fontWeight = 'bold';
-        tr.appendChild(indexTd);
-
-
-        // --- Inject the Checkbox Cell ---
-        const checkTd = document.createElement('td');
-        checkTd.style.textAlign = 'center';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.style.width = 'auto'; // Prevent it from stretching
-        checkbox.checked = selectedSystemOrders.has(currentSO);
-        
-        checkbox.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                selectedSystemOrders.add(currentSO);
-            } else {
-                selectedSystemOrders.delete(currentSO);
-            }
-        });
-        
-        checkTd.appendChild(checkbox);
-        tr.appendChild(checkTd);
-        // --- end of Inject the Checkbox Cell --
-
-        activeColumns.forEach(colKey => {
-            const td = document.createElement('td');
-            const input = document.createElement('input');
-            
-            const currentValue = (editedOrders[currentSO] && editedOrders[currentSO][colKey] !== undefined) 
-                ? editedOrders[currentSO][colKey] 
-                : (row[colKey] || '');
-
-            input.value = currentValue;
-
-            // --- MAKE SO CLICKABLE & READ-ONLY ---
-            if (colKey === 'so') {
-                input.readOnly = true; // Protects the primary key from accidental typing
-                input.style.cursor = 'pointer';
-                input.style.color = 'var(--text-color)'; 
-                input.style.textDecoration = 'none';
-                input.style.fontWeight = '900';
-
-                // --- PHASE 2: CELL-LEVEL SLA STYLING ---
-                if (returnValStr.startsWith('return')) {
-                    input.style.backgroundColor = 'rgba(211, 47, 47, 0.2)'; // Light Red
-                } else if (returnValStr.startsWith('redo')) {
-                    input.style.backgroundColor = 'rgba(245, 124, 0, 0.2)'; // Light Yellowish/Orange
-                }
-                // ---------------------------------------
-                
-                input.addEventListener('click', () => {
-                    openViewOnlyModal(row); // Opens the ticket!
-                });
-            } else {
-                // Normal typing allowed for all other columns
-                input.addEventListener('input', (e) => {
-                    if (!editedOrders[currentSO]) {
-                        editedOrders[currentSO] = { ...row };
-                    }
-                    editedOrders[currentSO][colKey] = e.target.value;
-                });
-            }
-            // -------------------------------------
-
-
-            td.appendChild(input);
-
-            // DATA TYPE: PHONE (Adds a tiny clickable phone icon link if the column is a phone column)
-            if ((colKey === 'phone' || colKey === 'phone_2' || colKey === 'phone_3') && currentValue) {
-                const dialLink = document.createElement('a');
-                dialLink.href = `tel:${currentValue.replace(/\s+/g, '')}`; // Strips spaces out for standard phone app dialing
-                dialLink.textContent = '📞';
-                dialLink.style.textDecoration = 'none';
-                dialLink.style.marginLeft = '4px';
-                dialLink.title = "Click to call number";
-                td.appendChild(dialLink);
-            }
-
-            // Triple click copy (Bulletproof version)
-            input.addEventListener('mousedown', (e) => {
-                if (e.detail === 3) {
-                    e.preventDefault(); // Prevents the browser's default text highlighting interference
-                    navigator.clipboard.writeText(e.target.value)
-                        .then(() => alert(`Copied to clipboard: "${e.target.value}"`))
-                        .catch(err => console.error("Clipboard copy failed: ", err));
-                }
-            });
-
-            // ACTIVE TRACKING HEADER COMPONENT LINK (Upgraded to look below the table)
-            input.addEventListener('focus', (e) => {
-                activeInputTarget = e.target; 
-                
-                const masterSOKey = document.getElementById('masterSOKey');
-                const masterHeaderLabel = document.getElementById('masterHeaderLabel');
-                const masterValueInput = document.getElementById('masterValueInput');
-                const actionButtons = document.getElementById('masterActionButtons'); // NEW
-
-                if (masterSOKey && masterHeaderLabel && masterValueInput) {
-                    masterSOKey.textContent = `SO: (${currentSO}) - `;
-                    masterHeaderLabel.textContent = `${colKey === 'so' ? 'SO' : colKey}: `;
-                    
-                    masterValueInput.value = e.target.value;
-                    masterValueInput.style.display = 'inline-block';
-                    
-                    // Show buttons and attach the current SO to the container's memory
-                    if (actionButtons) {
-                        actionButtons.style.display = 'flex';
-                        actionButtons.dataset.activeSo = currentSO; 
-                    }
-                }
-            });
-
-            tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-    });
-}
-
-// --- 7. FILTERING SYSTEM ---
-function runFilters() {
-    const filterSelects = document.querySelectorAll('#filterRow select');
-    const filterInputs = document.querySelectorAll('#filterRow input[type="text"]');
-    let filteredData = [...databaseOrders];
-
-    // Apply Dropdown Filters First
-    filterSelects.forEach(select => {
-        const val = select.value;
-        const colKey = select.dataset.column;
-
-        if (val === "[BLANK]") {
-            filteredData = filteredData.filter(row => {
-                const cellValue = (editedOrders[row.so] && editedOrders[row.so][colKey] !== undefined)
-                    ? String(editedOrders[row.so][colKey]).trim()
-                    : String(row[colKey] || '').trim();
-                return cellValue === '';
-            });
-        } else if (val !== "") {
-            filteredData = filteredData.filter(row => {
-                const cellValue = (editedOrders[row.so] && editedOrders[row.so][colKey] !== undefined)
-                    ? String(editedOrders[row.so][colKey])
-                    : String(row[colKey] || '');
-                return cellValue === val; // Exact match for dropdowns
-            });
-        }
-    });
-
-    // Apply Text Input Filters Second
-    filterInputs.forEach(input => {
-        const val = input.value.toLowerCase();
-        const colKey = input.dataset.column;
-
-        if (val) {
-            filteredData = filteredData.filter(row => {
-                const cellValue = (editedOrders[row.so] && editedOrders[row.so][colKey] !== undefined)
-                    ? String(editedOrders[row.so][colKey])
-                    : String(row[colKey] || '');
-                return cellValue.toLowerCase().includes(val);
-            });
-        }
-    });
-
-    populateTableRows(filteredData);
-}
-
-// --- CALCULATE DAYS DIFFERENCE ---
-document.getElementById('btnUpdateDays').addEventListener('click', () => {
-    // 1. Get today's exact date (set time to midnight so the math is perfectly clean)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    let updateCount = 0;
-
-    // 2. Loop through all the orders currently loaded on the screen
-    databaseOrders.forEach(order => {
-        const so = order.so;
-        
-        // Grab the date (check if the user already edited it inline first, otherwise use the database value)
-        const dateStr = (editedOrders[so] && editedOrders[so].date !== undefined) ? editedOrders[so].date : order.date;
-        
-        if (dateStr && String(dateStr).trim() !== '') {
-            // Split the string by either a period (.) or a slash (/)
-            const parts = String(dateStr).split(/[\.\/]/); 
-            
-            if (parts.length === 3) {
-                const month = parseInt(parts[0], 10) - 1; // JavaScript months start at 0 (January = 0)
-                const day = parseInt(parts[1], 10);
-                let year = parseInt(parts[2], 10);
-                
-                // Safety catch: If someone typed "26" instead of "2026", convert it
-                if (year < 100) year += 2000; 
-                
-                const orderDate = new Date(year, month, day);
-                
-                // 3. Do the math: Subtract order date from today, then convert milliseconds to days
-                const timeDiff = today.getTime() - orderDate.getTime();
-                const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24));
-                
-                // 4. Save it into the staging memory exactly as if the user typed it
-                if (!editedOrders[so]) {
-                    editedOrders[so] = { ...order };
-                }
-                editedOrders[so].days = daysDiff;
-                updateCount++;
-            }
-        }
-    });
-    
-    if (updateCount > 0) {
-        alert(`Successfully calculated days for ${updateCount} orders! Click 'Submit' to permanently save these changes to the database.`);
-        // 5. Force the table to erase itself and redraw with the new numbers
-        renderTableStructure();
-    } else {
-        alert("No valid dates were found to update.");
-    }
-});
-
-// --- 9. INLINE CHANGES SUBMISSION ---
-document.getElementById('systemSubmitBtn').addEventListener('click', async () => {
-    const recordsToUpdate = Object.values(editedOrders);
-    if (recordsToUpdate.length === 0) {
-        alert("No changes detected to submit.");
-        return;
-    }
-
-    // CHANGED: onConflict uses lowercase 'so'
-    const { error } = await supabaseClient
-        .from('orders')
-        .upsert(recordsToUpdate, { onConflict: 'so' });
-
-    if (error) {
-        alert("Failed to submit updates: " + error.message);
-    } else {
-        alert("Database successfully synchronized!");
-        loadDatabaseData(); 
-    }
-});
-
-// --- WIPE ENTIRE SYSTEM LOGIC ---
-document.getElementById('btnWipeSystem').addEventListener('click', async () => {
-    
-    // 1. Check Permissions (You mentioned possibly changing this later)
-    const allowedRoles = ['coordinator', 'supervisor', 'manager']; 
-    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
-        alert("Access Denied: Your account role does not have permission to wipe the database.");
-        return;
-    }
-
-    // 2. Strict Confirmation Sequence
-    const firstConfirm = confirm("⚠️ CRITICAL WARNING: You are about to DELETE ALL DATA in the system (Orders and Logs). This cannot be undone. Are you absolutely sure?");
-    if (!firstConfirm) return;
-    
-    const secondConfirm = prompt("To confirm total deletion, type the word 'DELETE' in all capital letters:");
-    if (secondConfirm !== "DELETE") {
-        alert("Wipe aborted. Your data is safe.");
-        return;
-    }
-
-    // 3. Execution: Delete dependencies first (repair_log), then parent table (orders)
-    
-    // Step A: Wipe repair_log
-    const { error: logError } = await supabaseClient
-        .from('repair_log')
-        .delete()
-        .neq('so', '0'); // Dummy filter required by Supabase to allow mass deletion
-
-    if (logError) {
-        alert("Failed to wipe repair_log table: " + logError.message);
-        return; // Stop here so we don't try to delete orders if logs failed
-    }
-
-    // Step B: Wipe orders
-    const { error: ordersError } = await supabaseClient
-        .from('orders')
-        .delete()
-        .neq('so', '0'); 
-
-    if (ordersError) {
-        alert("Logs were wiped, but failed to wipe orders table: " + ordersError.message);
-        return;
-    }
-
-    // 4. Reset User Interface
-    alert("System successfully wiped. All data has been permanently deleted.");
-    loadDatabaseData(); // Fetch the now-empty database to update the view
-});
-
-// --- 10. CSV PARSING (WITH PAPAPARSE) ---
-document.getElementById('csvUploadBtn').addEventListener('click', () => {
-    document.getElementById('csvFileInput').click();
-});
-
-document.getElementById('csvFileInput').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = function(evt) {
-        const text = evt.target.result;
-        processCSVText(text);
-    };
-    reader.readAsText(file);
-});
-
-function processCSVText(text) {
-    Papa.parse(text, {
-        header: true, 
-        skipEmptyLines: true,
-        complete: function(results) {
-            const data = results.data;
-            let newSOsForCC = []; 
-            
-            data.forEach(csvRow => {
-                let rowObj = {};
-                
-                for (const [csvHeader, csvValue] of Object.entries(csvRow)) {
-                    // Clean invisible characters from the CSV header
-                    const cleanHeader = csvHeader.replace(/["\r]/g, '').trim();
-                    
-                    // If the CSV column matches one of our active columns, keep it
-                    if (ALL_COLUMNS.includes(cleanHeader)) {
-                        let finalValue = csvValue ? String(csvValue).trim() : '';
-                        
-                        // Strip the leading apostrophe from Excel phone numbers so the leading zero stays
-                        if (finalValue.startsWith("'")) {
-                            finalValue = finalValue.substring(1);
-                        }
-                        
-                        rowObj[cleanHeader] = finalValue;
-                    }
-                }
-
-                // Stage the row so the Submit button detects it as an edit/addition
-                if (rowObj.so) {
-                    // Check if it's completely new to the system
-                    const existingOrder = databaseOrders.find(o => String(o.so) === String(rowObj.so));
-                    if (!existingOrder && !editedOrders[rowObj.so]) {
-                        newSOsForCC.push(rowObj.so);
-                    }
-
-                    if (!editedOrders[rowObj.so]) editedOrders[rowObj.so] = {};
-                    editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
-                }
-            });
-
-            // TRIGGER CALL CENTER if it's a new order and the settings allow it (check settings page)
-            if (newSOsForCC.length > 0 && typeof window.pushToCCQueue === 'function') {
-                window.pushToCCQueue(newSOsForCC, 'new_order');
-            }
-
-            alert("CSV uploaded successfully! Click 'Submit' to sync these orders to the database.");
-            renderTableStructure();
-            document.getElementById('csvFileInput').value = '';
-        },
-        error: function(err) {
-            alert("Error reading CSV file: " + err.message);
-        }
-    });
-}
-
-// ==============================================================
-// BUTTON 1: THE RESTORE ENGINE (Force Overwrites Corrupted Data)
-// ==============================================================
-document.getElementById('btnRestoreTxt').addEventListener('click', () => {
-    document.getElementById('restoreTxtFileInput').click();
-});
-
-document.getElementById('restoreTxtFileInput').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = function(evt) {
-        const text = evt.target.result;
-
-        Papa.parse(text, {
-            header: false,
-            delimiter: "\t",
-            skipEmptyLines: true,
-            complete: function(results) {
-                const data = results.data;
-                let addedCount = 0;
-
-                data.forEach(rowArray => {
-                    let rowObj = {};
-                    
-                    // Maps strictly to the Master Database Schema, bypassing the translator
-                    rowArray.forEach((val, index) => {
-                        if (ALL_COLUMNS[index]) {
-                            rowObj[ALL_COLUMNS[index]] = val ? String(val).trim() : '';
-                        }
-                    });
-
-                    if (rowObj.so) {
-                        // ⚠️ NO GUARD HERE: We want this to intentionally overwrite the database!
-                        if (!editedOrders[rowObj.so]) editedOrders[rowObj.so] = {};
-                        editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
-                        addedCount++;
-                        
-                        const existingIndex = databaseOrders.findIndex(o => String(o.so) === String(rowObj.so));
-                        if (existingIndex === -1) databaseOrders.unshift(rowObj);
-                        else databaseOrders[existingIndex] = { ...databaseOrders[existingIndex], ...rowObj };
-                    }
-                });
-
-                if (addedCount > 0) {
-                    alert(`${addedCount} order(s) staged from System Backup! Click 'Submit' to force overwrite the database.`);
-                    renderTableStructure();
-                }
-                document.getElementById('restoreTxtFileInput').value = '';
-            }
-        });
-    };
-    reader.readAsText(file);
-});
-
-// ==============================================================
-// BUTTON 2: THE SAMSUNG UPLOAD ENGINE (Protects Live Statuses)
-// ==============================================================
-document.getElementById('txtUploadBtn').addEventListener('click', () => {
-    document.getElementById('txtFileInput').click();
-});
-
-document.getElementById('txtFileInput').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = function(evt) {
-        const text = evt.target.result;
-
-        Papa.parse(text, {
-            header: false,
-            delimiter: "\t",
-            skipEmptyLines: true,
-            complete: async function(results) { 
-                const data = results.data;
-                let addedCount = 0;
-
-                // --- PHASE 1: GATHER ALL INCOMING SO NUMBERS ---
-                const incomingSOs = [];
-                data.forEach(rowArray => {
-                    const soIndex = IMPORT_COLUMNS.indexOf('so');
-                    if (soIndex !== -1 && rowArray[soIndex]) {
-                        incomingSOs.push(String(rowArray[soIndex]).trim());
-                    }
-                });
-
-                // --- PHASE 2: QUERY LIVE SUPABASE DATABASE ---
-                let liveDbOrders = [];
-                if (incomingSOs.length > 0) {
-                    showGlobalLoader("Checking live database to protect statuses...");
-                    liveDbOrders = await fetchAllRecords('orders', 'so', incomingSOs);
-                    hideGlobalLoader();
-                }
-
-                // --- PHASE 3: MAP AND PROTECT DATA ---
-                data.forEach(rowArray => {
-                    let rowObj = {};
-                    
-                    rowArray.forEach((val, index) => {
-                        if (IMPORT_COLUMNS[index] && IMPORT_COLUMNS[index] !== "") {
-                            let finalValue = val ? String(val).trim() : '';
-                            if (finalValue.startsWith("'")) finalValue = finalValue.substring(1);
-                            rowObj[IMPORT_COLUMNS[index]] = finalValue;
-                        }
-                    });
-
-                    if (rowObj.so) {
-                        // LIVE STATUS & ROUTE PROTECTION: Consult Supabase, not the screen
-                        const liveMatch = liveDbOrders.find(o => String(o.so) === String(rowObj.so)) || {};
-
-                        if (liveMatch.status && String(liveMatch.status).trim() !== '') {
-                            // Keep the existing live status instead of deleting it
-                            rowObj.status = liveMatch.status; 
-                        }
-                        if (liveMatch.rout && String(liveMatch.rout).trim() !== '') {
-                            // Keep the existing live route instead of deleting it
-                            rowObj.rout = liveMatch.rout; 
-                        }
-                        if (liveMatch.assigned_tech && String(liveMatch.assigned_tech).trim() !== '') {
-                            // Keep the existing assigned technician instead of deleting it
-                            rowObj.assigned_tech = liveMatch.assigned_tech; 
-                        }
-                        
-                        // Prevents blank TXT cells from wiping historical links in the Order entity
-                        const mediaFields = ['img1', 'calls', 'location_link', 'vid1', 'arrived_at', 'left_at'];
-                        mediaFields.forEach(field => {
-                            if (liveMatch[field] && String(liveMatch[field]).trim() !== '') {
-                                rowObj[field] = liveMatch[field];
-                            }
-                        });
-                        // ------------------------------------
-
-                        if (!editedOrders[rowObj.so]) editedOrders[rowObj.so] = {};
-                        editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
-                        addedCount++;
-                        
-                        const existingIndex = databaseOrders.findIndex(o => String(o.so) === String(rowObj.so));
-                        if (existingIndex === -1) databaseOrders.unshift(rowObj);
-                        else databaseOrders[existingIndex] = { ...databaseOrders[existingIndex], ...rowObj };
-                    }
-                });
-
-                if (addedCount > 0) {
-                    alert(`${addedCount} order(s) staged from Samsung file! Click 'Submit' to safely update.`);
-                    renderTableStructure(); 
-                }
-                
-                document.getElementById('txtFileInput').value = '';
-            },
-            error: function(err) {
-                alert("Error parsing TXT file: " + err.message);
-            }
-        });
-    };
-    reader.readAsText(file);
-});
-
-// --- NEW FEATURE: ADD ORDER FROM CLIPBOARD ---
-document.getElementById('clipboardUploadBtn').addEventListener('click', async () => {
-    try {
-        // Request permission and read the clipboard
-        const text = await navigator.clipboard.readText();
-        if (!text || text.trim() === '') {
-            alert("Your clipboard is empty.");
-            return;
-        }
-
-        // Use PapaParse to read the raw text without expecting column headers
-        Papa.parse(text, {
-            header: false, // We are mapping raw data, not looking for headers
-            skipEmptyLines: true,
-            complete: function(results) {
-                const data = results.data;
-                let addedCount = 0;
-
-                data.forEach(rowArray => {
-                    let rowObj = {};
-                    
-                    // Map the raw clipboard values to your strict IMPORT_COLUMNS sequence
-                    rowArray.forEach((val, index) => {
-                        if (IMPORT_COLUMNS[index]) {
-                            rowObj[IMPORT_COLUMNS[index]] = val ? String(val).trim() : '';
-                        }
-                    });
-
-                    // Ensure the row has an 'so' before adding it
-                    if (rowObj.so) {
-                        // Stage it in memory so the Submit button sees it as a new edit
-                        if (!editedOrders[rowObj.so]) {
-                            editedOrders[rowObj.so] = {};
-                        }
-                        editedOrders[rowObj.so] = { ...editedOrders[rowObj.so], ...rowObj };
-                        addedCount++;
-                        
-                        // Push it visually to the top of the table
-                        const existingIndex = databaseOrders.findIndex(o => String(o.so) === String(rowObj.so));
-                        if (existingIndex === -1) {
-                            databaseOrders.unshift(rowObj); 
-                        } else {
-                            // If it exists, update the visual data
-                            databaseOrders[existingIndex] = { ...databaseOrders[existingIndex], ...rowObj };
-                        }
-                    }
-                });
-
-                if (addedCount > 0) {
-                    alert(`${addedCount} order(s) staged from clipboard! Click 'Submit' to push to the database.`);
-                    renderTableStructure(); // Redraw the table to show the new rows
-                } else {
-                    alert("No valid Service Orders (SO) found in the clipboard data.");
-                }
-            },
-            error: function(err) {
-                alert("Error parsing clipboard data: " + err.message);
-            }
-        });
-    } catch (err) {
-        alert("Clipboard access failed. Please ensure you allow browser clipboard permissions. Error: " + err.message);
-    }
-});
-
-
-// --- NEW FEATURE: NEW BLANK ORDER ---
-document.getElementById('newBlankOrderBtn').addEventListener('click', () => {
-    // 1. Force the user to declare the primary key upfront
-    const newSO = prompt("Enter the unique Service Order (SO) number for this new blank order:");
-    
-    if (!newSO || newSO.trim() === '') {
-        alert("Action canceled. A unique SO number is required to create a new order.");
-        return;
-    }
-
-    const cleanSO = newSO.trim();
-
-    // 2. Protect the database by checking if this SO already exists locally
-    const existingOrder = databaseOrders.find(o => String(o.so) === cleanSO);
-    if (existingOrder || editedOrders[cleanSO]) {
-        alert(`Error: SO "${cleanSO}" already exists in the system. Primary keys must be unique.`);
-        return;
-    }
-
-    // 3. Generate a completely blank row mapped to your exact columns
-    const blankOrder = { so: cleanSO };
-    
-    ALL_COLUMNS.forEach(col => {
-        if (col !== 'so') {
-            blankOrder[col] = '';
-        }
-    });
-
-    // 4. Stage it in memory for the final database submission
-    editedOrders[cleanSO] = { ...blankOrder };
-    
-    // 5. Inject it at the very top of the visual table
-    databaseOrders.unshift(blankOrder);
-    
-    // 6. Redraw the UI
-    renderTableStructure();
-});
-
-function sortColumn(colKey) {
-    // Toggle sort direction between ascending and descending
-    const currentDir = sortDirection[colKey] === 'asc' ? 'desc' : 'asc';
-    sortDirection = { [colKey]: currentDir }; // Reset other tracking, prioritize this one
-
-    databaseOrders.sort((a, b) => {
-        let valA = (editedOrders[a.so] && editedOrders[a.so][colKey] !== undefined) ? editedOrders[a.so][colKey] : (a[colKey] || '');
-        let valB = (editedOrders[b.so] && editedOrders[b.so][colKey] !== undefined) ? editedOrders[b.so][colKey] : (b[colKey] || '');
-
-        // 1. DATA TYPE: DAYS (Treat strictly as numbers)
-        if (colKey === 'days') {
-            return currentDir === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
-        }
-
-        // 2. DATA TYPE: DATE (Convert dd/mm/yy format to computer-readable time)
-        if (colKey === 'date' && valA && valB) {
-            const partsA = valA.split('/');
-            const partsB = valB.split('/');
-            // Assumes 20yy for the year part
-            const dateA = new Date(`20${partsA[2]}`, partsA[1] - 1, partsA[0]);
-            const dateB = new Date(`20${partsB[2]}`, partsB[1] - 1, partsB[0]);
-            return currentDir === 'asc' ? dateA - dateB : dateB - dateA;
-        }
-
-        // 3. DATA TYPE: DEFAULT TEXT STRINGS
-        return currentDir === 'asc' 
-            ? String(valA).localeCompare(String(valB)) 
-            : String(valB).localeCompare(String(valA));
-    });
-
-    populateTableRows(databaseOrders);
-}
-
-// 1. Sync typing from the Master Edit Box back into the active table cell instantly
-document.getElementById('masterValueInput').addEventListener('input', (e) => {
-    if (activeInputTarget) {
-        // Send the value directly to the original cell in the table layout
-        activeInputTarget.value = e.target.value;
-        
-        // Trigger the original cell's internal input event so it saves to the workspace memory
-        activeInputTarget.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-});
-
-
-
-// --- 12. MONITOR ENGINE AND DATA INTERSECTION LOGIC ---
-async function loadMonitorDataEngine() {
-    
-    const headerEl = document.getElementById('activeMonitorStatusHeader');
-    if (headerEl) headerEl.textContent = 'Fetching specific date records... Please wait.';
-
-    // 1. Get the dates from the screen first
-    const startDateVal = document.getElementById('monitorStartDate').value;
-    const endDateVal = document.getElementById('monitorEndDate').value;
-
-    if (!startDateVal || !endDateVal) {
-        alert("Please select both a start and end date.");
-        if (headerEl) headerEl.textContent = 'Select a Status or Technician from the Left';
-        return;
-    }
-    showGlobalLoader("Analyzing Monitor Logs..."); // Trigger Loader
-
-    // 2. Generate the exact list of DD-MM-YYYY text strings to look for
-    const start = new Date(startDateVal);
-    const end = new Date(endDateVal);
-    let dateStringsToFetch = [];
-    
-    let currentDay = new Date(start);
-    while (currentDay <= end) {
-        const dd = String(currentDay.getDate()).padStart(2, '0');
-        const mm = String(currentDay.getMonth() + 1).padStart(2, '0');
-        const yyyy = currentDay.getFullYear();
-        dateStringsToFetch.push(`${dd}-${mm}-${yyyy}`);
-        currentDay.setDate(currentDay.getDate() + 1); // Move loop to the next day
-    }
-
-    // 3. SERVER-SIDE FILTER: Only download logs that occurred on these specific dates
-    const trackRows = await fetchAllRecords(MONITOR_TABLE_NAME, 'assign_date', dateStringsToFetch);
-    
-    // 4. Extract the unique SO numbers from the logs we just downloaded
-    const uniqueSOs = [...new Set(trackRows.map(log => log.so))];
-
-    // 5. SERVER-SIDE FILTER: Only download the specific orders tied to those SO numbers
-    let mainOrders = [];
-    if (uniqueSOs.length > 0) {
-        mainOrders = await fetchAllRecords('orders', 'so', uniqueSOs);
-    }
-    
-    // (Inside loadMonitorDataEngine)
-    // Store in our master variables
-    databaseOrders = mainOrders || [];
-    monitorTrackingRows = trackRows || [];
-    currentFilteredMonitorRows = monitorTrackingRows; 
-
-    // --- NEW: FETCH ROLES TO SPLIT THE LEADERBOARD ---
-    // If we haven't loaded the roles yet, ask the profiles table
-    if (Object.keys(globalUserProfiles).length === 0) {
-        const { data: profs } = await supabaseClient.from('profiles').select('username, role');
-        if (profs) {
-            profs.forEach(p => globalUserProfiles[p.username.trim()] = p.role.toLowerCase());
-        }
-    }
-
-    
-    calculateStatusMetrics();
-    renderMonitorLeaderboard(currentFilteredMonitorRows); 
-    
-    hideGlobalLoader(); // Hide when finished rendering
-}
-
-
-
-
-// --- FAST DATE BUTTONS ---
-const formatHtmlDate = (dateObj) => {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const d = String(dateObj.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-};
-
-document.getElementById('btnMonitorToday').addEventListener('click', () => {
-    const now = new Date();
-    document.getElementById('monitorStartDate').value = formatHtmlDate(now);
-    document.getElementById('monitorEndDate').value = formatHtmlDate(now);
-});
-
-document.getElementById('btnMonitorThisMonth').addEventListener('click', () => {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    document.getElementById('monitorStartDate').value = formatHtmlDate(firstDay);
-    document.getElementById('monitorEndDate').value = formatHtmlDate(now);
-});
-
-document.getElementById('monitorFilterDateBtn').addEventListener('click', () => {
-    // Only run the engine. The engine now triggers the leaderboard automatically!
-    loadMonitorDataEngine();
-});
-
-
-
-// UPDATED: Calculates counts and populates the Top Dropdowns
-function calculateStatusMetrics(dataToProcess = monitorTrackingRows) {
-    const statusSelect = document.getElementById('monitorStatusSelect');
-    const techSelect = document.getElementById('monitorTechSelect');
-    
-    // Clear dropdowns completely, but keep the default placeholder options
-    statusSelect.innerHTML = '<option value="">-- Select Status --</option>';
-    techSelect.innerHTML = '<option value="">-- Select Technician --</option>';
-
-    let statusCounts = { "All Tracking Logs": dataToProcess.length };
-    let techCounts = {};
-
-   // Tally the data
-    dataToProcess.forEach(row => {
-        // 1. Tally Statuses
-        let statusName = row.status ? row.status.trim() : 'Unknown';
-        if (statusName === '') statusName = 'Unknown';
-        statusCounts[statusName] = (statusCounts[statusName] || 0) + 1;
-
-        // 2. Tally Technicians (Checking BOTH columns, STRICT CASE)
-        let namesForThisRow = new Set(); 
-        
-        if (row.assigned_tech && row.assigned_tech.trim()) {
-            // We removed .toLowerCase() so it keeps the exact capitalization
-            namesForThisRow.add(row.assigned_tech.trim());
-        }
-        if (row.assigned_by && row.assigned_by.trim()) {
-            // We removed .toLowerCase() so it keeps the exact capitalization
-            namesForThisRow.add(row.assigned_by.trim());
-        }
-
-        // Add +1 to each unique person associated with this row
-        namesForThisRow.forEach(name => {
-            techCounts[name] = (techCounts[name] || 0) + 1;
-        });
-    });
-
-    // Populate Status Dropdown
-    for (const [statusName, totalCount] of Object.entries(statusCounts)) {
-        const opt = document.createElement('option');
-        opt.value = statusName; // Pure name for the computer to use
-        opt.textContent = `${statusName} (${totalCount})`; // Name + Count for the user to read
-        statusSelect.appendChild(opt);
-    }
-
-    // Populate Technician Dropdown (Alphabetized for easy searching)
-    Object.keys(techCounts).sort().forEach(techName => {
-        const totalCount = techCounts[techName];
-        const opt = document.createElement('option');
-        opt.value = techName;
-        opt.textContent = `${techName} (${totalCount})`;
-        techSelect.appendChild(opt);
-    });
-}
-
-// --- MUTUALLY EXCLUSIVE DROPDOWN LISTENERS ---
-document.getElementById('monitorStatusSelect').addEventListener('change', (e) => {
-    const selectedVal = e.target.value;
-    document.getElementById('monitorTechSelect').value = ''; 
-    
-    const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
-    if (selectedVal) {
-        renderMonitorTable('status', selectedVal, poolToUse);
-    } else {
-        renderMonitorLeaderboard(poolToUse); // Go back to leaderboard
-    }
-});
-
-document.getElementById('monitorTechSelect').addEventListener('change', (e) => {
-    const selectedVal = e.target.value;
-    document.getElementById('monitorStatusSelect').value = ''; 
-    
-    const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
-    if (selectedVal) {
-        renderMonitorTable('technician', selectedVal, poolToUse);
-    } else {
-        renderMonitorLeaderboard(poolToUse); // Go back to leaderboard
-    }
-});
-
-
-
-// --- NEW: TABLE DRAWING FUNCTIONS WITH CLICKABLE HEADERS ---
-function drawTechLeaderboard() {
-    const tbody = document.getElementById('monitorTableBody');
-    const theadRow = document.getElementById('monitorHeaderRow');
-    tbody.innerHTML = '';
-    theadRow.innerHTML = '';
-
-    // --- Inject Row Number Header ---
-    const indexHeader = document.createElement('th');
-    indexHeader.innerHTML = `<div style="padding: 5px;"><span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">#</span></div>`;
-    theadRow.appendChild(indexHeader);
-
-    const cols = [
-        { label: 'Technician', key: 'name' },
-        { label: 'Assigned Orders', key: 'assigned' },
-        { label: 'Actions Submitted', key: 'acted' },
-        { label: 'Pending (Left Out)', key: 'pending' },
-        { label: 'Finished', key: 'finished' },
-        { label: 'Total Collected', key: 'collected' }
-    ];
-
-    // Build Sorting Headers
-    cols.forEach(col => {
-        const th = document.createElement('th');
-        // Add tiny arrows to show which way it's sorting!
-        let arrow = monitorSortConfig.col === col.key ? (monitorSortConfig.dir === 'asc' ? ' 🔼' : ' 🔽') : '';
-        
-        // UPDATE: Removed underline, added bold, and set color to var(--text-color) to match the theme
-        th.innerHTML = `<div style="padding: 5px; cursor: pointer;" title="Click to sort">
-            <span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">${col.label}</span>${arrow}
-        </div>`;
-        
-        th.addEventListener('click', () => triggerMonitorSort('tech', col.key));
-        theadRow.appendChild(th);
-    });
-
-    // Inject Rows
-    techLeaderboardData.forEach((stats,index) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-        <td style="padding: 10px; font-weight: bold; text-align: center;">${index + 1}</td>
-            <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
-            <td style="padding: 10px;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'assigned')">${stats.assigned}</span></td>
-            <td style="padding: 10px; color: #2e7d32;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'acted')">${stats.acted}</span></td>
-            <td style="padding: 10px; color: #d32f2f;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'pending')">${stats.pending}</span></td>
-            <td style="padding: 10px;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'finished')">${stats.finished}</span></td>
-            <td style="padding: 10px; color: #1976d2;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'collected')">${stats.collected}</span></td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
-
-function drawCoordLeaderboard() {
-    const tbody = document.getElementById('coordTableBody');
-    const theadRow = document.getElementById('coordHeaderRow');
-    tbody.innerHTML = '';
-    theadRow.innerHTML = '';
-
-    // --- Inject Row Number Header ---
-    const indexHeader = document.createElement('th');
-    indexHeader.innerHTML = `<div style="padding: 5px;"><span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">#</span></div>`;
-    theadRow.appendChild(indexHeader);
-
-    const cols = [
-        { label: 'Coordinator', key: 'name' },
-        { label: 'Agreed Orders', key: 'agree' },
-        { label: 'Completed Orders', key: 'complete' }
-    ];
-
-    cols.forEach(col => {
-        const th = document.createElement('th');
-        let arrow = monitorSortConfig.col === col.key ? (monitorSortConfig.dir === 'asc' ? ' 🔼' : ' 🔽') : '';
-        
-        // UPDATE: Removed underline, added bold, and set color to var(--text-color) to match the theme
-        th.innerHTML = `<div style="padding: 5px; cursor: pointer;" title="Click to sort">
-            <span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">${col.label}</span>${arrow}
-        </div>`;
-        
-        th.addEventListener('click', () => triggerMonitorSort('coord', col.key));
-        theadRow.appendChild(th);
-    });
-
-    coordLeaderboardData.forEach((stats, index) => { // <-- Added 'index'
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td style="padding: 10px; font-weight: bold; text-align: center;">${index + 1}</td>
-            <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
-            <td style="padding: 10px; color: #f57c00;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'agreed')">${stats.agree}</span></td>
-            <td style="padding: 10px; color: #2e7d32;"><span class="metric-clickable" onclick="openMetricDetails('monitor', '${stats.name}', 'completed')">${stats.complete}</span></td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
-
-// --- THE ACTUAL SORTING LOGIC ---
-function triggerMonitorSort(tableType, colKey) {
-    // Determine sort direction (flip if clicking the same column twice)
-    if (monitorSortConfig.col === colKey) {
-        monitorSortConfig.dir = monitorSortConfig.dir === 'asc' ? 'desc' : 'asc';
-    } else {
-        monitorSortConfig.col = colKey;
-        monitorSortConfig.dir = 'desc'; // Default to highest numbers first
-    }
-
-    let dataArray;
-    if (tableType === 'tech') dataArray = techLeaderboardData;
-    else if (tableType === 'coord') dataArray = coordLeaderboardData;
-    else if (tableType === 'driver') dataArray = driverLeaderboardData;
-
-    dataArray.sort((a, b) => {
-        let valA = a[colKey];
-        let valB = b[colKey];
-        
-        // Alphabetical sort for names
-        if (typeof valA === 'string') {
-            return monitorSortConfig.dir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-        }
-        // Numerical sort for everything else
-        return monitorSortConfig.dir === 'asc' ? valA - valB : valB - valA;
-    });
-
-    // Redraw only the table that was clicked
-    if (tableType === 'tech') drawTechLeaderboard();
-    if (tableType === 'coord') drawCoordLeaderboard();
-    if (tableType === 'driver') drawDriverLeaderboard();
-}
-
-function drawDriverLeaderboard() {
-    const tbody = document.getElementById('driverTableBody');
-    const theadRow = document.getElementById('driverHeaderRow');
-    tbody.innerHTML = '';
-    theadRow.innerHTML = '';
-
-    const indexHeader = document.createElement('th');
-    indexHeader.innerHTML = `<div style="padding: 5px;"><span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">#</span></div>`;
-    theadRow.appendChild(indexHeader);
-
-    const cols = [
-        { label: 'Driver', key: 'name' },
-        { label: 'Unique Orders Visited', key: 'orderVisits' },
-        { label: 'Total Branch Visits', key: 'branchVisits' },
-        { label: 'Branches Visited', key: 'branches' }
-    ];
-
-    cols.forEach(col => {
-        const th = document.createElement('th');
-        let arrow = monitorSortConfig.col === col.key ? (monitorSortConfig.dir === 'asc' ? ' 🔼' : ' 🔽') : '';
-        th.innerHTML = `<div style="padding: 5px; cursor: pointer;" title="Click to sort">
-            <span class="sort-header" style="text-decoration: none; font-weight: bold; color: var(--text-color);">${col.label}</span>${arrow}
-        </div>`;
-        th.addEventListener('click', () => triggerMonitorSort('driver', col.key));
-        theadRow.appendChild(th);
-    });
-
-    driverLeaderboardData.forEach((stats, index) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td style="padding: 10px; font-weight: bold; text-align: center;">${index + 1}</td>
-            <td style="padding: 10px; font-weight: bold;">${stats.name}</td>
-            <td style="padding: 10px; color: #1976d2;"><span class="metric-clickable" onclick="openMetricDetails('driver', '${stats.name}', 'orderVisits')">${stats.orderVisits}</span></td>
-            <td style="padding: 10px; color: #f57c00;"><span class="metric-clickable" onclick="openMetricDetails('driver', '${stats.name}', 'branchVisits')">${stats.branchVisits}</span></td>
-            <td style="padding: 10px; font-size: 13px; opacity: 0.9;">${stats.branches}</td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
-// -----------------------------------------------
-
-// NEW UNIFIED RENDERER: Handles Filters, Strict Case Math, and Performance Metrics
-function renderMonitorTable(viewType, targetValue, dataPool = monitorTrackingRows) {
-    const headerEl = document.getElementById('activeMonitorStatusHeader');
-    const tableArea = document.getElementById('monitorTableArea');
-    const badgesArea = document.getElementById('technicianBadges');
-    const tbody = document.getElementById('monitorTableBody');
-    const theadRow = document.getElementById('monitorHeaderRow');
-    
-    tableArea.style.display = 'block';
-    // --- ADD THESE LINES TO HIDE THE LEADERBOARD ELEMENTS ---
-    document.getElementById('techTableTitle').style.display = 'none';
-    document.getElementById('coordTableContainer').style.display = 'none';
-    document.getElementById('driverTableContainer').style.display = 'none';
-    // ------------------------------------------------------------
-    badgesArea.style.display = 'none'; 
-    tbody.innerHTML = '';
-    theadRow.innerHTML = '';
-
-    let rowsToRender = [];
-
-    if (viewType === 'status') {
-        headerEl.textContent = `Status View: ${targetValue}`;
-        rowsToRender = targetValue === "All Tracking Logs" 
-            ? dataPool 
-            : dataPool.filter(r => (r.status || 'Unknown').trim() === targetValue || (targetValue === 'Unknown' && !r.status));
-            
-    } else if (viewType === 'technician') {
-        headerEl.textContent = `Technician View: ${targetValue}`;
-        rowsToRender = dataPool.filter(r => 
-            (r.assigned_by && r.assigned_by.trim() === targetValue) || 
-            (r.assigned_tech && r.assigned_tech.trim() === targetValue)
-        );
-    }
-
-    // 2. DEFINE COLUMNS (NEW: Added collected_reason)
-    const columnsConfig = [
-        { key: 'so', label: 'SO', source: 'main' },
-        { key: 'assign_date', label: 'Assign Date', source: 'track' },
-        { key: 'assign_time', label: 'Assign Time', source: 'track' },
-        { key: 'status', label: 'Status', source: 'track' }, 
-        { key: 'days', label: 'Days', source: 'main' },
-        { key: 'rout', label: 'Rout', source: 'main' },
-        { key: 'assigned_by', label: 'Assigned By', source: 'track' },
-        { key: 'assigned_tech', label: 'Assigned Tech', source: 'track' },
-        { key: 'end_tech', label: 'End Tech', source: 'track' },
-        { key: 'end_coord', label: 'End Coord', source: 'track' },
-        { key: 'collected', label: 'Collected', source: 'track' },
-        { key: 'collected_reason', label: 'Reason', source: 'track' }, // <-- BRAND NEW COLUMN
-        { key: 'comment', label: 'Comment', source: 'track' }
-    ];
-
-    // 3. BUILD HEADERS WITH EXCEL-STYLE SEARCH BOXES for Monitor Table
-
-    // --- Inject Row Number Header ---
-    const indexHeader = document.createElement('th');
-    indexHeader.innerHTML = `<div>#</div><input type="text" disabled style="width: 100%; box-sizing: border-box; margin-top: 5px; padding: 4px; border: 1px solid transparent; background: transparent; visibility: hidden;">`; 
-    theadRow.appendChild(indexHeader);
-
-    columnsConfig.forEach((cfg) => {
-        const th = document.createElement('th');
-        
-        const labelDiv = document.createElement('div');
-        labelDiv.textContent = cfg.label;
-        th.appendChild(labelDiv);
-        
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.placeholder = 'Search...';
-        searchInput.style.width = '100%';
-        searchInput.style.boxSizing = 'border-box';
-        searchInput.style.marginTop = '5px';
-        searchInput.style.padding = '4px';
-        searchInput.style.fontSize = '11px';
-        searchInput.style.border = '1px solid var(--border-color)';
-        searchInput.style.borderRadius = '3px';
-        searchInput.style.background = 'var(--bg-color)';
-        searchInput.style.color = 'var(--text-color)';
-        
-        searchInput.addEventListener('keyup', filterMonitorTable);
-        
-        th.appendChild(searchInput);
-        theadRow.appendChild(th);
-    });
-
-    let totalCollected = 0;
-    let countHass = 0;
-    let countSmartThings = 0;
-    let countFinished = 0;
-    let totalWithReason = 0;
-    let reasonBreakdown = {};
-
-    let assignedSOs = new Set();
-    let actedSOs = new Set();
-
-    // 4. BUILD ROWS
-    rowsToRender.forEach((trackingMatch, index) => { // <-- Added 'index'
-        const tr = document.createElement('tr');
-        const currentSO = trackingMatch.so;
-        const orderMatch = databaseOrders.find(o => String(o.so) === String(currentSO)) || {};
-
-        // --- Inject Row Number Cell ---
-        const indexTd = document.createElement('td');
-        indexTd.textContent = index + 1;
-        indexTd.style.textAlign = 'center';
-        indexTd.style.fontWeight = 'bold';
-        indexTd.style.padding = "10px";
-        tr.appendChild(indexTd);
-
-        columnsConfig.forEach(cfg => {
-            const td = document.createElement('td');
-            let val = cfg.source === 'main' ? orderMatch[cfg.key] : trackingMatch[cfg.key];
-            
-            td.textContent = val || '';
-            td.style.padding = "10px";
-            tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-
-        // 5. CALCULATE BADGES & METRICS
-        if (viewType === 'technician') {
-            
-            if (trackingMatch.assigned_tech && trackingMatch.assigned_tech.trim() === targetValue) {
-                assignedSOs.add(currentSO);
-            }
-            
-            if (trackingMatch.assigned_by && trackingMatch.assigned_by.trim() === targetValue) {
-                actedSOs.add(currentSO);
-                totalCollected += (Number(trackingMatch.collected) || 0);
-                
-                const reason = (trackingMatch.collected_reason || '').trim();
-                if (reason) {
-                    totalWithReason++;
-                    reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
-                }
-            }
-
-            if (trackingMatch.hass && String(trackingMatch.hass).trim() !== '') countHass++;
-            if (trackingMatch.smart_things && String(trackingMatch.smart_things).toLowerCase() === 'yes') countSmartThings++;
-            if (trackingMatch.end_tech && trackingMatch.end_tech.trim() === targetValue) countFinished++;
-        }
-    });
-
-    // 6. RENDER BADGES
-    if (viewType === 'technician') {
-        badgesArea.style.display = 'flex';
-        
-        const totalAssignedOrders = assignedSOs.size;
-        const totalActionsSubmitted = actedSOs.size; // Math Fixed!
-        
-        // Calculate pending (assigned but not acted on)
-        let overlapCount = 0;
-        assignedSOs.forEach(so => {
-            if (actedSOs.has(so)) overlapCount++;
-        });
-        const leftOutCount = totalAssignedOrders - overlapCount;
-
-        let reasonsHtml = '';
-        if (totalWithReason > 0) {
-            Object.keys(reasonBreakdown).sort().forEach(reason => {
-                reasonsHtml += `<div style="margin-top: 5px; font-size: 12px; color: var(--text-color); border-bottom: 1px dashed var(--border-color); padding-bottom: 3px;">
-                    ${reason}: <strong>${reasonBreakdown[reason]}</strong>
-                </div>`;
-            });
-        } else {
-            reasonsHtml = '<div style="margin-top: 5px; font-size: 12px; opacity: 0.6;">No reasons logged.</div>';
-        }
-
-        badgesArea.innerHTML = `
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); flex: 1; min-width: 250px;">
-                📌 Unique Assigned: <span class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'assigned')">${totalAssignedOrders}</span>
-                <div style="margin-top: 10px; background: var(--bg-color); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 13px;">
-                    ▶ Actions: <span style="color: #2e7d32;" class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'acted')">${totalActionsSubmitted}</span><br>
-                    ▶ Pending: <span style="color: #d32f2f;" class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'pending')">${leftOutCount}</span><br>
-                </div>
-            </div>
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); flex: 1; min-width: 250px;">
-                📋 Logged w/ Reason: <span style="font-weight: 900;">${totalWithReason}</span>
-                <div style="margin-top: 10px; background: var(--bg-color); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                    ${Object.keys(reasonBreakdown).sort().map(r => `<div style="margin-top: 5px; font-size: 12px; border-bottom: 1px dashed var(--border-color); padding-bottom: 3px;">${r}: <strong class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'reason', '${r}')">${reasonBreakdown[r]}</strong></div>`).join('')}
-                </div>
-            </div>
-            <div style="background: var(--btn-bg); padding: 10px 15px; border-radius: 5px; border: 1px solid var(--border-color); flex: 1; min-width: 150px;">
-                ✅ Finished: <span class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'finished')">${countFinished}</span><br><br>
-                💰 Collected: <span class="metric-clickable" onclick="openMetricDetails('monitor', '${targetValue}', 'collected')">${totalCollected}</span>
-            </div>
-        `;
-    }
-
-    // 7. FIRE RESIZER ENGINE
-    applyResizableColumns('monitorDataTable', 'mon_cols');
-}
-
-// --- HUB & CLOSE BUTTONS ---
-// Make sure we remove the old "unsaved changes" warning since it's read-only now
-document.getElementById('monitorHubBtn').addEventListener('click', () => {
-    document.getElementById('monitorTableArea').style.display = 'none';
-    document.getElementById('activeMonitorStatusHeader').textContent = 'Select a Status or Technician from the Left';
-
-    // ---Garbage (unwanted records or tables saved to the browser) Collection ---
-    monitorTrackingRows = [];
-    currentFilteredMonitorRows = [];
-    techLeaderboardData = [];
-    coordLeaderboardData = [];
-    const monitorTbody = document.getElementById('monitorTableBody');
-    if (monitorTbody) monitorTbody.innerHTML = '';
-    const coordTbody = document.getElementById('coordTableBody');
-    if (coordTbody) coordTbody.innerHTML = '';
-    // -------------------------------
-
-
-    monitorPage.classList.remove('active');
-    menuPage.classList.add('active');
-});
-
-// Close Action Table inside Monitor Page and restore Leaderboard
-document.getElementById('closeMonitorTableBtn').addEventListener('click', () => {
-    // 1. Reset the dropdowns visually
-    document.getElementById('monitorStatusSelect').value = '';
-    document.getElementById('monitorTechSelect').value = '';
-    
-    // 2. Re-render the leaderboard using the active data pool
-    const poolToUse = currentFilteredMonitorRows.length > 0 ? currentFilteredMonitorRows : monitorTrackingRows;
-    renderMonitorLeaderboard(poolToUse);
-});
-
-
-
-// --- SYSTEM PAGE: MASTER ACTION BUTTONS LOGIC ---
-
-// Helper function to format today's date and time for the database
-function getCurrentDateTime() {
-    const now = new Date();
-    const dd = String(now.getDate()).padStart(2, '0');
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const yyyy = now.getFullYear();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const min = String(now.getMinutes()).padStart(2, '0');
-    return { date: `${dd}-${mm}-${yyyy}`, time: `${hh}:${min}` };
-}
-
-// --- SEARCH ORDER LOGIC ---
-document.getElementById('btnSearchOrder').addEventListener('click', async () => {
-    const searchInput = document.getElementById('systemSearchSoInput').value.trim();
-    if (!searchInput) {
-        alert("Please enter an SO number to search.");
-        return;
-    }
-
-    showGlobalLoader("Locating Order...");
-
-    // 1. Try to find the order in the live edits or main memory first
-    let foundOrder = null;
-    if (typeof editedOrders !== 'undefined' && editedOrders[searchInput]) {
-        foundOrder = editedOrders[searchInput];
-    } else if (typeof databaseOrders !== 'undefined' && databaseOrders.length > 0) {
-        foundOrder = databaseOrders.find(o => String(o.so) === searchInput);
-    }
-
-    // 2. If it's not in memory, ask the database directly
-    if (!foundOrder) {
-        const { data, error } = await supabaseClient
-            .from('orders')
-            .select('*')
-            .eq('so', searchInput)
-            .single();
-        
-        if (data && !error) {
-            foundOrder = data;
-        }
-    }
-
-    hideGlobalLoader();
-
-    if (foundOrder) {
-        openViewOnlyModal(foundOrder);
-    } else {
-        alert(`Order with SO: ${searchInput} does not exist in the system.`);
-    }
-});
 
 // ---HUB SEARCH ORDER LOGIC ---
 document.getElementById('btnHubSearchOrder').addEventListener('click', async () => {
@@ -2453,417 +811,7 @@ document.getElementById('hubSearchSoInput').addEventListener('keydown', (e) => {
     }
 });
 
-// Action 1: Agree (Coord)
-document.getElementById('btnAgreeCoord').addEventListener('click', async () => {
-    const activeSo = document.getElementById('systemSearchSoInput').value.trim();
-    if (!activeSo) {
-        alert("Please enter an SO number in the search box first.");
-        return;
-    }
-    
-    // VERIFY DIRECTLY WITH DATABASE
-    showGlobalLoader("Verifying Order...");
-    const { data: foundOrder, error: fetchErr } = await supabaseClient
-        .from('orders')
-        .select('so, agree_coord, status, assigned_tech') // <-- FETCH REQUIRED STATUSES
-        .eq('so', activeSo)
-        .single();
-    hideGlobalLoader();
 
-    if (fetchErr || !foundOrder) {
-        alert(`Cannot apply action: Order SO ${activeSo} not found in the database.`);
-        return;
-    }
-
-    // --- CHECK IF ALREADY AGREED ---
-    if (foundOrder.agree_coord && foundOrder.agree_coord.trim() !== '') {
-        alert(`Action blocked: This order was already agreed by ${foundOrder.agree_coord}.`);
-        return; // Stops the function here so nothing gets written to the database
-    }
-    // ------------------------------------
-
-    const { date, time } = getCurrentDateTime();
-    const currentUsername = currentUser ? currentUser.username : 'Unknown';
-
-    // 1. Prepare history log payload
-    const payload = {
-        so: activeSo,
-        status: foundOrder.status || 'Unknown',
-        assigned_by: currentUsername,
-        agree_coord: currentUsername,
-        assign_date: date,
-        assign_time: time,
-        assigned_tech: foundOrder.assigned_tech || '' 
-    };
-
-    // 2. Execute history log
-    const { error: logError } = await supabaseClient.from('repair_log').insert(payload);
-
-    if (logError) {
-        alert("Error saving record to log: " + logError.message);
-        return;
-    }
-
-    // 3. Execute main orders table update!
-    const { error: orderError } = await supabaseClient.from('orders')
-        .update({ agree_coord: currentUsername })
-        .eq('so', activeSo);
-
-    if (orderError) {
-        alert("Log was saved, but error updating main order table: " + orderError.message);
-    } else {
-        alert(`Sucess : Coordination agreement logged and order updated for SO: ${activeSo}`);
-    }
-});
-
-
-// ==========================================
-// --- BONUSES / PERFORMANCE TRACKING PAGE ---
-// ==========================================
-
-const bonusesPage = document.getElementById('bonusesPage');
-
-// Global Tracking Variables for Sorting & Filtering
-let bonusesTrackingRows = [];
-let bonusesSortDir = {};
-
-// NEW: Defined Columns (Now including Reason!)
-const BONUSES_COLUMNS = [
-    { key: 'so', label: 'SO' },
-    { key: 'assign_date', label: 'Assign Date' },
-    { key: 'assign_time', label: 'Assign Time' },
-    { key: 'status', label: 'Status' },
-    { key: 'assigned_by', label: 'Assigned By' },
-    { key: 'agree_coord', label: 'Agree Coord' },
-    { key: 'complete_coord', label: 'Complete Coord' },
-    { key: 'assigned_tech', label: 'Assigned Tech' },
-    { key: 'end_tech', label: 'End Tech' },
-    { key: 'hass', label: 'Hass' },
-    { key: 'smart_things', label: 'Smart Things' },
-    { key: 'comment', label: 'Comment' },
-    { key: 'collected_reason', label: 'Reason' }, // Added to table!
-    { key: 'collected', label: 'Collected' }
-];
-
-// Helper to format HTML Dates
-const formatBonusesHtmlDate = (dateObj) => {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const d = String(dateObj.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-};
-
-// Set Default Dates to First of Current Month and Today
-function setBonusesDefaultDates() {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    document.getElementById('bonusesStartDate').value = formatBonusesHtmlDate(firstDay);
-    document.getElementById('bonusesEndDate').value = formatBonusesHtmlDate(now);
-}
-
-// Navigation Listeners
-document.getElementById('btnBonuses').addEventListener('click', () => {
-    menuPage.classList.remove('active');
-    bonusesPage.classList.add('active');
-    setBonusesDefaultDates();
-    loadBonusesData(); 
-});
-
-document.getElementById('bonusesHubBtn').addEventListener('click', () => {
-
-    // ---Garbage (unwanted records or tables saved to the browser) Collection ---
-    bonusesTrackingRows = [];
-    const bonusesTbody = document.getElementById('bonusesTableBody');
-    if (bonusesTbody) bonusesTbody.innerHTML = '';
-    const bonusesSummary = document.getElementById('bonusesSummaryContent');
-    if (bonusesSummary) bonusesSummary.innerHTML = '';
-    // -------------------------------
-    bonusesPage.classList.remove('active');
-    menuPage.classList.add('active');
-});
-
-// Fast Date Buttons
-document.getElementById('btnBonusesToday').addEventListener('click', () => {
-    const now = new Date();
-    document.getElementById('bonusesStartDate').value = formatBonusesHtmlDate(now);
-    document.getElementById('bonusesEndDate').value = formatBonusesHtmlDate(now);
-    loadBonusesData();
-});
-
-document.getElementById('btnBonusesThisMonth').addEventListener('click', () => {
-    setBonusesDefaultDates();
-    loadBonusesData();
-});
-
-document.getElementById('btnFetchBonuses').addEventListener('click', loadBonusesData);
-
-// Main Fetch and Filter Engine (Upgraded with Pagination and Strict-Case Bypass)
-async function loadBonusesData() {
-    const startDateVal = document.getElementById('bonusesStartDate').value;
-    const endDateVal = document.getElementById('bonusesEndDate').value;
-
-    if (!startDateVal || !endDateVal) {
-        alert("Please ensure both a start and end date are selected.");
-        return;
-    }
-
-    const startLimit = new Date(startDateVal);
-    startLimit.setHours(0, 0, 0, 0);
-    const endLimit = new Date(endDateVal);
-    endLimit.setHours(23, 59, 59, 999); 
-
-    // BUG FIX 1: Use the pagination engine to safely download unlimited rows!
-    const data = await fetchAllRecords(MONITOR_TABLE_NAME);
-    
-    if (!data) {
-        alert("Error loading bonuses data. Please check your connection.");
-        return;
-    }
-
-    // BUG FIX 2: Convert the logged-in username to pure lowercase to prevent case-mismatch errors
-   const safeCurrentName = currentUser && currentUser.username ? currentUser.username.trim().toLowerCase() : '';
-    
-    let badgeCounts = {
-        assigned_by: 0,
-        agree_coord: 0,
-        complete_coord: 0,
-        end_tech: 0,
-        hass_done: 0,
-        smart_things: 0,
-        total_collected: 0,   // NEW: Tracks money
-        reasonBreakdown: {}   // NEW: Tracks reasons
-    };
-
-
-    const filteredRows = data.filter(row => {
-        if (!row.assign_date) return false;
-        const parts = row.assign_date.split('-');
-        if (parts.length !== 3) return false;
-        const rowDate = new Date(parts[2], parts[1] - 1, parts[0]);
-        
-        if (rowDate < startLimit || rowDate > endLimit) return false;
-
-        let userWasInvolved = false;
-        
-        // STRICT RULE: Only collect the row if the user's name is in 'assigned_by'
-        if (row.assigned_by && String(row.assigned_by).trim().toLowerCase() === safeCurrentName) {
-            userWasInvolved = true;
-        }
-
-        // TALLY METRICS (Calculates normally based on this restricted table)
-        if (userWasInvolved) {
-            if (String(row.assigned_by || '').trim().toLowerCase() === safeCurrentName) badgeCounts.assigned_by++;
-            if (String(row.agree_coord || '').trim().toLowerCase() === safeCurrentName) badgeCounts.agree_coord++;
-            if (String(row.complete_coord || '').trim().toLowerCase() === safeCurrentName) badgeCounts.complete_coord++;
-            if (String(row.end_tech || '').trim().toLowerCase() === safeCurrentName) badgeCounts.end_tech++;
-            
-            if (String(row.hass || '').trim().toLowerCase() === 'yes') badgeCounts.hass_done++;
-            if (String(row.smart_things || '').trim().toLowerCase() === 'yes') badgeCounts.smart_things++;
-
-            // NEW: Add up the collected money securely
-            badgeCounts.total_collected += (Number(row.collected) || 0);
-
-            // NEW: Tally the specific reasons
-            const reason = (row.collected_reason || '').trim();
-            if (reason) {
-                badgeCounts.reasonBreakdown[reason] = (badgeCounts.reasonBreakdown[reason] || 0) + 1;
-            }
-        }
-
-        return userWasInvolved; 
-    });
-
-    // Generate the Badge HTML
-    let summaryHTML = '';
-    const addMetric = (label, count, type) => {
-        if (count > 0) { 
-            summaryHTML += `
-            <div class="metric-clickable" onclick="openMetricDetails('bonuses', '${safeCurrentName}', '${type}')" style="background: var(--btn-bg); padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; min-width: 130px; flex-grow: 1;">
-                <span style="font-size: 11px; color: var(--text-color); margin-bottom: 5px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">${label}</span>
-                <span style="font-size: 24px; font-weight: 900; color: var(--text-color);">${count}</span>
-            </div>`;
-        }
-    };
-
-    addMetric('Assigned order', badgeCounts.assigned_by, 'acted'); // Assigned by YOU = acted
-    addMetric('Agree customers', badgeCounts.agree_coord, 'agreed');
-    addMetric('Completed Orders', badgeCounts.complete_coord, 'completed');
-    addMetric('Ended Orders', badgeCounts.end_tech, 'finished');
-    addMetric('Hass Done', badgeCounts.hass_done, 'hass');
-    addMetric('Smart Things', badgeCounts.smart_things, 'smart_things');
-    addMetric('Total Collected', badgeCounts.total_collected, 'collected');
-
-    // NEW: Renders Reason Breakdown Badge if reasons exist
-    if (Object.keys(badgeCounts.reasonBreakdown).length > 0) {
-        let reasonsHtml = '';
-        Object.keys(badgeCounts.reasonBreakdown).sort().forEach(r => {
-            reasonsHtml += `<div style="margin-top: 5px; font-size: 13px; color: var(--text-color); border-bottom: 1px dashed var(--border-color); padding-bottom: 3px; width: 100%; text-align: left;">
-                ${r}: <strong class="metric-clickable" onclick="openMetricDetails('bonuses', '${safeCurrentName}', 'reason', '${r}')">${badgeCounts.reasonBreakdown[r]}</strong>
-            </div>`;
-        });
-        
-        summaryHTML += `
-        <div style="background: var(--btn-bg); padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; min-width: 180px; flex-grow: 1;">
-            <span style="font-size: 11px; color: var(--text-color); margin-bottom: 5px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">Reason Breakdown</span>
-            <div style="width: 100%; margin-top: 5px;">${reasonsHtml}</div>
-        </div>`;
-    }
-
-    const summaryContent = document.getElementById('bonusesSummaryContent');
-    if (summaryHTML === '') {
-         summaryContent.innerHTML = '<div style="padding: 10px; opacity: 0.7;">No tracked actions found for the selected dates.</div>';
-    } else {
-         summaryContent.innerHTML = summaryHTML;
-    }
-
-    bonusesTrackingRows = filteredRows;
-    renderBonusesTable();
-}
-
-// RENDER & SORT ENGINE
-function renderBonusesTable(dataToRender = bonusesTrackingRows) {
-    const thead = document.getElementById('bonusesHeaderRow');
-    const tbody = document.getElementById('bonusesTableBody');
-    
-    // Build Headers & Search Boxes once
-    if (thead.children.length === 0) {
-        const tr = document.createElement('tr');
-        
-        // --- Inject Row Number Header ---
-        const indexHeader = document.createElement('th');
-        indexHeader.innerHTML = `
-            <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
-                <span style="font-weight:bold;">#</span>
-            </div>
-            <input type="text" disabled style="width: 100%; box-sizing: border-box; margin-top: 5px; padding: 4px; border: 1px solid transparent; background: transparent; visibility: hidden;">
-        `;
-        tr.appendChild(indexHeader);
-
-        BONUSES_COLUMNS.forEach(col => {
-            const th = document.createElement('th');
-            
-            // Header Text with Sorting
-            th.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <span class="sort-header" style="cursor:pointer; font-weight:bold;">${col.label}</span>
-                </div>
-            `;
-            th.querySelector('.sort-header').addEventListener('click', () => sortBonusesColumn(col.key));
-            
-            // Excel-style Search Box
-            const searchInput = document.createElement('input');
-            searchInput.type = 'text';
-            searchInput.placeholder = 'Search...';
-            searchInput.style.width = '100%';
-            searchInput.style.boxSizing = 'border-box';
-            searchInput.style.marginTop = '5px';
-            searchInput.style.padding = '4px';
-            searchInput.style.fontSize = '11px';
-            searchInput.style.border = '1px solid var(--border-color)';
-            searchInput.style.borderRadius = '3px';
-            searchInput.style.background = 'var(--bg-color)';
-            searchInput.style.color = 'var(--text-color)';
-            
-            searchInput.addEventListener('keyup', filterBonusesTable);
-            
-            th.appendChild(searchInput);
-            tr.appendChild(th);
-        });
-        thead.appendChild(tr);
-    }
-
-    tbody.innerHTML = '';
-    
-    dataToRender.forEach((row, index) => { // <-- Added 'index' here
-        const tr = document.createElement('tr');
-        
-        // --- Inject Row Number Cell ---
-        const indexTd = document.createElement('td');
-        indexTd.textContent = index + 1;
-        indexTd.style.textAlign = 'center';
-        indexTd.style.fontWeight = 'bold';
-        tr.appendChild(indexTd);
-
-        BONUSES_COLUMNS.forEach(col => {
-            const td = document.createElement('td');
-            const cellValue = row[col.key] ? String(row[col.key]) : '';
-            td.textContent = cellValue;
-            
-            // Highlight current user's name
-            if (cellValue.trim() === (currentUser ? currentUser.username : '')) {
-                td.style.fontWeight = "bold";
-                td.style.color = "#4caf50"; 
-            }
-            
-            tr.appendChild(td);
-        });
-        
-        tbody.appendChild(tr);
-    });
-}
-
-// LIGHTWEIGHT DOM FILTER
-function filterBonusesTable() {
-    const trs = document.getElementById('bonusesTableBody').getElementsByTagName('tr');
-    const inputs = document.getElementById('bonusesHeaderRow').getElementsByTagName('input');
-    
-    let visibleCount = 1; // --- NEW: Start our dynamic counter
-    
-    for (let i = 0; i < trs.length; i++) {
-        let showRow = true;
-        const tds = trs[i].getElementsByTagName('td');
-        
-        for (let j = 0; j < inputs.length; j++) {
-            const filterText = inputs[j].value.toLowerCase();
-            if (filterText !== '') {
-                if (tds[j]) {
-                    const cellText = tds[j].textContent.toLowerCase();
-                    if (cellText.indexOf(filterText) === -1) {
-                        showRow = false; 
-                        break; 
-                    }
-                }
-            }
-        }
-        
-        trs[i].style.display = showRow ? '' : 'none';
-        
-        // --- NEW: Update the row number if the row is visible ---
-        if (showRow && tds[0]) {
-            tds[0].textContent = visibleCount++;
-        }
-    }
-}
-
-// COLUMN SORTING
-function sortBonusesColumn(colKey) {
-    const currentDir = bonusesSortDir[colKey] === 'asc' ? 'desc' : 'asc';
-    bonusesSortDir = { [colKey]: currentDir }; 
-
-    bonusesTrackingRows.sort((a, b) => {
-        let valA = a[colKey] || '';
-        let valB = b[colKey] || '';
-
-        // Safely sort date columns
-        if ((colKey === 'assign_date' || colKey === 'date') && valA && valB) {
-            const partsA = valA.split('-');
-            const partsB = valB.split('-');
-            if(partsA.length === 3 && partsB.length === 3) {
-                const dateA = new Date(partsA[2], partsA[1] - 1, partsA[0]);
-                const dateB = new Date(partsB[2], partsB[1] - 1, partsB[0]);
-                return currentDir === 'asc' ? dateA - dateB : dateB - dateA;
-            }
-        }
-
-        // Standard string sorting
-        return currentDir === 'asc' 
-            ? String(valA).localeCompare(String(valB)) 
-            : String(valB).localeCompare(String(valA));
-    });
-
-    renderBonusesTable(bonusesTrackingRows);
-    filterBonusesTable(); // Re-apply filters so hidden items stay hidden!
-}
 
 // Render the UI
 function renderBonusesData(rows, counts) {
@@ -3346,6 +1294,14 @@ function renderTickets(tickets, viewMode = 'technician') {
                 if (typeof bindDriverTicketEvents === 'function') bindDriverTicketEvents(card, ticket);
             } else {
                 let actionButtonsHtml = `<button class="details-btn">Details & Action</button>`;
+                
+                // --- NEW: Scheduled Date Display ---
+                let scheduledDateHtml = '';
+                if (ticket.scheduled_date && ticket.scheduled_date.trim() !== '') {
+                    scheduledDateHtml = `<div class="ticket-row" style="margin-top: 5px; background: rgba(255, 179, 0, 0.1); padding: 5px; border-left: 3px solid #ffb300; color: #e65100; font-weight: bold;">📅 Scheduled Date تأجيل: ${ticket.scheduled_date}</div>`;
+                }
+                // -----------------------------------
+
                 let ticketBodyHtml = `
                     <div class="ticket-header">
                         <span>SO: ${ticket.so}</span>
@@ -3363,6 +1319,7 @@ function renderTickets(tickets, viewMode = 'technician') {
                     </div>
                     <!-- ------------------------------------------------------------------- -->
 
+                    ${scheduledDateHtml}
                     <div class="ticket-row" style="margin-top: 5px;"><strong>Status Comment:</strong> ${ticket.status_comment || 'N/A'}</div>
                     <div class="ticket-row" style="margin-top: 5px;"><strong>Assigned Tech:</strong> <span style="color: #1976d2; font-weight: bold;">${ticket.assigned_tech || 'N/A'}</span></div>
                     ${partsHtml}
@@ -3385,9 +1342,19 @@ function renderTickets(tickets, viewMode = 'technician') {
 const detailsModal = document.getElementById('detailsModal');
 const collectedInput = document.getElementById('collectedInput');
 const reasonGroup = document.getElementById('reasonGroup');
-const reasonSelect = document.getElementById('reasonSelect');
+const mainReasonSelect = document.getElementById('mainReasonSelect');
+const subReasonSelect = document.getElementById('subReasonSelect');
+const subReasonContainer = document.getElementById('subReasonContainer');
+const scheduledDateContainer = document.getElementById('scheduledDateContainer'); // NEW
+const scheduledDateInput = document.getElementById('scheduledDateInput'); // NEW
 const commentInput = document.getElementById('commentInput');
 const confirmTechBtn = document.getElementById('confirmTechBtn');
+
+const subReasonMap = {
+    "Visit زيارة": ["Installation تركيب", "In warranty ضمان", "Check up كشف"],
+    "Repair صيانة": ["In warranty ضمان", "Out of warranty خارج الضمان"],
+    "Cancel إلغاء": ["No answer لا يرد", "Postpone تأجيل", "Refused Repair رفض الصيانة"]
+};
 
 // Helper to parse JSON media payloads and render dynamic links
 function renderDynamicMediaLinks(imgPayload, vidPayload, callPayload) {
@@ -3733,14 +1700,16 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
 
         // Execute original Tech form reset
         collectedInput.value = '';
-        reasonSelect.value = '';
+        mainReasonSelect.value = '';
+        subReasonSelect.innerHTML = '<option value="">-- Select Sub --</option>';
+        subReasonContainer.style.display = 'none';
+        scheduledDateContainer.style.display = 'none'; // NEW: Hide date picker by default
+        scheduledDateInput.value = ''; // NEW: Clear previous date value
         commentInput.value = '';
         document.getElementById('smartThingsCheck').checked = false;
         document.getElementById('hassCheck').checked = false;
-        document.getElementById('warrantyCheck').checked = false;
 
         // Reset hidden fields
-        reasonGroup.style.display = 'none';
         document.getElementById('techCommentGroup').style.display = 'flex'; // ALWAYS show comment field
         
         // Force the button to be locked by default when modal opens
@@ -3806,18 +1775,21 @@ document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
 // Validation Logic Gate
 function validateTechForm() {
     const money = parseFloat(collectedInput.value) || 0;
-    const isWarranty = document.getElementById('warrantyCheck').checked;
-    const reason = reasonSelect.value;
+    const mainReason = mainReasonSelect.value;
+    const subReason = subReasonSelect.value;
     
-    const commentGroup = document.getElementById('techCommentGroup');
     const prefixDisplay = document.getElementById('autoPrefixDisplay'); 
+    
+    // Combine strings for Auto-Prefix
+    let combinedReason = mainReason;
+    if (subReason) combinedReason += ` - ${subReason}`;
 
     // --- Generate Auto-Prefix ---
     let autoPrefix = '';
-    if (isWarranty) {
-        autoPrefix = `بدون تكلفة/ضمان${reason ? ' - ' + reason : ''} | `;
-    } else if (money > 0) {
-        autoPrefix = `تم تحصيل مبلغ ${money}${reason ? ' - ' + reason : ''} | `;
+    if (money > 0) {
+        autoPrefix = `تم تحصيل مبلغ ${money}${combinedReason ? ' - ' + combinedReason : ''} | `;
+    } else if (combinedReason) {
+        autoPrefix = `${combinedReason} | `;
     }
 
     if (autoPrefix) {
@@ -3827,18 +1799,36 @@ function validateTechForm() {
         prefixDisplay.style.display = 'none';
     }
 
-    // 1. Visibility Logic for Reason Dropdown
-    // Only show the reason list if money is entered OR the box is checked
-    if (money > 0 || isWarranty) {
-        reasonGroup.style.display = 'flex';
-    } else {
-        reasonGroup.style.display = 'none';
-        reasonSelect.value = ''; // Automatically reset reason if they clear the money/checkbox
+    // Determine if the form requirements are met
+    let isReasonValid = false;
+    if (mainReason !== '') {
+        if (subReasonMap[mainReason]) {
+            if (subReason !== '') isReasonValid = true; // Requires Sub
+        } else {
+            isReasonValid = true; // Does not require Sub (e.g., No Visit)
+        }
+
+        // --- NEW: Scheduled Future-Date Interceptor ---
+        if (mainReason === 'Scheduled تأجيل') {
+            const selectedDate = scheduledDateInput.value;
+            if (!selectedDate) {
+                isReasonValid = false; // Lock if empty
+            } else {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const pickedDate = new Date(selectedDate);
+                
+                // Ensure date is strictly in the future
+                if (pickedDate <= today) {
+                    isReasonValid = false; 
+                }
+            }
+        }
+        // ----------------------------------------------
     }
 
-    // 2. Unlock logic for the Confirm Button (Pessimistic Upload Lock applied)
-    // The comment box remains permanently visible, so we only handle the button state here.
-    if (reasonSelect.value !== '' && activeUploadsCount === 0) {
+    // 2. Unlock logic for the Confirm Button
+    if (isReasonValid && activeUploadsCount === 0) {
         confirmTechBtn.disabled = false;
         confirmTechBtn.textContent = 'Confirm ✅';
     } else if (activeUploadsCount > 0) {
@@ -3850,22 +1840,38 @@ function validateTechForm() {
     }
 }
 
-// ---  Mutual Exclusivity and Validation Listeners ---
-collectedInput.addEventListener('input', (e) => {
-    if (parseFloat(e.target.value) > 0) {
-        document.getElementById('warrantyCheck').checked = false; // Uncheck warranty if money is typed
+// --- Dynamic Sub-List Injection & Listeners ---
+mainReasonSelect.addEventListener('change', (e) => {
+    const selectedMain = e.target.value;
+    subReasonSelect.innerHTML = '<option value="">-- Select Sub --</option>'; 
+    
+    if (subReasonMap[selectedMain]) {
+        subReasonMap[selectedMain].forEach(sub => {
+            const opt = document.createElement('option');
+            opt.value = sub;
+            opt.textContent = sub;
+            subReasonSelect.appendChild(opt);
+        });
+        subReasonContainer.style.display = 'block';
+    } else {
+        subReasonContainer.style.display = 'none';
     }
+
+    // --- NEW: Toggle Schedule Date UI ---
+    if (selectedMain === 'Scheduled تأجيل') {
+        scheduledDateContainer.style.display = 'block';
+    } else {
+        scheduledDateContainer.style.display = 'none';
+        scheduledDateInput.value = ''; // Reset value to clear cache
+    }
+    // ------------------------------------
+
     validateTechForm();
 });
 
-document.getElementById('warrantyCheck').addEventListener('change', (e) => {
-    if (e.target.checked) {
-        collectedInput.value = ''; // Clear money if warranty is checked
-    }
-    validateTechForm();
-});
-
-reasonSelect.addEventListener('change', validateTechForm);
+subReasonSelect.addEventListener('change', validateTechForm);
+scheduledDateInput.addEventListener('change', validateTechForm); //Listen for date selection
+collectedInput.addEventListener('input', validateTechForm);
 commentInput.addEventListener('input', validateTechForm);
 
 
@@ -3885,29 +1891,35 @@ confirmTechBtn.addEventListener('click', async () => {
     const validatedMoney = rawMoneyString !== '' ? Number(rawMoneyString) : 0;
     
     // --- COMPILE THE FINAL COMMENT ---
-    const isWarranty = document.getElementById('warrantyCheck').checked;
-    const reason = reasonSelect.value;
+    const mainReason = mainReasonSelect.value;
+    const subReason = subReasonSelect.value;
+    const combinedReason = subReason ? `${mainReason} - ${subReason}` : mainReason;
     const typedComment = commentInput.value.trim();
     
     let finalComment = typedComment;
-    if (isWarranty) {
-        finalComment = `بدون تكلفة/ضمان - ${reason} | ${typedComment}`;
-    } else if (validatedMoney > 0) {
-        finalComment = `تم تحصيل مبلغ ${validatedMoney} - ${reason} | ${typedComment}`;
+    if (validatedMoney > 0) {
+        finalComment = `تم تحصيل مبلغ ${validatedMoney} - ${combinedReason} | ${typedComment}`;
+    } else if (combinedReason) {
+        finalComment = `${combinedReason} | ${typedComment}`;
     }
 
     // --- REPAIR EVALUATION ENGINE ---
-    const repairReasons = [
-        "02 - صيانة", 
-        "03 - تركيب", 
-        "04 - اوبن سيل/ليدات", 
-        "05 - كبس", 
-        "06 - شحن", 
-        "07- صيانة تكييف", 
-        "08 - شحن /تركيب تكييف"
-    ];
-    const isRepaired = repairReasons.includes(reason);
+    const isRepaired = (mainReason === "Repair صيانة" || subReason === "Installation تركيب");
     const resolvedEndTech = isRepaired ? currentUser.username : '';
+
+    // Replace the anchored lines with:
+    // Override the collected_reason with the compounded string for database mapping
+    const reasonForDb = combinedReason;
+
+    // --- FORMAT DATE TO MM.DD.YYYY ---
+    let formattedScheduledDate = '';
+    if (mainReason === 'Scheduled تأجيل' && scheduledDateInput.value) {
+        const parts = scheduledDateInput.value.split('-'); // HTML5 input="date" strictly outputs YYYY-MM-DD
+        if (parts.length === 3) {
+            formattedScheduledDate = `${parts[1]}.${parts[2]}.${parts[0]}`; // Reassemble to MM.DD.YYYY
+        }
+    }
+    // --------------------------------------
 
     // Lock button to prevent double-clicks and update text to show progress
     confirmTechBtn.disabled = true;
@@ -3988,8 +2000,9 @@ confirmTechBtn.addEventListener('click', async () => {
             smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
             hass: document.getElementById('hassCheck').checked ? 'yes' : '',
             collected: validatedMoney,
-            collected_reason: reasonSelect.value || '',
+            collected_reason: reasonForDb || '',
             comment: finalComment,
+            scheduled_date: formattedScheduledDate, // NEW: Offline Vault Payload
             // Preserve legacy media state for the sync engine JSON compiler
             img1: activeTechTicket.img1,
             calls: activeTechTicket.calls,
@@ -4079,8 +2092,9 @@ confirmTechBtn.addEventListener('click', async () => {
         smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
         hass: document.getElementById('hassCheck').checked ? 'yes' : '',
         collected: validatedMoney,
-        collected_reason: reasonSelect.value || '',
+        collected_reason: reasonForDb || '',
         comment: finalComment,
+        scheduled_date: formattedScheduledDate, // NEW: repair_log Payload
         
         // Consolidated JSON payloads target img1, vid1, and calls exclusively
         img1: finalImg1Str, 
@@ -4111,7 +2125,8 @@ confirmTechBtn.addEventListener('click', async () => {
             arrived_at: activeTechTicket.arrived_at, 
             left_at: activeTechTicket.left_at,
             // --- NEW: Wipe visit sequence upon taking action ---
-            visit_sequence: null
+            visit_sequence: null,
+            scheduled_date: formattedScheduledDate // NEW: orders Payload
             // ---------------------------------------------------
         })
         .eq('so', activeTechTicket.so);
@@ -4264,6 +2279,12 @@ confirmCoordBtn.addEventListener('click', async () => {
         assigned_tech: finalAssignedTech,
         visit_sequence: null // --- Wipe visit sequence upon taking action ---
     };
+
+    // --- Intercept 'Complete' and 'Cancel' to purge scheduled date ---
+    if (newStatus === 'Complete' || newStatus === 'Cancel') {
+        orderUpdatePayload.scheduled_date = '';
+    }
+    // ----------------------------------------------------------------------
 
     if (newStatus === 'Complete') {
         orderUpdatePayload.complete_tech = previousTech;
@@ -4729,53 +2750,7 @@ document.getElementById('btnDownloadMedia').addEventListener('click', async () =
     });
 });
 
-// --- REMOVE SELECTED FROM ASSIGNATION VIEW ---
-document.getElementById('assignRemoveSelectedBtn').addEventListener('click', () => {
-    if (selectedAssignationOrders.size === 0) {
-        alert("Please select at least one order to remove from the view.");
-        return;
-    }
 
-    // Filter out the selected SOs from the array and clean up memory
-    assignationOrders = assignationOrders.filter(o => !selectedAssignationOrders.has(o.so));
-    selectedAssignationOrders.forEach(so => delete editedAssignations[so]);
-    
-    // Clear the selections and redraw the table
-    selectedAssignationOrders.clear();
-    renderAssignationTable();
-});
-
-// --- DOWNLOAD SELECTED FULL DATA (ORDERS FORMAT) ---
-document.getElementById('assignDownloadSelectedBtn').addEventListener('click', () => {
-    if (selectedAssignationOrders.size === 0) {
-        alert("Please select at least one order to download.");
-        return;
-    }
-
-    let fileContent = "";
-
-    selectedAssignationOrders.forEach(so => {
-        // Fetch the base row from the assignation array (which holds all orders data from the fetch)
-        const baseRow = assignationOrders.find(o => String(o.so) === String(so)) || {};
-        // Overlay any live edits
-        const activeRow = { ...baseRow, ...(editedAssignations[so] || {}) };
-        
-        if (activeRow && activeRow.so) {
-            // Use ALL_COLUMNS to export the complete data profile, just like the System page
-            const rowString = ALL_COLUMNS.map(col => activeRow[col] || '').join('\t');
-            fileContent += rowString + "\n===========================\n";
-        }
-    });
-
-    const blob = new Blob([fileContent], { type: "text/plain" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Assignation_Data_Export_${new Date().getTime()}.txt`;
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-});
 
 
 // --- COLUMN RESIZING ENGINE ---
@@ -4986,96 +2961,7 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ==========================================
-// --- PHASE 4: DYNAMIC EXPORT ENGINE ---
-// ==========================================
 
-// Helper: Formats the specific parts string request
-function formatParts(row) {
-    let partsArray = [];
-    for (let i = 1; i <= 5; i++) {
-        let part = (row[`part_${i}`] || '').trim();
-        let qty = (row[`qty_${i}`] || '').trim();
-        // Ignore "EMPTY" strings or actual empty fields
-        if (part && part.toUpperCase() !== 'EMPTY') {
-            partsArray.push(`${part} ${qty && qty.toUpperCase() !== 'EMPTY' ? qty : ''}`.trim());
-        }
-    }
-    return partsArray.length > 0 ? partsArray.join('| ') + '|' : '';
-}
-
-// Reusable text export function for grouped Data
-function downloadGroupedVisibleText(tableBodyId, memoryMap, allColsArray, filename) {
-    const tableBody = document.getElementById(tableBodyId);
-    if (!tableBody || tableBody.children.length === 0) {
-        alert("No visible data to export.");
-        return;
-    }
-
-    // 1. Gather visible SOs from DOM (Bulletproof Method)
-    const visibleSOs = Array.from(tableBody.querySelectorAll('tr')).map(tr => {
-        // Automatically hunt for the input field that is Read-Only and Bolded (The SO cell)
-        const soInput = Array.from(tr.querySelectorAll('input')).find(inp => inp.readOnly === true && inp.style.fontWeight === '900');
-        if(soInput) return soInput.value;
-        return null;
-    }).filter(val => val !== null);
-
-    // 2. Organize data into groupings by Technician
-    const groupedData = {};
-
-    visibleSOs.forEach(so => {
-        const rowData = memoryMap[so] || databaseOrders.find(o => String(o.so) === String(so)) || {};
-        
-        let tech = (rowData.assigned_tech || '').trim();
-        let currentStatus = (rowData.status || '').trim();
-        
-        // Group under the tech's name ONLY if the status is exactly "Technician"
-        if (tech === '' || tech.toUpperCase() === 'EMPTY' || currentStatus !== 'Technician') {
-            tech = 'Unassigned';
-        }
-
-        if (!groupedData[tech]) groupedData[tech] = [];
-
-        // Build the text line
-        let lineCols = [];
-        allColsArray.forEach(col => {
-            // Exclude specified columns from export
-            if (col === 'rout' || col === 'assigned_tech') return; 
-
-            // If it's the start of the parts loop, inject the formatted parts string once
-            if (col === 'part_1') {
-                lineCols.push(formatParts(rowData));
-            } 
-            // Skip the rest of the raw part/qty columns since we aggregated them
-            else if (col.startsWith('part_') || col.startsWith('qty_')) {
-                return; 
-            } else {
-                lineCols.push(rowData[col] || '');
-            }
-        });
-        
-        groupedData[tech].push(lineCols.join('\t'));
-    });
-
-    // 3. Construct File Content
-    let fileContent = "";
-    Object.keys(groupedData).sort().forEach(tech => {
-        fileContent += `${tech}\n--------------------\n`;
-        groupedData[tech].forEach(line => {
-            fileContent += line + "\n===========================\n";
-        });
-        fileContent += "\n";
-    });
-
-    // 4. Download
-    const blob = new Blob([fileContent], { type: "text/plain" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `${filename}_${new Date().getTime()}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
 
 // Bind System Export
 document.getElementById('btnDownloadVisibleSystem').addEventListener('click', () => {
@@ -5132,10 +3018,7 @@ document.getElementById('btnDownloadExcelSystem').addEventListener('click', () =
     hideGlobalLoader();
 });
 
-// Bind Assignation Export
-document.getElementById('assignDownloadVisibleBtn').addEventListener('click', () => {
-    downloadGroupedVisibleText('assignTableBody', editedAssignations, ALL_COLUMNS, 'Assignation_Visible_Export');
-});
+
 
 
 
@@ -5468,222 +3351,7 @@ document.getElementById('modalDownloadMediaBtn').addEventListener('click', async
 });
 
 
-// ==========================================
-// --- ROUTE AREA MODAL LOGIC ---
-// ==========================================
 
-const newRouteModal = document.getElementById('newRouteModal');
-
-// Open Modal
-document.getElementById('btnOpenNewRouteModal').addEventListener('click', () => {
-    newRouteModal.style.display = 'flex';
-});
-
-// Close Modal Triggers
-document.getElementById('closeNewRouteModalBtn').addEventListener('click', () => newRouteModal.style.display = 'none');
-document.getElementById('cancelNewRouteBtn').addEventListener('click', () => newRouteModal.style.display = 'none');
-
-// Save Route to Database
-document.getElementById('saveNewRouteBtn').addEventListener('click', async () => {
-    const keywordInput = document.getElementById('newRouteKeywordInput');
-    const routeInput = document.getElementById('newRouteValueInput');
-    
-    const keyword = keywordInput.value.trim();
-    const routeVal = routeInput.value.trim();
-    
-    if (!keyword || !routeVal) {
-        alert("Action canceled. Both a Sub Area keyword and a Rout Value are required.");
-        return;
-    }
-
-    const saveBtn = document.getElementById('saveNewRouteBtn');
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving...';
-
-    // Insert into Supabase route_keywords table
-    const { error } = await supabaseClient.from('route_keywords').insert({
-        keyword: keyword,
-        route_value: routeVal
-    });
-    
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save Route';
-
-    if (error) {
-        // Postgres Error 23505 means "Unique Violation" (Duplicate)
-        if (error.code === '23505') {
-            alert(`⚠️ Error: The keyword "${keyword}" already exists in the database!`);
-        } else {
-            alert("Failed to save new route: " + error.message);
-        }
-    } else {
-        alert(`✅ Success! "${keyword}" will now automatically route to "${routeVal}".`);
-        keywordInput.value = '';
-        routeInput.value = '';
-        newRouteModal.style.display = 'none';
-    }
-});
-
-// Delete Route from Database
-document.getElementById('deleteRouteBtn').addEventListener('click', async () => {
-    const keywordInput = document.getElementById('newRouteKeywordInput');
-    const keyword = keywordInput.value.trim();
-    
-    if (!keyword) {
-        alert("Please enter the Sub Area keyword you want to delete.");
-        return;
-    }
-
-    if (!confirm(`Are you sure you want to permanently delete "${keyword}" from the routing dictionary?`)) {
-        return;
-    }
-
-    const delBtn = document.getElementById('deleteRouteBtn');
-    delBtn.disabled = true;
-    delBtn.textContent = 'Deleting...';
-
-    // Tell Supabase to delete the row where the keyword matches, and return the deleted data
-    const { data, error } = await supabaseClient
-        .from('route_keywords')
-        .delete()
-        .eq('keyword', keyword)
-        .select(); 
-        
-    delBtn.disabled = false;
-    delBtn.textContent = '🗑️ Delete';
-
-    if (error) {
-        alert("Failed to delete route: " + error.message);
-    } else if (data && data.length === 0) {
-        // If Supabase didn't throw an error but returned 0 rows, it means the word wasn't there
-        alert(`⚠️ "${keyword}" was not found in the database.`);
-    } else {
-        alert(`🗑️ Success! "${keyword}" has been removed from the routing dictionary.`);
-        keywordInput.value = '';
-        document.getElementById('newRouteValueInput').value = '';
-        newRouteModal.style.display = 'none';
-    }
-});
-
-// ==========================================
-// --- AUTO ROUTE ENGINE & TEXT SANITIZER ---
-// ==========================================
-
-// Helper: Standardizes Arabic text to maximize match probability
-function sanitizeArabicAddress(text) {
-    if (!text) return "";
-    let clean = String(text).toLowerCase().trim();
-    
-    // 1. Strip "ال" from the very beginning of words
-    clean = clean.split(/\s+/).map(word => word.startsWith('ال') ? word.substring(2) : word).join(' ');
-    
-    // 2. Standardize endings (Taa Marbuta to Haa, Alif Maksura to Yaa)
-    clean = clean.replace(/ة/g, 'ه').replace(/ى/g, 'ي');
-    
-    return clean;
-}
-
-// Helper: Replicates the AHK Model Category Suffix Engine
-function getDeviceType(modelVal) {
-    if (!modelVal) return "";
-    const upperModel = String(modelVal).toUpperCase().trim();
-    const prefix2 = upperModel.substring(0, 2);
-
-    if (["UA", "LH", "HG", "LS", "PS", "QA", "LS", "HT", "QA", "QN","QE","UN", "UE"].includes(prefix2) || upperModel.includes("VDE")) return "TV";
-    if (["RT", "RS", ,"RB","RF", "RZ", "WW", "WF", "WA", "WD"].includes(prefix2) || upperModel.includes("REF") || upperModel.includes("WSM")) return "HA";
-    if (["AR", "AC"].includes(prefix2) || upperModel.includes("ACN")) return "AC";
-    
-    return "";
-}
-
-document.getElementById('btnAutoRoute').addEventListener('click', async () => {
-    if (selectedAssignationOrders.size === 0) {
-        alert("Please select at least one order using the checkboxes to use Auto Route.");
-        return;
-    }
-    
-    // 1. Fetch the master alias dictionary from Supabase
-    showGlobalLoader("Fetching Route Dictionary...");
-    const { data: routeDict, error } = await supabaseClient.from('route_keywords').select('keyword, route_value');
-    hideGlobalLoader();
-    
-    if (error || !routeDict) {
-        alert("Failed to load route dictionary from the database: " + (error ? error.message : "Unknown Error"));
-        return;
-    }
-    
-    let failedOrders = [];
-    let updatedCount = 0;
-    
-    // 2. Process each selected order
-    selectedAssignationOrders.forEach(so => {
-        // Pull active data for this row
-        const baseRow = assignationOrders.find(o => String(o.so) === String(so)) || {};
-        const activeRow = { ...baseRow, ...(editedAssignations[so] || {}) };
-        
-        // --- SECURITY UPDATE: Skip if 'rout' already has a value ---
-        if (activeRow.rout && String(activeRow.rout).trim() !== '') {
-            return; // Skips this order and moves safely to the next one
-        }
-        // ---------------------------------------------------------------
-
-        const address = activeRow.address || "";
-        
-        // Pass the address through our sanitizer
-        const cleanAddress = sanitizeArabicAddress(address);
-        let matchedRoute = "";
-        let recognizedSubArea = ""; // <-- NEW VARIABLE
-        
-        // Scan the dictionary for a matching keyword
-        for (let i = 0; i < routeDict.length; i++) {
-            const cleanKeyword = sanitizeArabicAddress(routeDict[i].keyword);
-            
-            if (cleanAddress.includes(cleanKeyword)) {
-                matchedRoute = routeDict[i].route_value;
-                recognizedSubArea = routeDict[i].keyword; // <-- CAPTURE THE SUBAREA
-                break;
-            }
-        }
-        
-        // 3. Apply matches or log failures
-        if (matchedRoute) {
-            if (!editedAssignations[so]) {
-                editedAssignations[so] = { ...baseRow };
-            }
-            
-            // <-- NEW LOGIC TO COMBINE PARTS -->
-            const deviceType = getDeviceType(activeRow.model);
-            let finalRoute = matchedRoute;
-            
-            if (deviceType) {
-                finalRoute += `_${deviceType}`; // Add device type in the middle if it exists
-            }
-            
-            finalRoute += `_${recognizedSubArea}`; // Append the sub-area at the very end
-            
-            editedAssignations[so].rout = finalRoute; // <-- APPLY COMBINED ROUTE
-            updatedCount++;
-        } else {
-            // Push to failed list using a Tab separator (\t) so it pastes neatly into Excel
-            failedOrders.push(`${so}\t${address}`);
-        }
-    });
-    
-    // 4. Redraw the table to instantly show the newly assigned routes
-    renderAssignationTable();
-    
-    // 5. Alert user and copy failures to clipboard
-    if (failedOrders.length > 0) {
-        const failText = failedOrders.join('\n');
-        navigator.clipboard.writeText(failText).then(() => {
-            alert(`✅ Auto Route complete! ${updatedCount} orders updated.\n\n⚠️ ${failedOrders.length} orders failed to find a location match.\n\nThe missing orders (SO and Address) have been copied to your clipboard.`);
-        }).catch(() => {
-            alert(`✅ Auto Route complete! ${updatedCount} orders updated.\n\n⚠️ ${failedOrders.length} orders failed to find a match. (Your browser blocked the clipboard copy action).`);
-        });
-    } else {
-        alert(`✅ Success! All ${updatedCount} selected orders were successfully routed.`);
-    }
-});
 
 // --- CLICK OUTSIDE MODAL TO CLOSE ---
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
@@ -5884,132 +3552,7 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ==========================================
-// --- COLUMN MANAGER ENGINE (DRAG & DROP) ---
-// ==========================================
-const columnManagerModal = document.getElementById('columnManagerModal');
-const columnManagerList = document.getElementById('columnManagerList');
-let draggedItem = null;
 
-const btnManageColumns = document.getElementById('btnManageColumns');
-if (btnManageColumns) {
-    btnManageColumns.addEventListener('click', () => {
-        if (!columnManagerList || !columnManagerModal) return;
-        columnManagerList.innerHTML = '';
-        
-        // Combine active and hidden columns to show the full list
-        const currentOrder = [...activeColumns, ...hiddenColumns];
-        
-        currentOrder.forEach(col => {
-            const isSO = col === 'so'; // Protect the primary key!
-            
-            const li = document.createElement('li');
-            li.className = 'col-drag-item';
-            li.draggable = true;
-            li.dataset.column = col;
-            
-            const isChecked = activeColumns.includes(col) ? 'checked' : '';
-            const disableCheck = isSO ? 'disabled title="Cannot hide primary key"' : '';
-            
-            li.innerHTML = `
-                <span class="col-drag-handle">☰</span>
-                <input type="checkbox" class="col-visibility-check" style="margin-right: 12px; transform: scale(1.3); cursor: pointer;" ${isChecked} ${disableCheck}>
-                <span style="font-weight: bold; cursor: default;">${isSO ? 'SO (Required Database Key)' : col}</span>
-            `;
-            
-            // --- HTML5 Drag & Drop Listeners ---
-            li.addEventListener('dragstart', function(e) {
-                draggedItem = this;
-                setTimeout(() => this.classList.add('dragging'), 0);
-            });
-            
-            li.addEventListener('dragend', function() {
-                draggedItem = null;
-                this.classList.remove('dragging');
-            });
-            
-            li.addEventListener('dragover', function(e) {
-                e.preventDefault(); // Required to allow dropping
-                const draggingNode = document.querySelector('.dragging');
-                if (!draggingNode) return;
-                
-                // Find where we are hovering to insert the item
-                const siblings = [...columnManagerList.querySelectorAll('.col-drag-item:not(.dragging)')];
-                const nextSibling = siblings.find(sibling => {
-                    return e.clientY <= sibling.getBoundingClientRect().top + sibling.offsetHeight / 2;
-                });
-                columnManagerList.insertBefore(draggingNode, nextSibling);
-            });
-
-            columnManagerList.appendChild(li);
-        });
-        
-        columnManagerModal.style.display = 'flex';
-    });
-}
-
-const closeColumnManagerBtn = document.getElementById('closeColumnManagerBtn');
-if (closeColumnManagerBtn) {
-    closeColumnManagerBtn.addEventListener('click', () => {
-        if (columnManagerModal) columnManagerModal.style.display = 'none';
-    });
-}
-
-// Save and Apply Logic
-const saveColumnsBtn = document.getElementById('saveColumnsBtn');
-if (saveColumnsBtn) {
-    saveColumnsBtn.addEventListener('click', () => {
-        const userKey = currentUser ? currentUser.username : 'guest';
-        const newActive = [];
-        const newHidden = [];
-        
-        // Read the physical DOM order from top to bottom
-        document.querySelectorAll('.col-drag-item').forEach(li => {
-            const colKey = li.dataset.column;
-            const isChecked = li.querySelector('.col-visibility-check').checked;
-            
-            // Force 'so' to always remain active just in case
-            if (isChecked || colKey === 'so') {
-                newActive.push(colKey);
-            } else {
-                newHidden.push(colKey);
-            }
-        });
-        
-        // Update live memory variables
-        activeColumns = newActive;
-        hiddenColumns = newHidden;
-        
-        // Save to LocalStorage so it remembers on next login
-        localStorage.setItem('sys_order_' + userKey, JSON.stringify(activeColumns));
-        localStorage.setItem('hiddenColumns_' + userKey, JSON.stringify(hiddenColumns));
-        
-        // Redraw table and close modal
-        renderTableStructure();
-        if (columnManagerModal) columnManagerModal.style.display = 'none';
-    });
-}
-
-// Reset Default Logic
-const resetColumnsBtn = document.getElementById('resetColumnsBtn');
-if (resetColumnsBtn) {
-    resetColumnsBtn.addEventListener('click', () => {
-        const userKey = currentUser ? currentUser.username : 'guest';
-        
-        // Restore exact factory variables
-        activeColumns = [...ALL_COLUMNS];
-        hiddenColumns = [];
-        
-        // Wipe customized storage
-        localStorage.setItem('sys_order_' + userKey, JSON.stringify(activeColumns));
-        localStorage.removeItem('hiddenColumns_' + userKey);
-        localStorage.removeItem('sys_cols_' + userKey); // Clears customized column widths
-        
-        renderTableStructure();
-        if (columnManagerModal) columnManagerModal.style.display = 'none';
-        alert("Layout and columns reset to factory defaults.");
-    });
-}
 
 async function fetchAndRenderFollowUpHistory(soNumber) {
     const contentBox = document.getElementById('followUpContent');

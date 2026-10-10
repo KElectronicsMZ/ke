@@ -1,3 +1,241 @@
+// ==========================================
+// --- ASSIGNATION STATE VARIABLES ---
+// ==========================================
+let assignationOrders = [];
+let availableTechnicians = [];
+let editedAssignations = {};
+let stagedOrders = [];
+let editedStagedOrders = {};
+
+// ==========================================
+// --- ROUTE AREA MODAL LOGIC ---
+// ==========================================
+
+const newRouteModal = document.getElementById('newRouteModal');
+
+// Open Modal
+document.getElementById('btnOpenNewRouteModal').addEventListener('click', () => {
+    newRouteModal.style.display = 'flex';
+});
+
+// Close Modal Triggers
+document.getElementById('closeNewRouteModalBtn').addEventListener('click', () => newRouteModal.style.display = 'none');
+document.getElementById('cancelNewRouteBtn').addEventListener('click', () => newRouteModal.style.display = 'none');
+
+// Save Route to Database
+document.getElementById('saveNewRouteBtn').addEventListener('click', async () => {
+    const keywordInput = document.getElementById('newRouteKeywordInput');
+    const routeInput = document.getElementById('newRouteValueInput');
+    
+    const keyword = keywordInput.value.trim();
+    const routeVal = routeInput.value.trim();
+    
+    if (!keyword || !routeVal) {
+        alert("Action canceled. Both a Sub Area keyword and a Rout Value are required.");
+        return;
+    }
+
+    const saveBtn = document.getElementById('saveNewRouteBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    // Insert into Supabase route_keywords table
+    const { error } = await supabaseClient.from('route_keywords').insert({
+        keyword: keyword,
+        route_value: routeVal
+    });
+    
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Route';
+
+    if (error) {
+        // Postgres Error 23505 means "Unique Violation" (Duplicate)
+        if (error.code === '23505') {
+            alert(`⚠️ Error: The keyword "${keyword}" already exists in the database!`);
+        } else {
+            alert("Failed to save new route: " + error.message);
+        }
+    } else {
+        alert(`✅ Success! "${keyword}" will now automatically route to "${routeVal}".`);
+        keywordInput.value = '';
+        routeInput.value = '';
+        newRouteModal.style.display = 'none';
+    }
+});
+
+// Delete Route from Database
+document.getElementById('deleteRouteBtn').addEventListener('click', async () => {
+    const keywordInput = document.getElementById('newRouteKeywordInput');
+    const keyword = keywordInput.value.trim();
+    
+    if (!keyword) {
+        alert("Please enter the Sub Area keyword you want to delete.");
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to permanently delete "${keyword}" from the routing dictionary?`)) {
+        return;
+    }
+
+    const delBtn = document.getElementById('deleteRouteBtn');
+    delBtn.disabled = true;
+    delBtn.textContent = 'Deleting...';
+
+    // Tell Supabase to delete the row where the keyword matches, and return the deleted data
+    const { data, error } = await supabaseClient
+        .from('route_keywords')
+        .delete()
+        .eq('keyword', keyword)
+        .select(); 
+        
+    delBtn.disabled = false;
+    delBtn.textContent = '🗑️ Delete';
+
+    if (error) {
+        alert("Failed to delete route: " + error.message);
+    } else if (data && data.length === 0) {
+        // If Supabase didn't throw an error but returned 0 rows, it means the word wasn't there
+        alert(`⚠️ "${keyword}" was not found in the database.`);
+    } else {
+        alert(`🗑️ Success! "${keyword}" has been removed from the routing dictionary.`);
+        keywordInput.value = '';
+        document.getElementById('newRouteValueInput').value = '';
+        newRouteModal.style.display = 'none';
+    }
+});
+
+// ==========================================
+// --- AUTO ROUTE ENGINE & TEXT SANITIZER ---
+// ==========================================
+
+// Helper: Standardizes Arabic text to maximize match probability
+function sanitizeArabicAddress(text) {
+    if (!text) return "";
+    let clean = String(text).toLowerCase().trim();
+    
+    // 1. Strip "ال" from the very beginning of words
+    clean = clean.split(/\s+/).map(word => word.startsWith('ال') ? word.substring(2) : word).join(' ');
+    
+    // 2. Standardize endings (Taa Marbuta to Haa, Alif Maksura to Yaa)
+    clean = clean.replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+    
+    return clean;
+}
+
+// Helper: Replicates the AHK Model Category Suffix Engine
+function getDeviceType(modelVal) {
+    if (!modelVal) return "";
+    const upperModel = String(modelVal).toUpperCase().trim();
+    const prefix2 = upperModel.substring(0, 2);
+
+    if (["UA", "LH", "HG", "LS", "PS", "QA", "LS", "HT", "QA", "QN","QE","UN", "UE"].includes(prefix2) || upperModel.includes("VDE")) return "TV";
+    if (["RT", "RS", ,"RB","RF", "RZ", "WW", "WF", "WA", "WD"].includes(prefix2) || upperModel.includes("REF") || upperModel.includes("WSM")) return "HA";
+    if (["AR", "AC"].includes(prefix2) || upperModel.includes("ACN")) return "AC";
+    
+    return "";
+}
+
+document.getElementById('btnAutoRoute').addEventListener('click', async () => {
+    if (selectedAssignationOrders.size === 0) {
+        alert("Please select at least one order using the checkboxes to use Auto Route.");
+        return;
+    }
+    
+    // 1. Fetch the master alias dictionary from Supabase
+    showGlobalLoader("Fetching Route Dictionary...");
+    const { data: routeDict, error } = await supabaseClient.from('route_keywords').select('keyword, route_value');
+    hideGlobalLoader();
+    
+    if (error || !routeDict) {
+        alert("Failed to load route dictionary from the database: " + (error ? error.message : "Unknown Error"));
+        return;
+    }
+    
+    let failedOrders = [];
+    let updatedCount = 0;
+    
+    // 2. Process each selected order
+    selectedAssignationOrders.forEach(so => {
+        // Pull active data for this row
+        const baseRow = assignationOrders.find(o => String(o.so) === String(so)) || {};
+        const activeRow = { ...baseRow, ...(editedAssignations[so] || {}) };
+        
+        // --- SECURITY UPDATE: Skip if 'rout' already has a value ---
+        if (activeRow.rout && String(activeRow.rout).trim() !== '') {
+            return; // Skips this order and moves safely to the next one
+        }
+        // ---------------------------------------------------------------
+
+        const address = activeRow.address || "";
+        
+        // Pass the address through our sanitizer
+        const cleanAddress = sanitizeArabicAddress(address);
+        let matchedRoute = "";
+        let recognizedSubArea = ""; // <-- NEW VARIABLE
+        
+        // Scan the dictionary for a matching keyword
+        for (let i = 0; i < routeDict.length; i++) {
+            const cleanKeyword = sanitizeArabicAddress(routeDict[i].keyword);
+            
+            if (cleanAddress.includes(cleanKeyword)) {
+                matchedRoute = routeDict[i].route_value;
+                recognizedSubArea = routeDict[i].keyword; // <-- CAPTURE THE SUBAREA
+                break;
+            }
+        }
+        
+        // 3. Apply matches or log failures
+        if (matchedRoute) {
+            if (!editedAssignations[so]) {
+                editedAssignations[so] = { ...baseRow };
+            }
+            
+            // <-- NEW LOGIC TO COMBINE PARTS -->
+            const deviceType = getDeviceType(activeRow.model);
+            let finalRoute = matchedRoute;
+            
+            if (deviceType) {
+                finalRoute += `_${deviceType}`; // Add device type in the middle if it exists
+            }
+            
+            finalRoute += `_${recognizedSubArea}`; // Append the sub-area at the very end
+            
+            editedAssignations[so].rout = finalRoute; // <-- APPLY COMBINED ROUTE
+            updatedCount++;
+        } else {
+            // Push to failed list using a Tab separator (\t) so it pastes neatly into Excel
+            failedOrders.push(`${so}\t${address}`);
+        }
+    });
+    
+    // 4. Redraw the table to instantly show the newly assigned routes
+    renderAssignationTable();
+    
+    // 5. Alert user and copy failures to clipboard
+    if (failedOrders.length > 0) {
+        const failText = failedOrders.join('\n');
+        navigator.clipboard.writeText(failText).then(() => {
+            alert(`✅ Auto Route complete! ${updatedCount} orders updated.\n\n⚠️ ${failedOrders.length} orders failed to find a location match.\n\nThe missing orders (SO and Address) have been copied to your clipboard.`);
+        }).catch(() => {
+            alert(`✅ Auto Route complete! ${updatedCount} orders updated.\n\n⚠️ ${failedOrders.length} orders failed to find a match. (Your browser blocked the clipboard copy action).`);
+        });
+    } else {
+        alert(`✅ Success! All ${updatedCount} selected orders were successfully routed.`);
+    }
+});
+
+let selectedAssignationOrders = new Set(); //to track the selected order in assignation page
+
+const STAGED_COLUMNS = [
+    "so", "assigned_tech", "rout", "remark", "status_comment", 
+    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5"
+];
+const ASSIGN_COLUMNS = [
+    "so", "date", "days", "status", "service_type", "address", "rout", 
+    "assigned_tech", "model", "remark", "status_comment", 
+    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5"
+];
+
 // --- ASSIGNATION PAGE: RESET LAYOUT ---
 document.getElementById('assignResetLayoutBtn').addEventListener('click', () => {
     const userKey = currentUser ? currentUser.username : 'guest';

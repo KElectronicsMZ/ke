@@ -74,10 +74,29 @@
         showGlobalLoader("Gathering Team Metrics...");
 
         // 1. Compile the team list
-        const { data: teamData } = await supabaseClient.from('profiles').select('username').eq('supervisor_name', targetSupervisor);
+        const { data: supProfile } = await supabaseClient
+            .from('profiles')
+            .select('team_members')
+            .eq('username', targetSupervisor)
+            .single();
+            
         let teamList = [targetSupervisor]; // Inherently add the supervisor to their own pool
-        if (teamData) {
-            teamData.forEach(t => teamList.push(t.username));
+        
+        if (supProfile && supProfile.team_members) {
+            try {
+                // Handle both JSON strings and native JSONB arrays
+                const parsedTeam = typeof supProfile.team_members === 'string' 
+                    ? JSON.parse(supProfile.team_members) 
+                    : supProfile.team_members;
+                
+                if (Array.isArray(parsedTeam)) {
+                    parsedTeam.forEach(t => {
+                        if (!teamList.includes(t)) teamList.push(t);
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to parse team_members array:", e);
+            }
         }
 
         let expandedTeamList = [];

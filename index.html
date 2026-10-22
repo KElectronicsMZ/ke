@@ -31,6 +31,26 @@
         <div class="spinner"></div>
         <h3 id="loaderText" style="margin-top: 15px; letter-spacing: 1px;">Loading Data...</h3>
     </div>
+
+    <!-- TELEPHONY POPUPS -->
+    <div id="incomingCallBanner" style="display: none; position: fixed; top: 50px; left: 50%; transform: translateX(-50%); z-index: 10001; background: #1976d2; color: white; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.4); border: 2px solid #ffb300; min-width: 300px; text-align: center;">
+        <div style="font-weight: bold; font-size: 15px; margin-bottom: 5px;">📞 Incoming Call</div>
+        <div id="incomingCallInfo" style="font-size: 13px; margin-bottom: 8px;">Waiting for connection...</div>
+        <button id="btnDismissIncomingCall" style="background: rgba(255,255,255,0.2); border: 1px solid white; color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Dismiss</button>
+    </div>
+
+    <div id="activeCallPopup" style="display: none; position: fixed; bottom: 20px; left: 20px; z-index: 10001; background: var(--card-bg, #222); color: var(--text-color, #fff); border: 2px solid #4caf50; border-radius: 8px; padding: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 260px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid var(--border-color, #444); padding-bottom: 5px;">
+            <span style="font-weight: bold; color: #4caf50; font-size: 14px;">🟢 Active Call</span>
+            <span id="callDurationTimer" style="font-family: monospace; font-size: 13px; font-weight: bold;">00:00</span>
+        </div>
+        <div id="activeCallDetails" style="font-size: 12px; opacity: 0.9; margin-bottom: 10px;">SO: <strong id="activeCallSo">-</strong> | Slot: <span id="activeCallSlot">PRIMARY</span></div>
+        <div style="display: flex; gap: 8px;">
+            <button id="btnRefreshCallState" style="flex: 1; background: #1976d2; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;">🔄 Refresh Status</button>
+            <button id="btnCloseCallPopup" style="background: #d32f2f; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;">Close</button>
+        </div>
+    </div>
+
     <div id="globalUserBanner" style="display: none; background: var(--btn-bg); color: var(--text-color); padding: 8px 15px; font-weight: bold; font-size: 14px; text-align: center; letter-spacing: 1px; border-bottom: 2px solid var(--border-color); z-index: 9999; position: sticky; top: 0;">
 
         <!--Left Side (Version & Notifications) -->
@@ -1288,6 +1308,7 @@
     <script src="myteam.js"></script>
     <script src="drivers_fleet.js"></script>
     <script src="bonuses.js"></script>
+    <script src="telephony.js"></script>
     
 
     <!-- USER HISTORY SIDE PANEL -->

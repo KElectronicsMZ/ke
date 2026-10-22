@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ke-tech-cache-v4.2'; // Bumped version up!
+const CACHE_NAME = 'ke-tech-cache-v4.3'; // Bumped version up!
 
 // The essential files the app needs to load visually
 const ASSETS_TO_CACHE = [
@@ -43,6 +43,9 @@ self.addEventListener('activate', (event) => {
 
 // 3. Intercept network requests (Network-First Strategy)
 self.addEventListener('fetch', (event) => {
+    if (event.request.url.includes('/api/v1/telephony/')) {
+        return;
+    }
     event.respondWith(
         fetch(event.request).catch(() => {
             return caches.match(event.request);

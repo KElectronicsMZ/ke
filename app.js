@@ -430,6 +430,9 @@ function checkExistingSession() {
             
             // --- PHASE 3: START ALARM ON AUTO-LOGIN ---
             initializeBackOfficeAlarm(currentUser.role);
+            if (typeof window.initTelephonyRealtime === 'function') {
+                window.initTelephonyRealtime(currentUser.username, currentUser.role);
+            }
             
             // Hide the login screen and show the HUB menu
             loginPage.classList.remove('active');
@@ -527,6 +530,9 @@ function executeLoginSequence(userData) {
     
     // --- PHASE 3: START ALARM ON STANDARD LOGIN ---
     initializeBackOfficeAlarm(currentUser.role);
+    if (typeof window.initTelephonyRealtime === 'function') {
+        window.initTelephonyRealtime(currentUser.username, currentUser.role);
+    }
     
     document.getElementById('loginPage').classList.remove('active');
     document.getElementById('newPasswordPage').classList.remove('active');
@@ -1369,15 +1375,28 @@ function renderDynamicMediaLinks(imgPayload, vidPayload, callPayload) {
             const isJson = payload.trim().startsWith('[');
             const mediaArray = isJson ? JSON.parse(payload) : [{ url: payload, label: `Legacy ${baseLabel}`, uploader: 'System' }];
 
-            mediaArray.forEach((media) => {
-                const el = document.createElement('span');
-                el.style.cssText = "display: inline-flex; align-items: center; background: var(--bg-color); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color);";
-                el.innerHTML = `
-                    <a href="#" onclick="viewMediaInline('${media.url}', '${media.label}'); return false;" style="color: #1976d2; font-weight: bold; text-decoration: underline; margin-right: 8px;">👁️ ${media.label} <span style="font-size: 10px; color: gray;">(${media.uploader})</span></a>
-                    <a href="${media.url}" target="_blank" style="text-decoration: none;" title="Open natively / Download">🔗</a>
-                `;
-                container.appendChild(el);
-            });
+                mediaArray.forEach((media) => {
+                    const el = document.createElement('span');
+                    el.style.cssText = "display: inline-flex; align-items: center; background: var(--bg-color); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color);";
+                    
+                    if (media.type === 'pbx_call') {
+                        if (media.recording_available) {
+                            el.innerHTML = `
+                                <a href="#" onclick="viewTelephonyRecordingInline('${media.call_id}', '${media.label}'); return false;" style="color: #1976d2; font-weight: bold; text-decoration: underline; margin-right: 8px;">🔊 ${media.label} <span style="font-size: 10px; color: gray;">(${media.uploader})</span></a>
+                            `;
+                        } else {
+                            el.innerHTML = `
+                                <span style="color: gray; margin-right: 8px;">📞 ${media.label} <span style="font-size: 10px;">(${media.recording_status || 'No Rec'})</span></span>
+                            `;
+                        }
+                    } else {
+                        el.innerHTML = `
+                            <a href="#" onclick="viewMediaInline('${media.url}', '${media.label}'); return false;" style="color: #1976d2; font-weight: bold; text-decoration: underline; margin-right: 8px;">👁️ ${media.label} <span style="font-size: 10px; color: gray;">(${media.uploader})</span></a>
+                            <a href="${media.url}" target="_blank" style="text-decoration: none;" title="Open natively / Download">🔗</a>
+                        `;
+                    }
+                    container.appendChild(el);
+                });
         } catch (e) {
             console.error(`Failed to parse ${baseLabel} JSON payload:`, e);
         }
@@ -1393,6 +1412,25 @@ function renderDynamicMediaLinks(imgPayload, vidPayload, callPayload) {
         container.innerHTML = '<span style="color: #9e9e9e; font-style: italic;">No media attached to this ticket.</span>';
     }
 }
+
+// --- INLINE TELEPHONY RECORDING PLAYER ---
+window.viewTelephonyRecordingInline = function(callId, label) {
+    const viewer = document.getElementById('inlineMediaViewer');
+    const content = document.getElementById('mediaViewerContent');
+    if (!viewer || !content) return;
+    
+    viewer.style.display = 'block';
+    content.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; padding: 10px;">
+            <span style="color: white; font-weight: bold;">🎧 ${label}</span>
+            <audio id="telephonyInlineAudio" controls style="width: 100%; max-width: 400px;"></audio>
+        </div>
+    `;
+    const audioEl = document.getElementById('telephonyInlineAudio');
+    if (typeof window.playTelephonyRecording === 'function') {
+        window.playTelephonyRecording(callId, audioEl);
+    }
+};
 
 // --- INLINE MEDIA PLAYER LOGIC ---
 window.viewMediaInline = function(url, label) {
@@ -1583,8 +1621,10 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
     // --- Generate Clickable Phone Links for Modal ---
     const safePhone1 = ticket.phone ? String(ticket.phone).replace(/\s+/g, '') : '';
     const safePhone2 = ticket.phone_2 ? String(ticket.phone_2).replace(/\s+/g, '') : '';
-    const p1 = ticket.phone ? `<a class="phone-link" href="tel:${safePhone1}">📞 ${ticket.phone}</a>` : 'N/A';
-    const p2 = ticket.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${ticket.phone_2}</a>` : 'N/A';
+    const pbxBtn1 = ticket.phone ? `<button type="button" onclick="window.triggerSecureCall('${ticket.so}', 'PRIMARY')" style="background: #1976d2; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; margin-left: 6px; font-weight: bold;">PBX 📞</button>` : '';
+    const pbxBtn2 = ticket.phone_2 ? `<button type="button" onclick="window.triggerSecureCall('${ticket.so}', 'SECONDARY')" style="background: #1976d2; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; margin-left: 6px; font-weight: bold;">PBX 📞</button>` : '';
+    const p1 = ticket.phone ? `<a class="phone-link" href="tel:${safePhone1}">📞 ${ticket.phone}</a> ${pbxBtn1}` : 'N/A';
+    const p2 = ticket.phone_2 ? `<a class="phone-link" href="tel:${safePhone2}">📞 ${ticket.phone_2}</a> ${pbxBtn2}` : 'N/A';
     // -------------------------------------------------
 
     // 2. Populate Read-Only Details

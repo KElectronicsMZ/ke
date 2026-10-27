@@ -142,8 +142,8 @@
             <button class="menu-btn" id="btnAssignation">Daily Assignation</button>
             <button class="menu-btn" id="btnSystem">System</button>
             <button class="menu-btn" id="btnCallCenter">Call Center</button>
+            <!-- =========This code for "Remove Dead btnAccounting"========= -->
             <button class="menu-btn" id="btnWarehouse">Warehouse</button>
-            <button class="menu-btn" id="btnAccounting">Accounting</button>
             <button class="menu-btn" id="btnTracking">Tracking</button>
             <button class="menu-btn" id="btnMyTeam">My Team</button>
             <button class="menu-btn" id="btnFleetManager">Rout Schedule</button>            
@@ -285,8 +285,8 @@
                         <input type="date" id="monitorEndDate" style="padding: 8px; border: 1px solid var(--border-color); background: transparent; color: var(--text-color); border-radius: 4px;">
                     </div>
 
+                    <!-- =========This code for "Remove Dead monitorClearDateBtn"========= -->
                     <button id="monitorFilterDateBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px;">Apply Filter</button>
-                    <button id="monitorClearDateBtn" style="background: transparent; color: #d32f2f; border: 1px solid #d32f2f; padding: 5px; cursor: pointer;">Clear Filter</button>
                     <button id="monitorDownloadCsvBtn" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px; background: #1976d2; color: white; margin-top: 10px;">Download CSV</button>
                     <button id="monitorReportBtn" onclick="window.open('./reports/performance_report.html', '_blank')" class="menu-btn" style="height: auto; aspect-ratio: auto; padding: 8px; width: 100%; font-size: 14px; background: #8e24aa; color: white; margin-top: 10px; font-weight: bold;">📊 Generate Report</button>
                     </div>
@@ -355,11 +355,8 @@
                         </div>
                     </div>
                     
+                    <!-- =========This code for "Remove Dead closeMonitorTableBtn"========= -->
                     <div id="technicianBadges" style="display: none; gap: 15px; margin-top: 20px; flex-wrap: wrap;"></div>
-
-                    <div style="margin-top: 15px;">
-                        <button id="closeMonitorTableBtn" style="padding: 8px 20px; cursor: pointer; background: #d32f2f; color: white; border: none;">Close Table</button>
-                    </div>
                 </div>
 
             </div>
@@ -399,10 +396,9 @@
             </table>
         </div>
 
+        <!-- =========This code for "Clean Daily Assignation Unwired Controls"========= -->
         <div class="button-group table-controls">
-            <button id="assignClearFiltersBtn">Clear Filters/Sort</button>
             <button id="assignResetLayoutBtn" style="background-color: #d32f2f; color: white; border-color: #b71c1c; margin-left: 5px;">Reset Layout</button>
-            <button id="assignRemoveSelectedBtn" style="background-color: #f57c00; color: white; border-color: #e65100;">Remove Selected (From View)</button>
             <button id="btnAutoRoute" style="background-color: #1976d2; color: white; border-color: #1565c0; font-weight: bold; margin-left: 10px;">🤖 Auto Route</button>
             <button id="btnOpenNewRouteModal" style="background-color: #8e24aa; color: white; border-color: #6a1b9a; font-weight: bold; margin-left: 10px;">➕ / ➖ Add or Remove Subarea</button>
             
@@ -410,10 +406,6 @@
             <button id="assignSaveLocalBtn" style="background-color: #fbc02d; color: black; border-color: #f9a825; font-weight: bold; margin-left: 10px;">💾 Save Progress</button>
             <button id="assignRestoreLocalBtn" style="background-color: #8e24aa; color: white; border-color: #6a1b9a; font-weight: bold; margin-left: 10px;">🔄 Restore Work</button>
             <input type="file" id="assignRestoreFileInput" accept=".json" style="display: none;">
-
-            <!-- We kept your download buttons here for safety -->
-            <button id="assignDownloadSelectedBtn" style="background-color: #757575; color: white; border-color: #616161; margin-left: 10px;">Download Selected Data</button>
-            <button id="assignDownloadVisibleBtn" style="background-color: #2e7d32; color: white; border: 1px solid #1b5e20; font-weight: bold; margin-left: 10px;">Download Visible (Grouped)</button>
         </div>
 
         <!-- NEW: Dedicated Staging Area for Tomorrow's Orders -->
@@ -502,6 +494,11 @@
                 </div>
 
                 <button id="techHubBtn" class="details-btn" style="width: auto; padding: 8px 30px; margin-top: 0;">Back</button>
+            </div>
+
+            <!--=========This code for "Dedicated Row for Today's Work Summary Button"=========-->
+            <div id="techTodaySummaryRow" style="display: flex; justify-content: center; width: 100%;">
+                <button id="btnTechTodaySummary" class="primary-btn" style="display: none; width: auto; padding: 8px 20px; margin-top: 0; background-color: #1976d2; border-color: #1565c0;">📊 Today's Work (0)</button>
             </div>
         </div>
         

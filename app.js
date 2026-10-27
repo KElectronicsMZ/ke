@@ -819,60 +819,7 @@ document.getElementById('hubSearchSoInput').addEventListener('keydown', (e) => {
 
 
 
-// Render the UI
-function renderBonusesData(rows, counts) {
-    // 1. RENDER SUMMARY BOXES
-    const summaryContent = document.getElementById('bonusesSummaryContent');
-    summaryContent.innerHTML = '';
-    
-    Object.entries(counts).forEach(([colName, totalCount]) => {
-        // HIDE ZEROES: If the count is 0, skip building this box entirely
-        if (totalCount === 0) return; 
-
-        const cleanName = colName.replace('_', ' ').toUpperCase();
-        
-        const box = document.createElement('div');
-        box.style.cssText = "background: var(--btn-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; min-width: 120px; flex-grow: 1;";
-        
-        // DARKER FONTS: Changed colors to #333 and #000 with maximum font-weight
-        box.innerHTML = `
-            <span style="font-size: 11px; color: #333; margin-bottom: 5px; font-weight: 900; letter-spacing: 1px;">${cleanName}</span>
-            <span style="font-size: 24px; font-weight: 900; color: #000;">${totalCount}</span>
-        `;
-        summaryContent.appendChild(box);
-    });
-
-    // 2. RENDER TABLE DATA
-    const tbody = document.getElementById('bonusesTableBody');
-    tbody.innerHTML = '';
-    
-    const columnsToDisplay = [
-        'so', 'assign_date', 'assign_time', 'status', 'assigned_by', 
-        'agree_coord', 'complete_coord', 'assigned_tech', 'end_tech', 
-        'hass', 'smart_things', 'comment', 'collected'
-    ];
-
-    rows.forEach(row => {
-        const tr = document.createElement('tr');
-        
-        columnsToDisplay.forEach(col => {
-            const td = document.createElement('td');
-            const cellValue = row[col] ? String(row[col]) : '';
-            td.textContent = cellValue;
-            
-            if (cellValue.trim() === (currentUser ? currentUser.username : '')) {
-                td.style.fontWeight = "bold";
-                td.style.color = "#4caf50"; 
-            }
-            
-            tr.appendChild(td);
-        });
-        
-        tbody.appendChild(tr);
-    });
-}
-
-
+//=========This code for "Remove dead renderBonusesData function"=========
 // --- My orders - TECHNICIAN PAGE LOGIC ---
 
 let activeTechTicket = null; // Keeps track of the currently opened order
@@ -993,14 +940,27 @@ function sortMyOrders(colKey) {
 
         if (colKey === 'days') return currentDir === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
 
-        if (colKey === 'date' && valA && valB) {
-            const partsA = valA.split('/');
-            const partsB = valB.split('/');
-            if(partsA.length === 3 && partsB.length === 3) {
-                const dateA = new Date(`20${partsA[2]}`, partsA[1] - 1, partsA[0]);
-                const dateB = new Date(`20${partsB[2]}`, partsB[1] - 1, partsB[0]);
-                return currentDir === 'asc' ? dateA - dateB : dateB - dateA;
-            }
+        //=========This code for "Robust Multi-Format Date Sorting Engine (My Orders)"=========
+        if (colKey === 'date') {
+            const parseDateValue = (str) => {
+                if (!str) return 0;
+                if (typeof str !== 'string') return 0;
+                const parts = str.trim().split(/[\.\/\-]/);
+                if (parts.length !== 3) return 0;
+                const m = parseInt(parts[0], 10) - 1;
+                const d = parseInt(parts[1], 10);
+                let y = parseInt(parts[2], 10);
+                if (isNaN(m) || isNaN(d) || isNaN(y)) return 0;
+                if (y < 100) y += 2000;
+                const ts = new Date(y, m, d).getTime();
+                return isNaN(ts) ? 0 : ts;
+            };
+            const timeA = parseDateValue(valA);
+            const timeB = parseDateValue(valB);
+            if (!timeA && !timeB) return 0;
+            if (!timeA) return 1;
+            if (!timeB) return -1;
+            return currentDir === 'asc' ? timeA - timeB : timeB - timeA;
         }
         return currentDir === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
     });
@@ -1033,6 +993,102 @@ function applySequenceSort(dataArray) {
     });
 }
 // ----------------------------------------------
+
+// --- NEW: Today's Work Summary Engine ---
+async function updateTechTodaySummary(targetTechName) {
+    const btnSummary = document.getElementById('btnTechTodaySummary');
+    if (!btnSummary) return;
+
+    if (!navigator.onLine) {
+        btnSummary.style.display = 'none';
+        return;
+    }
+
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const todayStr = `${dd}-${mm}-${yyyy}`;
+
+    try {
+        const { data, error } = await supabaseClient
+            .from('repair_log')
+            .select('so, collected_reason')
+            .eq('assign_date', todayStr)
+            .ilike('assigned_by', targetTechName);
+
+        if (error) throw error;
+
+        const todayLogs = data || [];
+
+        //=========This code for "Split Today's Work Count (Actual vs Phone)"=========
+        const actualReasons = new Set([
+            "Visit زيارة - Installation تركيب",
+            "Visit زيارة - Check up كشف",
+            "Repair صيانة - In warranty ضمان",
+            "Repair صيانة - Out of warranty خارج الضمان"
+        ]);
+
+        let actualCount = 0;
+        let phoneCount = 0;
+
+        todayLogs.forEach(log => {
+            const r = (log.collected_reason || '').trim();
+            if (actualReasons.has(r)) {
+                actualCount++;
+            } else {
+                phoneCount++;
+            }
+        });
+
+        //=========This code for "High-Contrast Pill Badges for Today's Work"=========
+        btnSummary.style.backgroundColor = '#1e293b';
+        btnSummary.style.borderColor = '#334155';
+        btnSummary.style.color = '#f8fafc';
+        btnSummary.innerHTML = `📊 Today's Work (<span style="background: rgba(0, 0, 0, 0.45); color: #00e676; padding: 2px 8px; border-radius: 12px; font-weight: bold; border: 1px solid rgba(0, 230, 118, 0.35); display: inline-block;">فعلى : ${actualCount}</span> | <span style="background: rgba(0, 0, 0, 0.45); color: #ffffff; padding: 2px 8px; border-radius: 12px; font-weight: bold; border: 1px solid rgba(255, 255, 255, 0.25); display: inline-block;">بالهاتف : ${phoneCount}</span>)`;
+        btnSummary.style.display = 'inline-block';
+        //=============================================================================
+
+        // Override existing click listeners to prevent stacking
+        btnSummary.onclick = () => {
+            const breakdown = {};
+            todayLogs.forEach(log => {
+                const reason = log.collected_reason || 'Unknown Action';
+                if (!breakdown[reason]) breakdown[reason] = [];
+                breakdown[reason].push(log.so);
+            });
+
+            const metricList = document.getElementById('metricModalList');
+            metricList.innerHTML = '';
+            
+            document.getElementById('metricModalTitle').textContent = `Today's Completed Work: ${targetTechName}`;
+            document.getElementById('metricModalSubtitle').textContent = `Total Actions: ${todayLogs.length}`;
+
+            for (const [reason, sos] of Object.entries(breakdown)) {
+                const groupDiv = document.createElement('div');
+                groupDiv.style.cssText = "background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 10px;";
+                
+                const soLinks = sos.map(so => `<a href="#" onclick="document.getElementById('metricDetailsModal').style.display='none'; document.getElementById('hubSearchSoInput').value='${so}'; document.getElementById('btnHubSearchOrder').click(); return false;" style="color: #1976d2; font-weight: bold;">${so}</a>`).join(', ');
+
+                groupDiv.innerHTML = `
+                    <strong style="color: #fbc02d; font-size: 14px; display: block; border-bottom: 1px dashed var(--border-color); padding-bottom: 5px; margin-bottom: 5px;">${reason} (${sos.length})</strong>
+                    <div style="font-size: 13px;">${soLinks}</div>
+                `;
+                metricList.appendChild(groupDiv);
+            }
+
+            if (todayLogs.length === 0) {
+                metricList.innerHTML = '<div style="text-align:center; padding: 15px; opacity: 0.8;">No actions completed today.</div>';
+            }
+
+            document.getElementById('metricDetailsModal').style.display = 'flex';
+        };
+    } catch (err) {
+        console.error("Failed to fetch today's summary:", err);
+        btnSummary.style.display = 'none';
+    }
+}
+// ----------------------------------------
 
 async function loadActiveTickets(managerOverrideUser = null) {
     if (!currentUser) return;
@@ -1148,6 +1204,13 @@ async function loadActiveTickets(managerOverrideUser = null) {
     // Hide Technical Modules for Drivers
     if (routePlannerBtn) routePlannerBtn.style.display = isDriverView ? 'none' : 'inline-block';
     if (techPartsBtn) techPartsBtn.style.display = isDriverView ? 'none' : 'inline-block';
+
+    if (currentMyOrdersViewMode === 'technician') {
+        updateTechTodaySummary(targetName);
+    } else {
+        const btnSummary = document.getElementById('btnTechTodaySummary');
+        if (btnSummary) btnSummary.style.display = 'none';
+    }
 
     // --- PHASE 1: MULTI-TARGET FLEET PAIRING INTERCEPTOR ---
     if (currentMyOrdersViewMode === 'driver') {
@@ -1771,47 +1834,7 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
 
 
 
-// --- MEDIA BUTTON VISUAL FEEDBACK (FIXED) ---
-document.querySelectorAll('.media-grid input[type="file"]').forEach(input => {
-    input.addEventListener('change', function() {
-        // Find the label that wraps this specific input
-        const labelBtn = this.parentElement; 
-        
-        // Determine if the database already has a file for this specific slot
-        const mediaKey = this.id.replace('Input', '');
-        const hasExistingMedia = currentlyViewedTicket && currentlyViewedTicket[mediaKey] && currentlyViewedTicket[mediaKey].trim() !== '';
-        
-        if (this.files && this.files.length > 0) {
-            // A NEW file was selected! Change color safely
-            labelBtn.style.backgroundColor = '#2e7d32'; // Green
-            labelBtn.style.color = 'white';
-            
-            // Safely update ONLY the text node
-            if (labelBtn.childNodes[0].nodeValue) {
-                labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('📷', '✅').replace('📹', '✅');
-            }
-        } else {
-            // They cancelled the file selection window
-            if (hasExistingMedia) {
-                // An old file still exists in the DB, so keep the button green
-                labelBtn.style.backgroundColor = '#2e7d32'; 
-                labelBtn.style.color = 'white';
-                if (labelBtn.childNodes[0].nodeValue) {
-                    labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('📷', '✅').replace('📹', '✅');
-                }
-            } else {
-                // No old file exists, AND they didn't pick a new one, so revert to normal
-                labelBtn.style.backgroundColor = '';
-                labelBtn.style.color = '';
-                
-                if (labelBtn.childNodes[0].nodeValue) {
-                    labelBtn.childNodes[0].nodeValue = labelBtn.childNodes[0].nodeValue.replace('✅', this.accept.includes('video') ? '📹' : '📷');
-                }
-            }
-        }
-    });
-});
-
+//=========This code for "Remove legacy media-grid logic"=========
 // Validation Logic Gate
 function validateTechForm() {
     const money = parseFloat(collectedInput.value) || 0;
@@ -2619,10 +2642,12 @@ offlineSyncBanner.addEventListener('click', async () => {
                 continue; // Skip deleting this ticket so we can try syncing it again later!
             }
 
+            //=========This code for "Fix Offline Sync to push complete_tech safely"=========
             // E. Push the status change to the orders table
             const { error: orderErr } = await supabaseClient.from('orders')
                 .update({ 
                     status: 'back_office',
+                    complete_tech: bundle.textData.end_tech, // <-- Fix: Inject complete_tech
                     img1: finalImg1Str, 
                     calls: finalCallsStr, 
                     location_link: bundle.textData.location_link,
@@ -3783,6 +3808,7 @@ if (btnOpenTechParts) {
     });
 }
 
+//=========This code for "Wire Tech Parts Modal close listeners"=========
 // Close Triggers (Consolidated with Garbage Collection & Lock Release)
 const executeModalClose = () => {
     cleanupOrphanedUploads(); // Destroy any unconfirmed file uploads
@@ -3794,6 +3820,10 @@ const executeModalClose = () => {
 
 document.getElementById('closeModalBtn').addEventListener('click', executeModalClose);
 document.getElementById('cancelModalBtn').addEventListener('click', executeModalClose);
+
+if (closeTechPartsBtn) closeTechPartsBtn.addEventListener('click', () => techPartsModal.style.display = 'none');
+if (cancelTechPartsBtn) cancelTechPartsBtn.addEventListener('click', () => techPartsModal.style.display = 'none');
+
 // --- EVALUATION REMINDER MODAL CLOSURE ---
 document.getElementById('closeEvalReminderBtn')?.addEventListener('click', () => {
     document.getElementById('evaluationReminderModal').style.display = 'none';

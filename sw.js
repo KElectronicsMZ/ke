@@ -1,4 +1,5 @@
-const CACHE_NAME = 'ke-tech-cache-v4.4'; // Bumped version up!
+//=========This code for "Cache version bump and complete ERP asset list"=========
+const CACHE_NAME = 'ke-tech-cache-v4.7'; // Bumped version up!
 
 // The essential files the app needs to load visually
 const ASSETS_TO_CACHE = [
@@ -6,11 +7,18 @@ const ASSETS_TO_CACHE = [
     './index.html',
     './style.css',
     './app.js',
+    './system.js',
     './warehouse.js',
+    './monitor.js',
     './callcenter.js',
     './settings.js',
     './accounting.js',
     './tracking.js',
+    './assignation.js',
+    './myteam.js',
+    './drivers_fleet.js',
+    './bonuses.js',
+    './telephony.js',
     './manifest.json' 
 ];
 // 1. Install the Service Worker and save the files to the phone's cache

@@ -226,14 +226,15 @@ document.getElementById('btnAutoRoute').addEventListener('click', async () => {
 
 let selectedAssignationOrders = new Set(); //to track the selected order in assignation page
 
+//=========This code for "Append priority to ASSIGN_COLUMNS and STAGED_COLUMNS"=========
 const STAGED_COLUMNS = [
     "so", "assigned_tech", "rout", "remark", "status_comment", 
-    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5"
+    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5", "priority"
 ];
 const ASSIGN_COLUMNS = [
     "so", "date", "days", "status", "service_type", "address", "rout", 
     "assigned_tech", "model", "remark", "status_comment", 
-    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5"
+    "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5", "priority"
 ];
 
 // --- ASSIGNATION PAGE: RESET LAYOUT ---
@@ -244,9 +245,10 @@ document.getElementById('assignResetLayoutBtn').addEventListener('click', () => 
     localStorage.removeItem('assign_cols_' + userKey);
     localStorage.removeItem('assign_order_' + userKey);
     
+//=========This code for "Include priority in assignResetLayoutBtn factory defaults"=========
     // 2. Restore factory defaults
     ASSIGN_COLUMNS.length = 0;
-    ASSIGN_COLUMNS.push("so", "date", "days", "status", "service_type", "address", "rout", "assigned_tech", "model", "remark", "status_comment", "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5");
+    ASSIGN_COLUMNS.push("so", "date", "days", "status", "service_type", "address", "rout", "assigned_tech", "model", "remark", "status_comment", "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5", "priority");
     
     // 3. Redraw table
     renderAssignationTable();
@@ -329,12 +331,16 @@ document.getElementById('btnAssignation').addEventListener('click', async () => 
     const savedAssignOrder = localStorage.getItem('assign_order_' + userKey);
     
 
+//=========This code for "Auto-reconcile priority in ASSIGN_COLUMNS from saved layout"=========
     // --- 2. LAYOUT FIX: LOAD SAVED COLUMN ORDER ---
     if (savedAssignOrder) {
         // Empty the default array and fill it with their saved custom order
         const parsedOrder = JSON.parse(savedAssignOrder);
         ASSIGN_COLUMNS.length = 0;
         ASSIGN_COLUMNS.push(...parsedOrder);
+        if (!ASSIGN_COLUMNS.includes("priority")) {
+            ASSIGN_COLUMNS.push("priority");
+        }
     }
 
     // --- 3. FORCE THE SCREEN TO CLEAR OLD DATA ---
@@ -694,6 +700,7 @@ function renderAssignationTable(dataToRender = assignationOrders) {
         tr.appendChild(checkTd);
         // --- end of Inject the Checkbox Cell ---
 
+//=========This code for "Restore input.value in assignation table"=========
         ASSIGN_COLUMNS.forEach(colKey => {
             const td = document.createElement('td');
             const input = document.createElement('input');
@@ -704,8 +711,32 @@ function renderAssignationTable(dataToRender = assignationOrders) {
 
             input.value = currentValue;
 
-            // --- MAKE SO CLICKABLE & READ-ONLY ---
-            if (colKey === 'so') {
+//=========This code for "Render priority checkbox and role-gate in assignation table"=========
+            if (colKey === 'priority') {
+                const userRoleStr = currentUser && currentUser.role ? currentUser.role.toLowerCase() : '';
+                const canEditPriority = userRoleStr.includes('admin') || userRoleStr.includes('manager') || userRoleStr.includes('coordinator');
+                const isPriorityVal = currentValue === true || currentValue === 'true' || currentValue === 1;
+
+                input.type = 'checkbox';
+                input.checked = isPriorityVal;
+                input.disabled = !canEditPriority;
+                input.style.cursor = canEditPriority ? 'pointer' : 'not-allowed';
+                input.style.width = 'auto';
+                input.style.transform = 'scale(1.2)';
+                td.style.textAlign = 'center';
+
+                if (isPriorityVal) {
+                    td.style.backgroundColor = 'rgba(251, 192, 45, 0.15)';
+                }
+
+                input.addEventListener('change', (e) => {
+                    if (!editedAssignations[currentSO]) {
+                        editedAssignations[currentSO] = { ...row };
+                    }
+                    editedAssignations[currentSO][colKey] = e.target.checked;
+                    td.style.backgroundColor = e.target.checked ? 'rgba(251, 192, 45, 0.15)' : '';
+                });
+            } else if (colKey === 'so') {
                 input.readOnly = true; 
                 input.style.cursor = 'pointer';
                 input.style.color = 'var(--text-color)'; 
@@ -771,19 +802,13 @@ function renderAssignationTable(dataToRender = assignationOrders) {
                 editedAssignations[currentSO][colKey] = e.target.value;
             });
 
+//=========This code for "Remove duplicate input listener in assignation cell"=========
             // Triple click copy
             input.addEventListener('click', (e) => {
                 if (e.detail === 3) {
                     navigator.clipboard.writeText(e.target.value)
                         .catch(err => console.error("Clipboard copy failed: ", err));
                 }
-            });
-
-            input.addEventListener('input', (e) => {
-                if (!editedAssignations[currentSO]) {
-                    editedAssignations[currentSO] = { ...row };
-                }
-                editedAssignations[currentSO][colKey] = e.target.value;
             });
 
             // --- UPDATED: Active Tracking & Highlighting ---
@@ -843,22 +868,32 @@ function runAssignationFilters() {
     const filterInputs = document.querySelectorAll('#assignFilterRow input[type="text"]');
     let filteredData = [...assignationOrders];
 
+//=========This code for "Support boolean priority filtering in assignation filters"=========
     filterSelects.forEach(select => {
         const val = select.value;
         const colKey = select.dataset.column;
 
         if (val === "[BLANK]") {
             filteredData = filteredData.filter(row => {
-                const cellValue = (editedAssignations[row.so] && editedAssignations[row.so][colKey] !== undefined)
-                    ? String(editedAssignations[row.so][colKey]).trim()
-                    : String(row[colKey] || '').trim();
+                const rawVal = (editedAssignations[row.so] && editedAssignations[row.so][colKey] !== undefined)
+                    ? editedAssignations[row.so][colKey]
+                    : row[colKey];
+                if (colKey === 'priority') {
+                    return rawVal === null || rawVal === undefined || rawVal === '';
+                }
+                const cellValue = String(rawVal || '').trim();
                 return cellValue === '';
             });
         } else if (val !== "") {
             filteredData = filteredData.filter(row => {
-                const cellValue = (editedAssignations[row.so] && editedAssignations[row.so][colKey] !== undefined)
-                    ? String(editedAssignations[row.so][colKey])
-                    : String(row[colKey] || '');
+                const rawVal = (editedAssignations[row.so] && editedAssignations[row.so][colKey] !== undefined)
+                    ? editedAssignations[row.so][colKey]
+                    : row[colKey];
+                if (colKey === 'priority') {
+                    const isTrue = rawVal === true || rawVal === 'true' || rawVal === 1;
+                    return String(isTrue) === val;
+                }
+                const cellValue = String(rawVal || '');
                 return cellValue === val;
             });
         }
@@ -870,9 +905,14 @@ function runAssignationFilters() {
 
         if (val) {
             filteredData = filteredData.filter(row => {
-                const cellValue = (editedAssignations[row.so] && editedAssignations[row.so][colKey] !== undefined)
-                    ? String(editedAssignations[row.so][colKey])
-                    : String(row[colKey] || '');
+                const rawVal = (editedAssignations[row.so] && editedAssignations[row.so][colKey] !== undefined)
+                    ? editedAssignations[row.so][colKey]
+                    : row[colKey];
+                if (colKey === 'priority') {
+                    const isTrue = rawVal === true || rawVal === 'true' || rawVal === 1;
+                    return String(isTrue).toLowerCase().includes(val);
+                }
+                const cellValue = String(rawVal || '');
                 return cellValue.toLowerCase().includes(val);
             });
         }
@@ -952,6 +992,7 @@ function renderStagedTable(dataToRender = stagedOrders) {
         indexTd.style.fontWeight = 'bold';
         tr.appendChild(indexTd);
 
+//=========This code for "Restore input.value in staged table"=========
         STAGED_COLUMNS.forEach(colKey => {
             const td = document.createElement('td');
             const input = document.createElement('input');
@@ -961,7 +1002,30 @@ function renderStagedTable(dataToRender = stagedOrders) {
 
             input.value = currentValue;
 
-            if (colKey === 'so') {
+//=========This code for "Render priority checkbox and role-gate in staged table"=========
+            if (colKey === 'priority') {
+                const userRoleStr = currentUser && currentUser.role ? currentUser.role.toLowerCase() : '';
+                const canEditPriority = userRoleStr.includes('admin') || userRoleStr.includes('manager') || userRoleStr.includes('coordinator');
+                const isPriorityVal = currentValue === true || currentValue === 'true' || currentValue === 1;
+
+                input.type = 'checkbox';
+                input.checked = isPriorityVal;
+                input.disabled = !canEditPriority;
+                input.style.cursor = canEditPriority ? 'pointer' : 'not-allowed';
+                input.style.width = 'auto';
+                input.style.transform = 'scale(1.2)';
+                td.style.textAlign = 'center';
+
+                if (isPriorityVal) {
+                    td.style.backgroundColor = 'rgba(251, 192, 45, 0.15)';
+                }
+
+                input.addEventListener('change', (e) => {
+                    if (!editedStagedOrders[currentSO]) editedStagedOrders[currentSO] = { ...row };
+                    editedStagedOrders[currentSO][colKey] = e.target.checked;
+                    td.style.backgroundColor = e.target.checked ? 'rgba(251, 192, 45, 0.15)' : '';
+                });
+            } else if (colKey === 'so') {
                 input.readOnly = true; 
                 input.style.cursor = 'pointer';
                 input.style.color = 'var(--text-color)'; 
@@ -1008,20 +1072,30 @@ function runStagedFilters() {
     const filterSelects = document.querySelectorAll('#stagedFilterRow select');
     let filteredData = [...stagedOrders];
 
+//=========This code for "Support boolean priority filtering in staged filters"=========
     filterSelects.forEach(select => {
         const val = select.value;
         const colKey = select.dataset.column;
 
         if (val === "[BLANK]") {
             filteredData = filteredData.filter(row => {
-                const cellValue = (editedStagedOrders[row.so] && editedStagedOrders[row.so][colKey] !== undefined)
-                    ? String(editedStagedOrders[row.so][colKey]).trim() : String(row[colKey] || '').trim();
+                const rawVal = (editedStagedOrders[row.so] && editedStagedOrders[row.so][colKey] !== undefined)
+                    ? editedStagedOrders[row.so][colKey] : row[colKey];
+                if (colKey === 'priority') {
+                    return rawVal === null || rawVal === undefined || rawVal === '';
+                }
+                const cellValue = String(rawVal || '').trim();
                 return cellValue === '';
             });
         } else if (val !== "") {
             filteredData = filteredData.filter(row => {
-                const cellValue = (editedStagedOrders[row.so] && editedStagedOrders[row.so][colKey] !== undefined)
-                    ? String(editedStagedOrders[row.so][colKey]) : String(row[colKey] || '');
+                const rawVal = (editedStagedOrders[row.so] && editedStagedOrders[row.so][colKey] !== undefined)
+                    ? editedStagedOrders[row.so][colKey] : row[colKey];
+                if (colKey === 'priority') {
+                    const isTrue = rawVal === true || rawVal === 'true' || rawVal === 1;
+                    return String(isTrue) === val;
+                }
+                const cellValue = String(rawVal || '');
                 return cellValue === val;
             });
         }
@@ -1037,6 +1111,13 @@ function sortAssignationColumn(colKey) {
     assignationOrders.sort((a, b) => {
         let valA = (editedAssignations[a.so] && editedAssignations[a.so][colKey] !== undefined) ? editedAssignations[a.so][colKey] : (a[colKey] || '');
         let valB = (editedAssignations[b.so] && editedAssignations[b.so][colKey] !== undefined) ? editedAssignations[b.so][colKey] : (b[colKey] || '');
+
+//=========This code for "Add boolean priority sorting in sortAssignationColumn"=========
+        if (colKey === 'priority') {
+            const prioA = (valA === true || valA === 'true' || valA === 1) ? 1 : 0;
+            const prioB = (valB === true || valB === 'true' || valB === 1) ? 1 : 0;
+            return currentDir === 'asc' ? prioA - prioB : prioB - prioA;
+        }
 
         if (colKey === 'days') {
             return currentDir === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
@@ -1087,10 +1168,12 @@ document.getElementById('stageTomorrowBtn').addEventListener('click', async () =
         qty_2: record.qty_2 || '',
         part_3: record.part_3 || '',
         qty_3: record.qty_3 || '',
+//=========This code for "Include priority in stageTomorrowBtn payload"=========
         part_4: record.part_4 || '',
         qty_4: record.qty_4 || '',
         part_5: record.part_5 || '',
-        qty_5: record.qty_5 || ''
+        qty_5: record.qty_5 || '',
+        priority: record.priority === true || record.priority === 'true' || record.priority === 1
     }));
 
     // Upsert into tomorrow_schedule (Safely overwrites if the SO is already staged)
@@ -1152,10 +1235,12 @@ document.getElementById('assignNowInstantBtn').addEventListener('click', async (
             qty_2: record.qty_2 || '',
             part_3: record.part_3 || '',
             qty_3: record.qty_3 || '',
+//=========This code for "Include priority in assignNowInstantBtn orders payload"=========
             part_4: record.part_4 || '',
             qty_4: record.qty_4 || '',
             part_5: record.part_5 || '',
-            qty_5: record.qty_5 || ''
+            qty_5: record.qty_5 || '',
+            priority: record.priority === true || record.priority === 'true' || record.priority === 1
         };
         
         // Force the ticket to hit their active queue
@@ -1176,6 +1261,7 @@ document.getElementById('assignNowInstantBtn').addEventListener('click', async (
         return;
     }
 
+//=========This code for "Include priority in assignNowInstantBtn repair_log payload"=========
     // 2. Prepare payload for the 'repair_log' table
     const repairLogPayload = recordsToProcess.map(record => ({
         so: record.so,
@@ -1183,7 +1269,8 @@ document.getElementById('assignNowInstantBtn').addEventListener('click', async (
         assigned_by: currentUser ? currentUser.username : 'Unknown',
         assign_date: targetDate,
         assign_time: targetTime,
-        status: "Technician" 
+        status: "Technician",
+        priority: record.priority === true || record.priority === 'true' || record.priority === 1
     }));
 
     // 3. Execute Log Updates
@@ -1315,10 +1402,12 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
             qty_2: record.qty_2 || '',
             part_3: record.part_3 || '',
             qty_3: record.qty_3 || '',
+//=========This code for "Include priority in pushLiveBtn orders payload"=========
             part_4: record.part_4 || '',
             qty_4: record.qty_4 || '',
             part_5: record.part_5 || '',
-            qty_5: record.qty_5 || ''
+            qty_5: record.qty_5 || '',
+            priority: record.priority === true || record.priority === 'true' || record.priority === 1
         };
         
         // Auto-update status so it hits the technicians' screens
@@ -1339,6 +1428,7 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
         return;
     }
 
+//=========This code for "Include priority in pushLiveBtn repair_log payload"=========
    // 6. Prepare payload for the 'repair_log' table using ONLY allowed orders
     const repairLogPayload = allowedToPush.map(record => ({
         so: record.so,
@@ -1346,7 +1436,8 @@ document.getElementById('pushLiveBtn').addEventListener('click', async () => {
         assigned_by: currentUser ? currentUser.username : 'Unknown',
         assign_date: targetDate,
         assign_time: targetTime,
-        status: "Technician" 
+        status: "Technician",
+        priority: record.priority === true || record.priority === 'true' || record.priority === 1
     }));
 
     // 7. Execute Log Updates
@@ -1413,16 +1504,23 @@ document.getElementById('updateStagedBtn').addEventListener('click', async () =>
 
 // --- ASSIGNATION PAGE: MASTER EDIT ENGINE ---
 
+//=========This code for "Support checkbox sync in assignMasterInput"=========
 // 1. Sync typing from the Master Edit Box back into the assignation table cell
 const assignMasterInput = document.getElementById('assignMasterValueInput');
 if (assignMasterInput) {
     assignMasterInput.addEventListener('input', (e) => {
         if (activeInputTarget) {
-            // Update the visual cell
-            activeInputTarget.value = e.target.value;
-            
-            // Trigger the internal input event so it saves to editedAssignations memory
-            activeInputTarget.dispatchEvent(new Event('input', { bubbles: true }));
+            if (activeInputTarget.type === 'checkbox') {
+                const isTrue = e.target.value.toLowerCase() === 'true' || e.target.value === '1';
+                activeInputTarget.checked = isTrue;
+                activeInputTarget.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+                // Update the visual cell
+                activeInputTarget.value = e.target.value;
+                
+                // Trigger the internal input event so it saves to editedAssignations memory
+                activeInputTarget.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         }
     });
 }

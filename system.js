@@ -366,8 +366,32 @@ function populateTableRows(dataToDisplay) {
 
             input.value = currentValue;
 
-            // --- MAKE SO CLICKABLE & READ-ONLY ---
-            if (colKey === 'so') {
+//=========This code for "Render priority checkbox and handle role permissions in System table"=========
+            if (colKey === 'priority') {
+                const userRoleStr = window.currentUser && window.currentUser.role ? window.currentUser.role.toLowerCase() : '';
+                const canEditPriority = userRoleStr.includes('admin') || userRoleStr.includes('manager') || userRoleStr.includes('coordinator');
+                const isPriorityVal = currentValue === true || currentValue === 'true' || currentValue === 1;
+
+                input.type = 'checkbox';
+                input.checked = isPriorityVal;
+                input.disabled = !canEditPriority;
+                input.style.cursor = canEditPriority ? 'pointer' : 'not-allowed';
+                input.style.width = 'auto';
+                input.style.transform = 'scale(1.2)';
+                td.style.textAlign = 'center';
+
+                if (isPriorityVal) {
+                    td.style.backgroundColor = 'rgba(251, 192, 45, 0.15)';
+                }
+
+                input.addEventListener('change', (e) => {
+                    if (!window.editedOrders[currentSO]) {
+                        window.editedOrders[currentSO] = { ...row };
+                    }
+                    window.editedOrders[currentSO][colKey] = e.target.checked;
+                    td.style.backgroundColor = e.target.checked ? 'rgba(251, 192, 45, 0.15)' : '';
+                });
+            } else if (colKey === 'so') {
                 input.readOnly = true; // Protects the primary key from accidental typing
                 input.style.cursor = 'pointer';
                 input.style.color = 'var(--text-color)'; 
@@ -456,6 +480,7 @@ function runFilters() {
     const filterInputs = document.querySelectorAll('#filterRow input[type="text"]');
     let filteredData = [...window.databaseOrders];
 
+//=========This code for "Support boolean priority filtering in System filters"=========
     // Apply Dropdown Filters First
     filterSelects.forEach(select => {
         const val = select.value;
@@ -463,16 +488,25 @@ function runFilters() {
 
         if (val === "[BLANK]") {
             filteredData = filteredData.filter(row => {
-                const cellValue = (window.editedOrders[row.so] && window.editedOrders[row.so][colKey] !== undefined)
-                    ? String(window.editedOrders[row.so][colKey]).trim()
-                    : String(row[colKey] || '').trim();
+                const rawVal = (window.editedOrders[row.so] && window.editedOrders[row.so][colKey] !== undefined)
+                    ? window.editedOrders[row.so][colKey]
+                    : row[colKey];
+                if (colKey === 'priority') {
+                    return rawVal === null || rawVal === undefined || rawVal === '';
+                }
+                const cellValue = String(rawVal || '').trim();
                 return cellValue === '';
             });
         } else if (val !== "") {
             filteredData = filteredData.filter(row => {
-                const cellValue = (window.editedOrders[row.so] && window.editedOrders[row.so][colKey] !== undefined)
-                    ? String(window.editedOrders[row.so][colKey])
-                    : String(row[colKey] || '');
+                const rawVal = (window.editedOrders[row.so] && window.editedOrders[row.so][colKey] !== undefined)
+                    ? window.editedOrders[row.so][colKey]
+                    : row[colKey];
+                if (colKey === 'priority') {
+                    const isTrue = rawVal === true || rawVal === 'true' || rawVal === 1;
+                    return String(isTrue) === val;
+                }
+                const cellValue = String(rawVal || '');
                 return cellValue === val; // Exact match for dropdowns
             });
         }
@@ -485,9 +519,14 @@ function runFilters() {
 
         if (val) {
             filteredData = filteredData.filter(row => {
-                const cellValue = (window.editedOrders[row.so] && window.editedOrders[row.so][colKey] !== undefined)
-                    ? String(window.editedOrders[row.so][colKey])
-                    : String(row[colKey] || '');
+                const rawVal = (window.editedOrders[row.so] && window.editedOrders[row.so][colKey] !== undefined)
+                    ? window.editedOrders[row.so][colKey]
+                    : row[colKey];
+                if (colKey === 'priority') {
+                    const isTrue = rawVal === true || rawVal === 'true' || rawVal === 1;
+                    return String(isTrue).toLowerCase().includes(val);
+                }
+                const cellValue = String(rawVal || '');
                 return cellValue.toLowerCase().includes(val);
             });
         }
@@ -548,12 +587,14 @@ document.getElementById('btnUpdateDays').addEventListener('click', () => {
     }
 });
 
+//=========This code for "Sanitize priority field in systemSubmitBtn"=========
 // --- 9. INLINE CHANGES SUBMISSION ---
 document.getElementById('systemSubmitBtn').addEventListener('click', async () => {
     const recordsToUpdate = Object.values(window.editedOrders).map(record => {
         let cleanRecord = { ...record };
         // Sanitize integer columns to prevent PostgreSQL 400 Bad Request on inline edits
         if (cleanRecord.visit_sequence === "") cleanRecord.visit_sequence = null;
+        if (cleanRecord.priority === "") cleanRecord.priority = false;
         return cleanRecord;
     });
 
@@ -940,13 +981,14 @@ document.getElementById('newBlankOrderBtn').addEventListener('click', () => {
         return;
     }
 
+//=========This code for "Default priority to false in new blank order"=========
     // 3. Generate a completely blank row mapped to your exact columns
     const blankOrder = { so: cleanSO };
     
     window.ALL_COLUMNS.forEach(col => {
         if (col !== 'so') {
             // Strictly assign null to known integer columns to protect Supabase schema
-            blankOrder[col] = (col === 'visit_sequence') ? null : '';
+            blankOrder[col] = (col === 'visit_sequence') ? null : (col === 'priority' ? false : '');
         }
     });
 
@@ -960,6 +1002,7 @@ document.getElementById('newBlankOrderBtn').addEventListener('click', () => {
     renderTableStructure();
 });
 
+//=========This code for "Add priority sorting logic in sortColumn"=========
 function sortColumn(colKey) {
     // Toggle sort direction between ascending and descending
     const currentDir = sortDirection[colKey] === 'asc' ? 'desc' : 'asc';
@@ -968,6 +1011,13 @@ function sortColumn(colKey) {
     window.databaseOrders.sort((a, b) => {
         let valA = (window.editedOrders[a.so] && window.editedOrders[a.so][colKey] !== undefined) ? window.editedOrders[a.so][colKey] : (a[colKey] || '');
         let valB = (window.editedOrders[b.so] && window.editedOrders[b.so][colKey] !== undefined) ? window.editedOrders[b.so][colKey] : (b[colKey] || '');
+
+        // DATA TYPE: PRIORITY (Boolean sorting)
+        if (colKey === 'priority') {
+            const prioA = (valA === true || valA === 'true' || valA === 1) ? 1 : 0;
+            const prioB = (valB === true || valB === 'true' || valB === 1) ? 1 : 0;
+            return currentDir === 'asc' ? prioA - prioB : prioB - prioA;
+        }
 
         // 1. DATA TYPE: DAYS (Treat strictly as numbers)
         if (colKey === 'days') {
@@ -993,14 +1043,21 @@ function sortColumn(colKey) {
     populateTableRows(window.databaseOrders);
 }
 
+//=========This code for "Support checkbox sync in masterValueInput"=========
 // 1. Sync typing from the Master Edit Box back into the active table cell instantly
 document.getElementById('masterValueInput').addEventListener('input', (e) => {
     if (activeInputTarget) {
-        // Send the value directly to the original cell in the table layout
-        activeInputTarget.value = e.target.value;
-        
-        // Trigger the original cell's internal input event so it saves to the workspace memory
-        activeInputTarget.dispatchEvent(new Event('input', { bubbles: true }));
+        if (activeInputTarget.type === 'checkbox') {
+            const isTrue = e.target.value.toLowerCase() === 'true' || e.target.value === '1';
+            activeInputTarget.checked = isTrue;
+            activeInputTarget.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+            // Send the value directly to the original cell in the table layout
+            activeInputTarget.value = e.target.value;
+            
+            // Trigger the original cell's internal input event so it saves to the workspace memory
+            activeInputTarget.dispatchEvent(new Event('input', { bubbles: true }));
+        }
     }
 });
 

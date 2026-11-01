@@ -232,8 +232,9 @@ window.ALL_COLUMNS = [
     "phone", "phone_2", "phone_3", "address", "rout", "model", "serial", "io", 
     "remark", "status_comment", "change_log", "return", 
     "part_1", "qty_1", "part_2", "qty_2", "part_3", "qty_3", "part_4", "qty_4", "part_5", "qty_5",
+//=========This code for "Append priority to ALL_COLUMNS"=========
     "call_details", "img1", "calls", "location_link", "vid1", "arrived_at", "left_at", "history", 
-    "assigned_tech", "service_type", "agree_coord", "complete_coord", "complete_tech", "visit_sequence"
+    "assigned_tech", "service_type", "agree_coord", "complete_coord", "complete_tech", "visit_sequence", "priority"
 ];
 
 // 2. THE TRANSLATOR (Strictly for External Samsung/IPAAS Export Files)
@@ -411,9 +412,13 @@ function checkExistingSession() {
             document.getElementById('globalUserBanner').style.display = 'block';
             
             // --- RESTORE COLUMN PREFERENCES ON AUTO-LOGIN ---
+//=========This code for "Auto-reconcile new columns in activeColumns on auto-login"=========
             const savedOrder = localStorage.getItem('sys_order_' + currentUser.username);
             if (savedOrder) {
                 activeColumns = JSON.parse(savedOrder);
+                ALL_COLUMNS.forEach(c => {
+                    if (!activeColumns.includes(c)) activeColumns.push(c);
+                });
             } else {
                 activeColumns = [...ALL_COLUMNS]; 
             }
@@ -516,9 +521,14 @@ function executeLoginSequence(userData) {
     const sessionPayload = { user: currentUser, timestamp: Date.now() };
     localStorage.setItem('ke_user_session', JSON.stringify(sessionPayload));
 
+//=========This code for "Auto-reconcile new columns in activeColumns on manual login"=========
     const savedOrder = localStorage.getItem('sys_order_' + currentUser.username);
-    if (savedOrder) activeColumns = JSON.parse(savedOrder);
-    else activeColumns = [...ALL_COLUMNS];
+    if (savedOrder) {
+        activeColumns = JSON.parse(savedOrder);
+        ALL_COLUMNS.forEach(c => {
+            if (!activeColumns.includes(c)) activeColumns.push(c);
+        });
+    } else activeColumns = [...ALL_COLUMNS];
 
     const savedHidden = localStorage.getItem('hiddenColumns_' + currentUser.username);
     if (savedHidden) {
@@ -986,7 +996,11 @@ function applySequenceSort(dataArray) {
             return -1; // Sequenced items float to the top
         } else if (!hasSeqA && hasSeqB) {
             return 1;  // Non-sequenced items sink
+//=========This code for "Float High Priority non-sequenced tickets"=========
         } else {
+            const prioA = (a.priority === true || a.priority === 'true' || a.priority === 1) ? 1 : 0;
+            const prioB = (b.priority === true || b.priority === 'true' || b.priority === 1) ? 1 : 0;
+            if (prioA !== prioB) return prioB - prioA;
             // If neither has a sequence, fallback to the original default (highest days first)
             return Number(b.days || 0) - Number(a.days || 0);
         }
@@ -1329,10 +1343,22 @@ function renderTickets(tickets, viewMode = 'technician') {
                 card.style.border = '2px solid #d32f2f'; // Prominent red border
                 card.style.backgroundColor = 'rgba(211, 47, 47, 0.05)'; // Faint red background
                 returnBadgeHtml = `<div style="background-color: #d32f2f; color: white; text-align: center; font-weight: bold; padding: 4px; border-radius: 4px 4px 0 0; margin: -15px -15px 10px -15px; font-size: 14px;">⚠️ RETURN ORDER / ${ticket.return} ⚠️</div>`;
+//=========This code for "Add gold-and-black striped priority badge to ticket card"=========
             } else if (returnValStr.startsWith('redo')) {
                 card.style.border = '2px solid #f57c00'; // Yellowish/Orange border
                 card.style.backgroundColor = 'rgba(245, 124, 0, 0.05)'; // Faint yellowish background
                 returnBadgeHtml = `<div style="background-color: #f57c00; color: white; text-align: center; font-weight: bold; padding: 4px; border-radius: 4px 4px 0 0; margin: -15px -15px 10px -15px; font-size: 14px;">⚠️ REDO ORDER / ${ticket.return} ⚠️</div>`;
+            }
+
+            let priorityBadgeHtml = '';
+            const isPriorityTicket = ticket.priority === true || ticket.priority === 'true' || ticket.priority === 1;
+            if (isPriorityTicket) {
+                if (!returnValStr.startsWith('return') && !returnValStr.startsWith('redo')) {
+                    card.style.border = '2px solid #fbc02d';
+                }
+                const pMargin = returnBadgeHtml ? '0 -15px 10px -15px' : '-15px -15px 10px -15px';
+                const pRadius = returnBadgeHtml ? '0' : '4px 4px 0 0';
+                priorityBadgeHtml = `<div style="background: repeating-linear-gradient(45deg, #fbc02d, #fbc02d 12px, #111 12px, #111 24px); padding: 5px; border-radius: ${pRadius}; margin: ${pMargin}; text-align: center;"><span style="background: #111; color: #fbc02d; padding: 2px 10px; border-radius: 4px; font-weight: 900; font-size: 13px; letter-spacing: 0.5px; display: inline-block; border: 1px solid #fbc02d;">⚡ HIGH PRIORITY — MUST FINISH TODAY (أولوية قصوى) ⚡</span></div>`;
             }
             // ------------------------------------------
 
@@ -1357,9 +1383,10 @@ function renderTickets(tickets, viewMode = 'technician') {
             let partsHtml = partsArray.length > 0 ? `<div style="color: #8e24aa; font-size: 13px; font-weight: bold; margin-top: 8px; padding-top: 5px; border-top: 1px dashed var(--border-color);">🛠️ Parts: ${partsArray.join(', ')}</div>` : '';
             // ----------------------------------------------------------
 
+//=========This code for "Inject priorityBadgeHtml in Driver view card"=========
             // --- PHASE 2: UI RENDERING (DRIVER VS STANDARD) ---
             if (viewMode === 'driver' && typeof getDriverTicketHtml === 'function') {
-                card.innerHTML = returnBadgeHtml + getDriverTicketHtml(ticket);
+                card.innerHTML = returnBadgeHtml + priorityBadgeHtml + getDriverTicketHtml(ticket);
                 if (typeof bindDriverTicketEvents === 'function') bindDriverTicketEvents(card, ticket);
             } else {
                 let actionButtonsHtml = `<button class="details-btn">Details & Action</button>`;
@@ -1394,8 +1421,9 @@ function renderTickets(tickets, viewMode = 'technician') {
                     ${partsHtml}
                     ${actionButtonsHtml}
                 `;
+                //=========This code for "Removed stray comment from ticket card HTML template"=========
                 
-                card.innerHTML = returnBadgeHtml + ticketBodyHtml;
+                card.innerHTML = returnBadgeHtml + priorityBadgeHtml + ticketBodyHtml;
                 card.querySelector('.details-btn').addEventListener('click', () => openDetailsModal(ticket, viewMode));
             }
             
@@ -1730,8 +1758,28 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
     }
     // ------------------------------------------
 
-    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + returnModalBanner + `
-        <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+//=========This code for "Add Priority Banner and Checkbox to Details Modal"=========
+    let priorityModalBanner = '';
+    const isPriorityTicket = ticket.priority === true || ticket.priority === 'true' || ticket.priority === 1;
+    if (isPriorityTicket) {
+        priorityModalBanner = `
+            <div id="modalPriorityBanner" style="background: repeating-linear-gradient(45deg, #fbc02d, #fbc02d 12px, #111 12px, #111 24px); padding: 8px; border-radius: 4px; margin-bottom: 15px; text-align: center; border: 2px solid #fbc02d;">
+                <span style="background: #111; color: #fbc02d; padding: 4px 14px; border-radius: 4px; font-weight: 900; font-size: 14px; letter-spacing: 0.5px; display: inline-block; border: 1px solid #fbc02d;">
+                    ⚡ HIGH PRIORITY — MUST BE FINISHED TODAY (أولوية قصوى) ⚡
+                </span>
+            </div>
+        `;
+    }
+
+    const userRoleStr = currentUser && currentUser.role ? currentUser.role.toLowerCase() : '';
+    const canEditPriority = (userRoleStr.includes('admin') || userRoleStr.includes('manager') || userRoleStr.includes('coordinator')) && !lockStatus.isLocked;
+
+    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + returnModalBanner + priorityModalBanner + `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: bold; cursor: ${canEditPriority ? 'pointer' : 'not-allowed'}; color: ${isPriorityTicket ? '#fbc02d' : 'var(--text-color)'};">
+                <input type="checkbox" id="modalPriorityCheck" ${isPriorityTicket ? 'checked' : ''} ${canEditPriority ? '' : 'disabled'} style="width: 18px; height: 18px; cursor: ${canEditPriority ? 'pointer' : 'not-allowed'};">
+                <span>⚡ High Priority (أولوية قصوى)</span>
+            </label>
             <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
         </div>
         <div class="ticket-row"><span><strong>Name:</strong> ${ticket.name || 'N/A'}</span> <span>${p1}</span></div>
@@ -1751,6 +1799,26 @@ async function openDetailsModal(ticket, viewMode = 'technician') {
         
         <strong>Call Details:</strong> ${ticket.call_details || 'N/A'}
     `;
+
+//=========This code for "Bind modalPriorityCheck change listener in Details Modal"=========
+    const modalPriorityCheck = document.getElementById('modalPriorityCheck');
+    if (modalPriorityCheck && canEditPriority) {
+        modalPriorityCheck.addEventListener('change', async (e) => {
+            const nextVal = e.target.checked;
+            ticket.priority = nextVal;
+            if (typeof editedOrders !== 'undefined' && editedOrders[ticket.so]) editedOrders[ticket.so].priority = nextVal;
+            if (typeof databaseOrders !== 'undefined') {
+                const row = databaseOrders.find(o => String(o.so) === String(ticket.so));
+                if (row) row.priority = nextVal;
+            }
+            const { error: pErr } = await supabaseClient.from('orders').update({ priority: nextVal }).eq('so', ticket.so);
+            if (pErr) {
+                alert("Failed to update priority: " + pErr.message);
+                e.target.checked = !nextVal;
+                ticket.priority = !nextVal;
+            }
+        });
+    }
 
     // 3. ROLE-BASED UI TOGGLE
     
@@ -2062,10 +2130,12 @@ confirmTechBtn.addEventListener('click', async () => {
             assign_time: `${hh}:${min}`,
             smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
             hass: document.getElementById('hassCheck').checked ? 'yes' : '',
+//=========This code for "Add priority to offline bundle payload"=========
             collected: validatedMoney,
             collected_reason: reasonForDb || '',
             comment: finalComment,
             scheduled_date: formattedScheduledDate, // NEW: Offline Vault Payload
+            priority: Boolean(activeTechTicket.priority),
             // Preserve legacy media state for the sync engine JSON compiler
             img1: activeTechTicket.img1,
             calls: activeTechTicket.calls,
@@ -2154,10 +2224,12 @@ confirmTechBtn.addEventListener('click', async () => {
         assign_time: `${hh}:${min}`,
         smart_things: document.getElementById('smartThingsCheck').checked ? 'yes' : '',
         hass: document.getElementById('hassCheck').checked ? 'yes' : '',
+//=========This code for "Add priority to technician repair_log payload"=========
         collected: validatedMoney,
         collected_reason: reasonForDb || '',
         comment: finalComment,
         scheduled_date: formattedScheduledDate, // NEW: repair_log Payload
+        priority: Boolean(activeTechTicket.priority),
         
         // Consolidated JSON payloads target img1, vid1, and calls exclusively
         img1: finalImg1Str, 
@@ -2321,10 +2393,12 @@ confirmCoordBtn.addEventListener('click', async () => {
         assigned_by: currentUser.username, 
         assigned_tech: finalAssignedTech,
         end_tech: newStatus === 'Complete' ? previousTech : '',
+//=========This code for "Add priority to coordinator repair_log payload"=========
         complete_coord: newStatus === 'Complete' ? currentUser.username : '',
         comment: coordComment, // <-- Push the Back Office comment to the history log!
         assign_date: `${dd}-${mm}-${yyyy}`,
-        assign_time: `${hh}:${min}`
+        assign_time: `${hh}:${min}`,
+        priority: Boolean(activeTechTicket.priority)
     };
 
     const { error: logErr } = await supabaseClient.from('repair_log').insert(logPayload);
@@ -3165,8 +3239,10 @@ document.getElementById('modalCopyBtn').addEventListener('click', () => {
         }
     }
 
+//=========This code for "Add priority to modal copy details"=========
     // Build the giant text block
     const copyText = `SO: ${t.so}
+    Priority: ${t.priority ? '⚡ HIGH PRIORITY (MUST FINISH TODAY)' : 'Normal'}
     Days: ${t.days || 0}
     Name: ${t.name || 'N/A'}
     Phones: ${t.phone || ''} ${t.phone_2 ? '/ ' + t.phone_2 : ''}
@@ -3254,8 +3330,28 @@ async function openViewOnlyModal(ticket) {
     }
     // ------------------------------------------
 
-    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + returnViewBanner + `
-        <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+//=========This code for "Add Priority Banner and Checkbox to View Only Modal"=========
+    let priorityViewBanner = '';
+    const isPriorityTicket = ticket.priority === true || ticket.priority === 'true' || ticket.priority === 1;
+    if (isPriorityTicket) {
+        priorityViewBanner = `
+            <div id="modalPriorityBanner" style="background: repeating-linear-gradient(45deg, #fbc02d, #fbc02d 12px, #111 12px, #111 24px); padding: 8px; border-radius: 4px; margin-bottom: 15px; text-align: center; border: 2px solid #fbc02d;">
+                <span style="background: #111; color: #fbc02d; padding: 4px 14px; border-radius: 4px; font-weight: 900; font-size: 14px; letter-spacing: 0.5px; display: inline-block; border: 1px solid #fbc02d;">
+                    ⚡ HIGH PRIORITY — MUST BE FINISHED TODAY (أولوية قصوى) ⚡
+                </span>
+            </div>
+        `;
+    }
+
+    const userRoleStr = currentUser && currentUser.role ? currentUser.role.toLowerCase() : '';
+    const canEditPriority = (userRoleStr.includes('admin') || userRoleStr.includes('manager') || userRoleStr.includes('coordinator')) && !lockStatus.isLocked;
+
+    document.getElementById('modalReadOnlyDetails').innerHTML = lockStatus.message + returnViewBanner + priorityViewBanner + `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: bold; cursor: ${canEditPriority ? 'pointer' : 'not-allowed'}; color: ${isPriorityTicket ? '#fbc02d' : 'var(--text-color)'};">
+                <input type="checkbox" id="modalPriorityCheck" ${isPriorityTicket ? 'checked' : ''} ${canEditPriority ? '' : 'disabled'} style="width: 18px; height: 18px; cursor: ${canEditPriority ? 'pointer' : 'not-allowed'};">
+                <span>⚡ High Priority (أولوية قصوى)</span>
+            </label>
             <span style="color:#ffb300; font-weight: bold; font-size: 15px;">Days: ${ticket.days || 0}</span>
         </div>
         <div class="ticket-row"><span><strong>Name:</strong> ${ticket.name || 'N/A'}</span> <span>${p1}</span></div>
@@ -3306,6 +3402,26 @@ async function openViewOnlyModal(ticket) {
         document.getElementById('confirmCoordBtn').style.display = 'none';
     }
     
+//=========This code for "Bind modalPriorityCheck change listener in View Only Modal"=========
+    const modalPriorityCheck = document.getElementById('modalPriorityCheck');
+    if (modalPriorityCheck && canEditPriority) {
+        modalPriorityCheck.addEventListener('change', async (e) => {
+            const nextVal = e.target.checked;
+            ticket.priority = nextVal;
+            if (typeof editedOrders !== 'undefined' && editedOrders[ticket.so]) editedOrders[ticket.so].priority = nextVal;
+            if (typeof databaseOrders !== 'undefined') {
+                const row = databaseOrders.find(o => String(o.so) === String(ticket.so));
+                if (row) row.priority = nextVal;
+            }
+            const { error: pErr } = await supabaseClient.from('orders').update({ priority: nextVal }).eq('so', ticket.so);
+            if (pErr) {
+                alert("Failed to update priority: " + pErr.message);
+                e.target.checked = !nextVal;
+                ticket.priority = !nextVal;
+            }
+        });
+    }
+
     fetchAndRenderTicketHistory(ticket.so);
 
     // 7. Show the Modal

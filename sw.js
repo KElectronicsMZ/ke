@@ -1,5 +1,5 @@
 //=========This code for "Cache version bump and complete ERP asset list"=========
-const CACHE_NAME = 'ke-tech-cache-v4.7'; // Bumped version up!
+const CACHE_NAME = 'ke-tech-cache-v4.8'; // Bumped version up!
 
 // The essential files the app needs to load visually
 const ASSETS_TO_CACHE = [
